@@ -76,7 +76,7 @@ const config: Config = {
         },
         {
           href: "https://0din.ai/marketing/scanner",
-          label: "Demo",
+          label: "Request a Demo",
           position: "right",
         },
         {

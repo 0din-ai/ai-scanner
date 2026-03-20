@@ -2,7 +2,7 @@
 
 An open-source web application for AI model security assessments, built with Ruby on Rails and [NVIDIA garak](https://github.com/NVIDIA/garak). Scanner helps organizations test their AI systems for vulnerabilities before deployment — similar to penetration testing for traditional software.
 
-📖 **[Full documentation →](https://0din-ai.github.io/ai-scanner/)** · 🎬 **[Live demo →](https://0din.ai/marketing/scanner)**
+📖 **[Full documentation →](https://0din-ai.github.io/ai-scanner/)** · 🎬 **[Request a demo →](https://0din.ai/marketing/scanner)**
 
 ## Features
 

@@ -64,9 +64,9 @@ flowchart LR
 4. **Review** — View Attack Success Rate scores and per-attempt results
 5. **Track** — Compare ASR trends across scan runs over time
 
-## Try the Demo
+## Request a Demo
 
-Want to see Scanner in action before setting it up? **[Explore the live demo →](https://0din.ai/marketing/scanner)**
+Interested in a guided walkthrough? **[Request a demo →](https://0din.ai/marketing/scanner)**
 
 ## Get Started
 
