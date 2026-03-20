@@ -55,8 +55,8 @@ Each target stores:
 
 | Field | Description |
 |---|---|
-| **Generator class** | Which garak generator to use |
-| **Generator URI** | The model endpoint or identifier |
+| **Model Type** | Which garak generator to use |
+| **Model** | The model endpoint or identifier |
 | **Environment variables** | Per-target API keys (encrypted at rest) |
 | **JSON config** | Additional generator-specific settings (encrypted at rest) |
 

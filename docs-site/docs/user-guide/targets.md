@@ -18,8 +18,8 @@ A **target** represents an AI system you want to test. Scanner supports API-base
 | Field | Required | Description |
 |---|---|---|
 | **Name** | Yes | Display name for this target |
-| **Generator** | Yes | The garak generator class (e.g., `rest.RestGenerator`) |
-| **URI** | Varies | Model endpoint URL or model identifier |
+| **Model Type** | Yes | The garak generator class (e.g., `rest.RestGenerator`) |
+| **Model** | Varies | Model endpoint URL or model identifier |
 | **JSON Config** | No | Additional generator options as JSON |
 
 ## Common Target Templates
@@ -28,8 +28,8 @@ A **target** represents an AI system you want to test. Scanner supports API-base
 
 | Field | Value |
 |---|---|
-| Generator | `openai.OpenAIGenerator` |
-| URI | `gpt-4o` (or any OpenAI model ID) |
+| Model Type | `openai.OpenAIGenerator` |
+| Model | `gpt-4o` (or any OpenAI model ID) |
 
 Set `OPENAI_API_KEY` as a target-specific environment variable (see [Environment Variables](./environment-variables)).
 
@@ -37,8 +37,8 @@ Set `OPENAI_API_KEY` as a target-specific environment variable (see [Environment
 
 | Field | Value |
 |---|---|
-| Generator | `openai.OpenAIGenerator` |
-| URI | `openai/gpt-4o` |
+| Model Type | `openai.OpenAIGenerator` |
+| Model | `openai/gpt-4o` |
 | JSON Config | `{"api_base": "https://openrouter.ai/api/v1"}` |
 
 Set `OPENROUTER_API_KEY`.
@@ -47,8 +47,8 @@ Set `OPENROUTER_API_KEY`.
 
 | Field | Value |
 |---|---|
-| Generator | `litellm.LiteLLMGenerator` |
-| URI | `claude-3-5-sonnet-20241022` |
+| Model Type | `litellm.LiteLLMGenerator` |
+| Model | `claude-3-5-sonnet-20241022` |
 
 Set `ANTHROPIC_API_KEY`.
 
@@ -56,8 +56,8 @@ Set `ANTHROPIC_API_KEY`.
 
 | Field | Value |
 |---|---|
-| Generator | `azure.AzureOpenAIGenerator` |
-| URI | Your deployment name |
+| Model Type | `azure.AzureOpenAIGenerator` |
+| Model | Your deployment name |
 | JSON Config | `{"api_base": "https://YOUR_RESOURCE.openai.azure.com/"}` |
 
 Set `AZURE_API_KEY`.
@@ -66,8 +66,8 @@ Set `AZURE_API_KEY`.
 
 | Field | Value |
 |---|---|
-| Generator | `ollama.OllamaGenerator` |
-| URI | `llama3.2` (or any Ollama model name) |
+| Model Type | `ollama.OllamaGenerator` |
+| Model | `llama3.2` (or any Ollama model name) |
 
 No API key needed. Ollama must be accessible from within the Docker network. If running Ollama on your host machine, use `http://host.docker.internal:11434` as the base URL in your JSON config.
 
@@ -75,8 +75,8 @@ No API key needed. Ollama must be accessible from within the Docker network. If 
 
 | Field | Value |
 |---|---|
-| Generator | `huggingface.HFInferenceAPIGenerator` |
-| URI | `mistralai/Mixtral-8x7B-Instruct-v0.1` |
+| Model Type | `huggingface.HFInferenceAPIGenerator` |
+| Model | `mistralai/Mixtral-8x7B-Instruct-v0.1` |
 
 Set `HF_TOKEN`.
 
@@ -86,17 +86,17 @@ For any OpenAI-compatible HTTP endpoint:
 
 | Field | Value |
 |---|---|
-| Generator | `rest.RestGenerator` |
-| URI | `http://your-api-host/v1/chat/completions` |
+| Model Type | `rest.RestGenerator` |
+| Model | `http://your-api-host/v1/chat/completions` |
 
 ### Mock LLM (Testing)
 
 | Field | Value |
 |---|---|
-| Generator | `rest.RestGenerator` |
-| URI | `http://mock-llm:5000/vulnerable` |
+| Model Type | `rest.RestGenerator` |
+| Model | `http://mock-llm:9292/api/v1/mock_llm/chat` |
 
-The Mock LLM ships with the Docker Compose setup and requires no API keys. See [Mock LLM](./mock-llm) for details on all available endpoints.
+The Mock LLM ships with the Docker Compose setup and requires no API keys. See [Mock LLM](./mock-llm) for details on available modes.
 
 ## Per-Target API Keys
 

@@ -85,7 +85,7 @@ SyncProbesJob.perform_now
 
 ## Mock LLM
 
-The dev compose file starts the Mock LLM server automatically. It's available at `http://mock-llm:5000` from within the Docker network. Use it to run scans during development without API keys.
+The dev compose file starts the Mock LLM server automatically. It's available at `http://mock-llm:9292` from within the Docker network (endpoint: `/api/v1/mock_llm/chat`). Use it to run scans during development without API keys.
 
 ## Port Conflicts
 

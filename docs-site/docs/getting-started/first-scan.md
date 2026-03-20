@@ -22,18 +22,18 @@ Scanner must already be running. See [Quick Start](./quick-start) if you haven't
    | Field | Value |
    |---|---|
    | **Name** | `Mock LLM - Vulnerable` |
-   | **Generator** | `rest.RestGenerator` |
-   | **URI** | `http://mock-llm:5000/vulnerable` |
+   | **Model Type** | `rest.RestGenerator` |
+   | **Model** | `http://mock-llm:9292/api/v1/mock_llm/chat` |
 
 5. Click **Create Target**
 
-:::tip Other Mock LLM endpoints
-The mock server exposes three endpoints:
-- `http://mock-llm:5000/safe` — always passes probes
-- `http://mock-llm:5000/vulnerable` — always fails probes (good for testing)
-- `http://mock-llm:5000/mixed` — mixed results
+:::tip Mock LLM modes
+The mock server supports three response modes, set via the `mode` field in the JSON config:
+- `safe` — always passes probes
+- `vulnerable` — always fails probes (good for testing)
+- `mixed` — mixed results (default if no mode is specified)
 
-Use `vulnerable` for your first scan so you can see what a report with findings looks like.
+See [Mock LLM](../user-guide/mock-llm) for details on configuring modes.
 :::
 
 ## Step 2: Start a Scan

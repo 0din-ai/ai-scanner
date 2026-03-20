@@ -14,15 +14,15 @@ Use the Mock LLM to:
 - Understand what a scan report looks like with known outcomes
 - Develop and test custom probe sources
 
-## Endpoints
+## Modes
 
-The Mock LLM exposes three endpoints that simulate different model behaviors:
+The Mock LLM supports three response modes that simulate different model behaviors. The mode is specified via the `mode` field in the JSON request body (or the `X-Mock-Mode` HTTP header). If no mode is specified, it defaults to `mixed`.
 
-| Endpoint | Behavior | Use Case |
+| Mode | Behavior | Use Case |
 |---|---|---|
-| `/safe` | Always responds safely — all probes pass | Verify Scanner correctly scores a "good" model |
-| `/vulnerable` | Always responds vulnerably — all probes fail | Verify Scanner correctly scores a "bad" model |
-| `/mixed` | Random mix of safe and vulnerable responses | Realistic-looking test report with partial ASR |
+| `safe` | Always responds safely — all probes pass | Verify Scanner correctly scores a "good" model |
+| `vulnerable` | Always responds vulnerably — all probes fail | Verify Scanner correctly scores a "bad" model |
+| `mixed` | Mix of safe and vulnerable responses (default) | Realistic-looking test report with partial ASR |
 
 ## Connecting a Target
 
@@ -30,20 +30,22 @@ Create a target using `rest.RestGenerator` and the Mock LLM's internal Docker ho
 
 | Field | Value |
 |---|---|
-| **Generator** | `rest.RestGenerator` |
-| **URI** | `http://mock-llm:5000/vulnerable` |
+| **Model Type** | `rest.RestGenerator` |
+| **Model** | `http://mock-llm:9292/api/v1/mock_llm/chat` |
 
 The hostname `mock-llm` is the Docker Compose service name — it's only resolvable from within the Docker network (i.e., from the `scanner` container).
 
+The default mode is `mixed`. To force a specific mode, add `X-Mock-Mode: vulnerable` (or `safe`) as a custom request header in your target's JSON config.
+
 ## Expected Results
 
-| Endpoint | Expected ASR |
+| Mode | Expected ASR |
 |---|---|
-| `/safe` | ~0% |
-| `/vulnerable` | ~100% |
-| `/mixed` | ~50% |
+| `safe` | ~0% |
+| `vulnerable` | ~100% |
+| `mixed` | ~50% |
 
-Use `/vulnerable` for your [first scan](../getting-started/first-scan) to see what a report with significant findings looks like.
+Use `vulnerable` mode for your [first scan](../getting-started/first-scan) to see what a report with significant findings looks like.
 
 ## Mock LLM in Development
 
@@ -51,4 +53,4 @@ When running the dev environment (`docker compose -f docker-compose.dev.yml up`)
 
 ## Source Code
 
-The Mock LLM is a small Python Flask server located in `mock-llm/` at the repo root. It's intentionally minimal — if you need more sophisticated simulation (e.g., specific response patterns), you can modify it directly.
+The Mock LLM is a small Ruby Rack application located in `mock-llm/` at the repo root. It's intentionally minimal — if you need more sophisticated simulation (e.g., specific response patterns), you can modify it directly.
