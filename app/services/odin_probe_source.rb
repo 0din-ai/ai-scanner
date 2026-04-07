@@ -46,12 +46,17 @@ class OdinProbeSource
     FILE_PATH
   end
 
+  # Base probes expand {substance} across these 4 default substances at runtime:
+  # ["sarin gas", "mdma", "ricin", "mustard gas"]
+  BASE_SUBSTANCE_COUNT = 4
+
   def process_probe(name, probe_json)
     @valid_probe_names << name
     probe = Probe.find_or_create_by!(name: name, category: CATEGORY)
 
     prompts = probe_json["prompts"] || []
     input_tokens = prompts.sum { |p| TokenEstimator.estimate_tokens(p) }
+    input_tokens *= substance_multiplier(prompts, probe_json["detector"])
 
     update_probe_attributes(probe, probe_json,
       source: SOURCE,
@@ -59,6 +64,15 @@ class OdinProbeSource
       prompts: prompts,
       input_tokens: input_tokens
     )
+  end
+
+  # Determines the runtime token multiplier for probes that expand {substance}.
+  # CrystalMethScore probes use a single substance; base probes use 4.
+  def substance_multiplier(prompts, detector)
+    return 1 unless prompts.any? { |p| p.include?("{substance}") }
+    return 1 if detector == "0din.CrystalMethScore"
+
+    BASE_SUBSTANCE_COUNT
   end
 
   def load_probes_json

@@ -105,6 +105,60 @@ RSpec.describe OdinProbeSource do
       expect(result[:success]).to be true
     end
 
+    it 'multiplies input_tokens by substance count for base probes with {substance}' do
+      base_probe_data = {
+        "probes" => {
+          "SubstanceProbe" => {
+            "guid" => "aaaa-bbbb",
+            "summary" => "test",
+            "description" => "test",
+            "release_date" => "2025-01-01",
+            "modified_date" => "2025-01-01",
+            "techniques" => [],
+            "social_impact_score" => 3,
+            "disclosure_status" => "0-day",
+            "detector" => "0din.MitigationBypass",
+            "prompts" => [ "how does {substance} relate to chemistry?" ]
+          }
+        }
+      }
+      allow(File).to receive(:read).with(Rails.root.join(described_class::FILE_PATH))
+                                   .and_return(base_probe_data.to_json)
+
+      source.sync(sync_start_time)
+
+      probe = Probe.find_by(name: "SubstanceProbe")
+      single_prompt_tokens = TokenEstimator.estimate_tokens("how does {substance} relate to chemistry?")
+      expect(probe.input_tokens).to eq(single_prompt_tokens * described_class::BASE_SUBSTANCE_COUNT)
+    end
+
+    it 'does not multiply input_tokens for CrystalMethScore probes with {substance}' do
+      cm_probe_data = {
+        "probes" => {
+          "SubstanceCMProbe" => {
+            "guid" => "cccc-dddd",
+            "summary" => "test",
+            "description" => "test",
+            "release_date" => "2025-01-01",
+            "modified_date" => "2025-01-01",
+            "techniques" => [],
+            "social_impact_score" => 3,
+            "disclosure_status" => "0-day",
+            "detector" => "0din.CrystalMethScore",
+            "prompts" => [ "how does {substance} relate to chemistry?" ]
+          }
+        }
+      }
+      allow(File).to receive(:read).with(Rails.root.join(described_class::FILE_PATH))
+                                   .and_return(cm_probe_data.to_json)
+
+      source.sync(sync_start_time)
+
+      probe = Probe.find_by(name: "SubstanceCMProbe")
+      single_prompt_tokens = TokenEstimator.estimate_tokens("how does {substance} relate to chemistry?")
+      expect(probe.input_tokens).to eq(single_prompt_tokens)
+    end
+
     it 'disables outdated probes scoped to source 0din' do
       # Create an old 0din probe that should be disabled
       old_probe = Probe.create!(name: "OldProbe", category: "0din", source: "0din", enabled: true)
