@@ -138,10 +138,10 @@ cd /Users/olehperevertailo/Projects/ai-scanner && RAILS_ENV=test bundle exec rsp
 
 ### Task 5: Clear PID when requeueing interrupted reports
 
-- [ ] Add `pid: nil` in `RetryInterruptedReportsJob` alongside `heartbeat_at: nil`.
-- [ ] Add a focused spec proving stale PID state is cleared on retry.
-- [ ] Run `spec/jobs/retry_interrupted_reports_job_spec.rb` and make it pass.
-- [ ] Commit the task.
+- [x] Add `pid: nil` in `RetryInterruptedReportsJob` alongside `heartbeat_at: nil`.
+- [x] Add a focused spec proving stale PID state is cleared on retry.
+- [x] Run `spec/jobs/retry_interrupted_reports_job_spec.rb` and make it pass.
+- [x] Commit the task.
 
 ### Task 6: Port the lifecycle/integration coverage
 

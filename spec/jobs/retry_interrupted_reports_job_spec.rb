@@ -43,6 +43,15 @@ RSpec.describe RetryInterruptedReportsJob, type: :job do
         expect(report.heartbeat_at).to be_nil
       end
 
+      it "clears stale pid on retry" do
+        report = create(:report, target: target, scan: scan, status: :interrupted, pid: 12345, heartbeat_at: 5.minutes.ago, updated_at: 1.minute.ago)
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.pid).to be_nil
+      end
+
       it "appends retry log message" do
         report = create(:report, target: target, scan: scan, status: :interrupted, logs: "Previous log", retry_count: 0, updated_at: 1.minute.ago)
 
