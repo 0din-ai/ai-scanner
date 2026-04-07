@@ -1,6 +1,6 @@
 """Custom detectors for 0DIN sample probes.
 
-This file contains the detectors needed by the 6 sample probes shipped
+This file contains the detectors needed by the 32 probes shipped
 with the open-source scanner.
 """
 
