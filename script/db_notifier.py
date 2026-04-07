@@ -952,20 +952,26 @@ def notify_report_running(report_uuid: str, pid: int) -> bool:
         return False
 
 
-def notify_report_stopped(report_uuid: str) -> bool:
+def notify_report_stopped(report_uuid: str, expected_pid: int = None) -> bool:
     """
-    Clear PID from report using pooled connection.
+    Clear PID from report using pooled connection (owner-process guard).
 
-    Called when garak process exits (success or failure) to inform Rails
-    that the process is no longer running.
+    Only clears PID when the stored PID matches the caller's PID. This
+    prevents forked child processes from corrupting parent lifecycle state:
+    a child that inherits the signal handler and calls this function will
+    have a different os.getpid(), so the UPDATE WHERE clause won't match.
 
     Args:
         report_uuid: UUID of the report
+        expected_pid: PID to match against stored PID. Defaults to os.getpid().
 
     Returns:
-        True on success, False on failure
+        True if PID was cleared, False on mismatch or failure
     """
-    logger.info(f"Notifying report stopped: {report_uuid}")
+    my_pid = os.getpid()
+    pid_to_match = expected_pid if expected_pid is not None else my_pid
+
+    logger.info(f"Notifying report stopped: {report_uuid} (expected_pid={pid_to_match}, caller_pid={my_pid})")
     try:
         with pooled_connection("primary") as conn:
             with conn.cursor() as cur:
@@ -973,12 +979,21 @@ def notify_report_stopped(report_uuid: str) -> bool:
                     """
                     UPDATE reports
                     SET pid = NULL, updated_at = NOW()
-                    WHERE uuid = %s
+                    WHERE uuid = %s AND pid = %s
                     """,
-                    (report_uuid,),
+                    (report_uuid, pid_to_match),
                 )
+                rows_affected = cur.rowcount
             conn.commit()
-            logger.info(f"Report {report_uuid} PID cleared")
+
+            if rows_affected == 0:
+                logger.warning(
+                    f"Report {report_uuid} PID not cleared: stored PID does not match "
+                    f"expected PID {pid_to_match} (caller PID {my_pid})"
+                )
+                return False
+
+            logger.info(f"Report {report_uuid} PID cleared (matched pid={pid_to_match})")
             return True
 
     except Exception as e:
