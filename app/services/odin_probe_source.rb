@@ -2,7 +2,7 @@
 
 # Syncs 0DIN curated probes from a JSON file.
 #
-# In open-source mode, reads from config/probes/0din_probes.json (6 sample probes).
+# In open-source mode, reads from config/probes/0din_probes.json (32 probes).
 # The engine can override `file_path` via prepend to load the full probe set.
 class OdinProbeSource
   include ProbeSyncHelpers

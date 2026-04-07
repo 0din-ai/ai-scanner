@@ -3,7 +3,7 @@
 Requires garak 0.13+ (uses Conversation/Turn/Message API).
 Supports parallel execution via --parallel_attempts for improved performance.
 
-This file contains 6 sample probes for demonstrating the scanner's capabilities.
+This file contains 32 probes for AI safety assessment.
 """
 
 import copy
