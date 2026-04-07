@@ -17,7 +17,6 @@ import os
 import signal
 import sys
 import tempfile
-import time
 import unittest
 from types import ModuleType
 from unittest.mock import MagicMock, patch
@@ -124,7 +123,9 @@ class TestChildSignalHandlerSafety(unittest.TestCase):
 
         Desired behavior: the child should exit immediately without cleanup.
         """
-        marker_file = tempfile.mktemp(prefix="garak_child_cleanup_")
+        fd, marker_file = tempfile.mkstemp(prefix="garak_child_cleanup_")
+        os.close(fd)
+        os.unlink(marker_file)  # Remove; test checks if child recreates it
 
         # Replace notify_report_stopped with a version that writes a marker
         original_fn = run_garak.notify_report_stopped
@@ -171,7 +172,9 @@ class TestChildSignalHandlerSafety(unittest.TestCase):
 
     def test_forked_child_does_not_stop_heartbeat(self):
         """A forked child must not stop the parent heartbeat thread."""
-        marker_file = tempfile.mktemp(prefix="garak_child_hb_")
+        fd, marker_file = tempfile.mkstemp(prefix="garak_child_hb_")
+        os.close(fd)
+        os.unlink(marker_file)  # Remove; test checks if child recreates it
 
         mock_hb = MagicMock()
         # Track stop() calls via a marker file (mock state doesn't cross fork)

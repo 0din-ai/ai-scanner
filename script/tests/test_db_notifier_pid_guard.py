@@ -90,7 +90,9 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
 
         self.assertFalse(result)
 
+        executed_sql = mock_cur.execute.call_args[0][0]
         executed_params = mock_cur.execute.call_args[0][1]
+        self.assertIn("AND pid = %s", executed_sql)
         self.assertEqual(executed_params, ("test-uuid-child", 99999))
 
     @patch("db_notifier.pooled_connection")
@@ -139,7 +141,9 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         result = db_notifier.notify_report_stopped("test-uuid-fork", expected_pid=child_pid)
 
         self.assertFalse(result)
+        executed_sql = mock_cur.execute.call_args[0][0]
         executed_params = mock_cur.execute.call_args[0][1]
+        self.assertIn("AND pid = %s", executed_sql)
         self.assertEqual(executed_params, ("test-uuid-fork", child_pid))
 
 

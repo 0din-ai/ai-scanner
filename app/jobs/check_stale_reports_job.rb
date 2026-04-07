@@ -119,9 +119,13 @@ class CheckStaleReportsJob < ApplicationJob
   end
 
   # Detect orphaned running reports where the PID was cleared but the report
-  # was never transitioned out of 'running'. This happens when a child process
-  # triggers notify_report_stopped but the PID-match guard prevents the status
-  # update (only clears pid), leaving the report running with no owning process.
+  # was never transitioned out of 'running'. This can happen when the parent
+  # process receives SIGTERM — notify_report_stopped clears the PID (since it
+  # matches), but the process exits before a terminal status is set.
+  #
+  # Defence-in-depth: the signal handler fix (os._exit in children) and PID-match
+  # guard prevent most orphan scenarios, but OOM kills or unexpected crashes
+  # between PID-clear and status-update can still leave this state.
   #
   # Conditions: running + pid=nil + heartbeat present + updated_at stale.
   # The heartbeat distinguishes from never-started (handled separately).

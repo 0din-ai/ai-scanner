@@ -68,6 +68,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
       expect(report.retry_count).to eq(1)
       expect(report.last_retry_at).to be_within(5.seconds).of(Time.current)
       expect(report.heartbeat_at).to be_nil # Reset for fresh start
+      expect(report.pid).to be_nil # Stale PID cleared
       expect(report.logs).to include("Auto-retry 1:")
       expect(report.logs).to include("Requeued after interruption")
 

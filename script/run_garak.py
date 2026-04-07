@@ -8,7 +8,7 @@ via PostgreSQL database operations for multi-pod deployment support.
 Communication Flow:
     1. notify_report_running: UPDATE reports SET status=1, pid=X
     2. notify_report_ready: INSERT into raw_report_data, enqueue ProcessReportJob
-    3. notify_report_stopped: UPDATE reports SET pid=NULL
+    3. notify_report_stopped: UPDATE reports SET pid=NULL WHERE pid matches caller (PID-match guard)
 
 Environment Variables:
     DATABASE_URL: PostgreSQL connection string (required)

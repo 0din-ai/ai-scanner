@@ -107,9 +107,8 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
         described_class.new.perform
 
-        # Should not have been marked failed since it was completed when we checked
-        report.reload
-        # Note: actual behavior depends on the mock - this tests the guard clause
+        # Guard clause should prevent the job from modifying the DB record
+        expect(Report.find(report.id).status).to eq("running")
       end
     end
 
@@ -183,8 +182,8 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
         described_class.new.send(:check_never_started_running_reports)
 
-        # Should not have been marked failed since heartbeat arrived
-        # Note: actual behavior depends on the mock
+        # Guard clause should prevent the job from modifying the DB record
+        expect(Report.find(report.id).status).to eq("running")
       end
     end
 

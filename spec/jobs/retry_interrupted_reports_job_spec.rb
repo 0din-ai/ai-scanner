@@ -162,7 +162,8 @@ RSpec.describe RetryInterruptedReportsJob, type: :job do
 
         described_class.new.perform
 
-        # Should not have been moved to pending since it's no longer interrupted
+        # Guard clause should prevent the job from modifying the DB record
+        expect(Report.find(report.id).status).to eq("interrupted")
       end
     end
   end
