@@ -61,6 +61,10 @@ class CheckStaleReportsJob < ApplicationJob
 
       # Skip if no longer running (status changed while we were processing)
       next unless report.running?
+      # Skip if PID was cleared (now handled by check_orphaned_running_reports)
+      next if report.pid.nil?
+      # Skip if heartbeat arrived since the query ran
+      next if report.heartbeat_at.nil? || report.heartbeat_at > HEARTBEAT_TIMEOUT.ago
 
       heartbeat_age = (Time.current - report.heartbeat_at).round
       reason = "Scan stopped responding (no heartbeat for #{HEARTBEAT_TIMEOUT.inspect})"
@@ -144,6 +148,8 @@ class CheckStaleReportsJob < ApplicationJob
       next unless report.running?
       next unless report.pid.nil?
       next if report.heartbeat_at.nil?
+      # Re-check updated_at safety window after reload
+      next if report.updated_at > HEARTBEAT_TIMEOUT.ago
 
       reason = "Scan process orphaned (running with no owning process — pid cleared but status not updated)"
 

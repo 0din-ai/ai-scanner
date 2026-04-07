@@ -328,9 +328,9 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
 
   describe "Scenario 11: Orphaned running process (PID cleared without status update)" do
     it "recovers a scan whose PID was cleared but status remained running" do
-      # Simulate: A child process triggered notify_report_stopped but the PID-match
-      # guard prevented the status update. Only PID was cleared, leaving the report
-      # running with no owning process.
+      # Simulate: The parent process called notify_report_stopped (PID matched, so
+      # PID was cleared), but the process was killed before a terminal status was
+      # set. The report is left running with no owning process.
       report = create(:report,
         target: target,
         scan: scan,

@@ -237,8 +237,8 @@ RSpec.describe "Interrupted Reports Lifecycle", type: :integration do
 
   describe "orphaned running reports recovery" do
     it "recovers orphaned report through full lifecycle: running(orphaned) -> interrupted -> pending" do
-      # Simulate: PID-match guard cleared pid but status was never updated to stopped.
-      # The report is running with a heartbeat but no owning process.
+      # Simulate: Parent called notify_report_stopped (PID matched, so pid was cleared),
+      # but the process was killed before a terminal status was set.
       report = create(:report,
         target: target,
         scan: scan,
