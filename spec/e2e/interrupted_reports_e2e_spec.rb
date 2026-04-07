@@ -321,6 +321,84 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
     end
   end
 
+  describe "Scenario 11: Orphaned running process (PID cleared without status update)" do
+    it "recovers a scan whose PID was cleared but status remained running" do
+      # Simulate: A child process triggered notify_report_stopped but the PID-match
+      # guard prevented the status update. Only PID was cleared, leaving the report
+      # running with no owning process.
+      report = create(:report,
+        target: target,
+        scan: scan,
+        status: :running,
+        pid: nil,
+        heartbeat_at: 1.minute.ago,
+        updated_at: 3.minutes.ago,
+        retry_count: 0,
+        logs: "[2025-01-01 10:00:00] Scan started\n[2025-01-01 10:01:00] Heartbeat sent"
+      )
+
+      initial_logs = report.logs
+
+      # Step 1: CheckStaleReportsJob detects the orphaned report
+      expect {
+        CheckStaleReportsJob.new.perform
+      }.to change { report.reload.status }.from("running").to("interrupted")
+
+      # Verify orphan-specific interruption message
+      expect(report.logs).to include(initial_logs)
+      expect(report.logs).to include("Interrupted:")
+      expect(report.logs).to include("orphaned")
+      expect(report.logs).to include("pid cleared but status not updated")
+
+      # Step 2: Stabilization delay prevents immediate retry
+      RetryInterruptedReportsJob.new.perform
+      expect(report.reload.status).to eq("interrupted")
+
+      # Step 3: After stabilization delay, retry moves to pending
+      report.update_column(:updated_at, 35.seconds.ago)
+
+      expect {
+        RetryInterruptedReportsJob.new.perform
+      }.to change { report.reload.status }.from("interrupted").to("pending")
+
+      expect(report.retry_count).to eq(1)
+      expect(report.heartbeat_at).to be_nil
+      expect(report.pid).to be_nil
+      expect(report.logs).to include("Auto-retry 1:")
+      expect(report.logs).to include("Requeued after interruption")
+
+      # Step 4: StartPendingScansJob picks it up
+      report.update_column(:last_retry_at, 3.minutes.ago)
+      allow(SettingsService).to receive(:parallel_scans_limit).and_return(5)
+
+      expect {
+        StartPendingScansJob.new.perform
+      }.to change { report.reload.status }.from("pending").to("starting")
+    end
+  end
+
+  describe "Scenario 12: Orphaned running with exhausted retries" do
+    it "fails permanently when orphaned and retries exhausted" do
+      report = create(:report,
+        target: target,
+        scan: scan,
+        status: :running,
+        pid: nil,
+        heartbeat_at: 1.minute.ago,
+        updated_at: 3.minutes.ago,
+        retry_count: CheckStaleReportsJob::MAX_INTERRUPT_RETRIES,
+        logs: "Multiple retry attempts exhausted..."
+      )
+
+      expect {
+        CheckStaleReportsJob.new.perform
+      }.to change { report.reload.status }.from("running").to("failed")
+
+      expect(report.logs).to include("orphaned")
+      expect(report.logs).to include("after #{CheckStaleReportsJob::MAX_INTERRUPT_RETRIES} retry attempts")
+    end
+  end
+
   describe "Job scheduling verification" do
     it "has correct recurring job configuration" do
       config_path = Rails.root.join("config/recurring.yml")

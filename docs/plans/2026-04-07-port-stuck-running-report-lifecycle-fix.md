@@ -145,11 +145,11 @@ cd /Users/olehperevertailo/Projects/ai-scanner && RAILS_ENV=test bundle exec rsp
 
 ### Task 6: Port the lifecycle/integration coverage
 
-- [ ] Extend `spec/integration/interrupted_reports_lifecycle_spec.rb` to cover orphaned-running recovery.
-- [ ] Extend `spec/e2e/interrupted_reports_e2e_spec.rb` if needed to align with the new stale/orphan semantics.
-- [ ] If any pre-existing fixtures assumed “healthy running report with heartbeat but no pid,” fix those tests to represent valid healthy state.
-- [ ] Run the focused Ruby validation suite and make it pass.
-- [ ] Commit the task.
+- [x] Extend `spec/integration/interrupted_reports_lifecycle_spec.rb` to cover orphaned-running recovery.
+- [x] Extend `spec/e2e/interrupted_reports_e2e_spec.rb` if needed to align with the new stale/orphan semantics.
+- [x] If any pre-existing fixtures assumed “healthy running report with heartbeat but no pid,” fix those tests to represent valid healthy state.
+- [x] Run the focused Ruby validation suite and make it pass.
+- [x] Commit the task.
 
 ### Task 7: Final local-only verification and summary
 
