@@ -29,6 +29,18 @@ SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..")
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
+# When run together with test_run_garak_signal_handler, db_notifier may already
+# be cached as a lightweight mock (no pooled_connection). Force a fresh import
+# of the real module so we can test the actual notify_report_stopped function.
+if "db_notifier" in sys.modules:
+    cached = sys.modules["db_notifier"]
+    if not hasattr(cached, "pooled_connection"):
+        del sys.modules["db_notifier"]
+        # Also ensure psycopg2.pool stub has ThreadedConnectionPool for reimport
+        _pool_mod = sys.modules.get("psycopg2.pool")
+        if _pool_mod and not hasattr(_pool_mod, "ThreadedConnectionPool"):
+            _pool_mod.ThreadedConnectionPool = MagicMock
+
 import db_notifier  # noqa: E402
 
 

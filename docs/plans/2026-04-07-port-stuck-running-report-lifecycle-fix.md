@@ -153,10 +153,10 @@ cd /Users/olehperevertailo/Projects/ai-scanner && RAILS_ENV=test bundle exec rsp
 
 ### Task 7: Final local-only verification and summary
 
-- [ ] Run the focused Ruby and Python validation suite again.
-- [ ] Inspect diffs to ensure changes are limited to the intended files.
-- [ ] Confirm no push/PR was performed.
-- [ ] Summarize:
+- [x] Run the focused Ruby and Python validation suite again.
+- [x] Inspect diffs to ensure changes are limited to the intended files.
+- [x] Confirm no push/PR was performed.
+- [x] Summarize:
   - root cause
   - safeguards added
   - tests proving the port
