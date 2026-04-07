@@ -53,8 +53,30 @@ current_report_uuid = None
 current_heartbeat = None
 current_journal_sync = None
 
+# Capture the main process PID at module load time so forked children can
+# detect they are NOT the owner and skip parent-only cleanup.
+_main_pid = os.getpid()
+
 def signal_handler(signum, frame):
-    """Handle termination signals to ensure cleanup."""
+    """Handle termination signals to ensure cleanup.
+
+    Only the original main process performs report cleanup. Forked children
+    (e.g. garak internals) inherit this handler via fork(), but must not
+    execute parent-only cleanup (notify_report_stopped, heartbeat/journal
+    stop) because that corrupts the parent's lifecycle state.
+    """
+    my_pid = os.getpid()
+    if my_pid != _main_pid:
+        # Child process — hard exit without unwinding into parent cleanup frames
+        logger.warning(
+            f"Signal {signum} in child process (pid={my_pid}, parent={_main_pid}). "
+            f"Skipping parent cleanup, exiting immediately."
+        )
+        os._exit(1)
+
+    logger.info(
+        f"Signal {signum} in main process (pid={my_pid}). Running cleanup..."
+    )
     print(f"\nReceived signal {signum}, cleaning up...", file=sys.stderr)
     if current_journal_sync:
         current_journal_sync.stop()  # Final sync before exit

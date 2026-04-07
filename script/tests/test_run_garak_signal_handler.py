@@ -102,9 +102,8 @@ class TestParentSignalHandler(unittest.TestCase):
 class TestChildSignalHandlerSafety(unittest.TestCase):
     """Forked child processes must NOT run parent cleanup.
 
-    These tests assert the DESIRED (correct) behavior. They FAIL against
-    the current code because signal_handler unconditionally performs cleanup
-    regardless of which process is executing it.
+    The signal_handler checks _main_pid and calls os._exit(1) in children,
+    preventing inherited handlers from corrupting parent lifecycle state.
     """
 
     def setUp(self):
