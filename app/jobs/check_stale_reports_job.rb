@@ -43,14 +43,16 @@ class CheckStaleReportsJob < ApplicationJob
   private
 
   # Detect running reports with stale heartbeat (process crashed/hung).
-  # Only checks reports that have actually sent at least one heartbeat.
-  # Reports with nil heartbeat are handled by check_never_started_running_reports.
+  # Only checks reports that have actually sent at least one heartbeat and
+  # still have a PID set (active process owner). Reports with nil PID are
+  # handled by check_orphaned_running_reports instead.
   #
   # Marks as 'interrupted' for automatic retry if under MAX_INTERRUPT_RETRIES,
   # otherwise marks as permanently 'failed'.
   def check_stale_running_reports
     stale_reports = Report.running
                           .where.not(heartbeat_at: nil)
+                          .where.not(pid: nil)
                           .where("heartbeat_at < ?", HEARTBEAT_TIMEOUT.ago)
 
     stale_reports.find_each do |report|

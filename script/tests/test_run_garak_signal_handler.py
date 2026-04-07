@@ -118,10 +118,8 @@ class TestChildSignalHandlerSafety(unittest.TestCase):
     def test_forked_child_does_not_call_notify_report_stopped(self):
         """A forked child receiving SIGTERM must not clear the parent PID.
 
-        Current behavior (bug): the child inherits signal_handler and calls
-        notify_report_stopped, which clears PID in the database.
-
-        Desired behavior: the child should exit immediately without cleanup.
+        The child inherits signal_handler via fork() but the _main_pid guard
+        detects the PID mismatch and calls os._exit(1) without cleanup.
         """
         fd, marker_file = tempfile.mkstemp(prefix="garak_child_cleanup_")
         os.close(fd)
@@ -178,8 +176,6 @@ class TestChildSignalHandlerSafety(unittest.TestCase):
 
         mock_hb = MagicMock()
         # Track stop() calls via a marker file (mock state doesn't cross fork)
-        original_stop = mock_hb.stop
-
         def tracking_hb_stop():
             with open(marker_file, "w") as f:
                 f.write(f"hb_stopped_by_pid_{os.getpid()}")

@@ -35,6 +35,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
         target: target,
         scan: scan,
         status: :running,
+        pid: 12345,
         heartbeat_at: 5.minutes.ago, # Stale heartbeat
         retry_count: 0,
         logs: "[2025-01-01 10:00:00] Scan started\n[2025-01-01 10:01:00] Processing probes..."
@@ -133,6 +134,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
         target: target,
         scan: scan,
         status: :running,
+        pid: 12345,
         heartbeat_at: 5.minutes.ago,
         retry_count: CheckStaleReportsJob::MAX_INTERRUPT_RETRIES, # 3
         logs: "Previous retry attempts..."
@@ -261,6 +263,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
           target: target,
           scan: scan,
           status: :running,
+          pid: 12345 + i,
           heartbeat_at: (5 + i).minutes.ago,
           retry_count: 0
         )
@@ -293,6 +296,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
         target: target,
         scan: scan,
         status: :running,
+        pid: 12345,
         heartbeat_at: 5.minutes.ago,
         retry_count: 0,
         logs: "[2025-01-01 10:00:00] Original scan log"
@@ -311,7 +315,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
       expect(report.logs).to include("Auto-retry 1:")
 
       # Simulate second run and interruption
-      report.update!(status: :running, heartbeat_at: 5.minutes.ago)
+      report.update!(status: :running, pid: 12346, heartbeat_at: 5.minutes.ago)
       CheckStaleReportsJob.new.perform
       report.reload
 

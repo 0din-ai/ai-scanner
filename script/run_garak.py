@@ -154,13 +154,13 @@ def notify_report_ready_from_synced(report_uuid):
 
 
 def notify_report_stopped(report_uuid):
-    """Clear PID from report in database."""
+    """Clear PID from report in database (only if stored PID matches caller)."""
     try:
         result = db_notify_stopped(report_uuid)
         if result:
             print(f"Report {report_uuid} PID cleared")
         else:
-            print(f"Warning: Failed to clear PID for report {report_uuid}", file=sys.stderr)
+            print(f"Report {report_uuid} PID not cleared (stored PID does not match this process)", file=sys.stderr)
         return result
     except Exception as e:
         print(f"Error notifying report stopped: {e}", file=sys.stderr)

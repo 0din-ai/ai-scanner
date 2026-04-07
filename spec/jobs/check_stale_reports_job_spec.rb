@@ -16,7 +16,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
     describe "stale running reports" do
       it "marks report as interrupted when heartbeat is stale (first occurrence)" do
         stale_time = 3.minutes.ago
-        report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, retry_count: 0)
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, retry_count: 0)
 
         described_class.new.perform
 
@@ -28,7 +28,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
       it "marks report as failed after max interrupt retries" do
         stale_time = 3.minutes.ago
-        report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, retry_count: 3)
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, retry_count: 3)
 
         described_class.new.perform
 
@@ -39,7 +39,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
       it "does not affect reports with recent heartbeat" do
         recent_time = 30.seconds.ago
-        report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: recent_time)
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: recent_time)
 
         described_class.new.perform
 
@@ -72,7 +72,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
       it "appends interruption reason to existing logs" do
         stale_time = 3.minutes.ago
-        report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, logs: "Previous log entry", retry_count: 0)
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, logs: "Previous log entry", retry_count: 0)
 
         described_class.new.perform
 
@@ -85,7 +85,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
       it "handles empty logs gracefully" do
         stale_time = 3.minutes.ago
-        report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, logs: nil, retry_count: 0)
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, logs: nil, retry_count: 0)
 
         described_class.new.perform
 
@@ -97,7 +97,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
       it "skips report if status changed during processing" do
         stale_time = 3.minutes.ago
-        report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time)
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time)
 
         # Simulate status change after query but before update
         allow_any_instance_of(Report).to receive(:reload) do |r|
@@ -314,8 +314,8 @@ RSpec.describe CheckStaleReportsJob, type: :job do
     describe "multiple reports" do
       it "processes multiple stale reports as interrupted" do
         stale_time = 3.minutes.ago
-        report1 = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, retry_count: 0)
-        report2 = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, retry_count: 0)
+        report1 = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, retry_count: 0)
+        report2 = create(:report, target: target, scan: scan, status: :running, pid: 12346, heartbeat_at: stale_time, retry_count: 0)
 
         described_class.new.perform
 
@@ -325,7 +325,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
       it "handles mix of stale running and stuck starting" do
         stale_time = 3.minutes.ago
-        running_report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, retry_count: 0)
+        running_report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, retry_count: 0)
         starting_report = create(:report, target: target, scan: scan, status: :starting, retry_count: 0, updated_at: stale_time)
 
         described_class.new.perform
@@ -336,8 +336,8 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
       it "fails reports that exceed max retries while interrupting others" do
         stale_time = 3.minutes.ago
-        fresh_report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, retry_count: 0)
-        maxed_report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: stale_time, retry_count: 3)
+        fresh_report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, retry_count: 0)
+        maxed_report = create(:report, target: target, scan: scan, status: :running, pid: 12346, heartbeat_at: stale_time, retry_count: 3)
 
         described_class.new.perform
 

@@ -20,6 +20,7 @@ RSpec.describe "Interrupted Reports Lifecycle", type: :integration do
         target: target,
         scan: scan,
         status: :running,
+        pid: 12345,
         heartbeat_at: 5.minutes.ago,
         retry_count: 0,
         logs: "Initial log"
@@ -97,6 +98,7 @@ RSpec.describe "Interrupted Reports Lifecycle", type: :integration do
         target: target,
         scan: scan,
         status: :running,
+        pid: 12345,
         heartbeat_at: 5.minutes.ago,
         retry_count: 3, # MAX_INTERRUPT_RETRIES
         logs: "Previous logs"
@@ -114,6 +116,7 @@ RSpec.describe "Interrupted Reports Lifecycle", type: :integration do
         target: target,
         scan: scan,
         status: :running,
+        pid: 12345,
         heartbeat_at: 5.minutes.ago,
         retry_count: 2, # Under max
         logs: "Previous logs"
