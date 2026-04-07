@@ -1,10 +1,12 @@
 # Detects crashed/stuck scans via heartbeat timeout detection.
 # Replaces PID-based health checking for multi-pod deployment support.
 #
-# This job checks three conditions:
+# This job checks four conditions:
 # 1. Running reports with stale heartbeat_at (process crashed/hung)
 # 2. Running reports that never sent a heartbeat (process never started)
 # 3. Reports stuck in 'starting' status (process failed to launch)
+# 4. Orphaned running reports with pid cleared but heartbeat present
+#    (process died after PID-match guard cleared pid without status update)
 #
 # Interrupted scans (e.g., pod teardown) are marked as 'interrupted' and
 # automatically retried by RetryInterruptedReportsJob. Only after exceeding
@@ -34,6 +36,7 @@ class CheckStaleReportsJob < ApplicationJob
   def perform
     check_stale_running_reports
     check_never_started_running_reports
+    check_orphaned_running_reports
     check_stuck_starting_reports
   end
 
@@ -108,6 +111,46 @@ class CheckStaleReportsJob < ApplicationJob
         Rails.logger.error(
           "[CheckStaleReports] Report #{report.id} (#{report.uuid}) is running " \
           "but never sent heartbeat (age: #{age}s) - " \
+          "exceeded #{MAX_INTERRUPT_RETRIES} retries, marking as failed"
+        )
+        mark_report_failed(report, "#{reason} (after #{MAX_INTERRUPT_RETRIES} retry attempts)")
+      end
+    end
+  end
+
+  # Detect orphaned running reports where the PID was cleared but the report
+  # was never transitioned out of 'running'. This happens when a child process
+  # triggers notify_report_stopped but the PID-match guard prevents the status
+  # update (only clears pid), leaving the report running with no owning process.
+  #
+  # Conditions: running + pid=nil + heartbeat present + updated_at stale.
+  # The heartbeat distinguishes from never-started (handled separately).
+  # The updated_at check provides a safety window against race conditions.
+  def check_orphaned_running_reports
+    orphaned_reports = Report.running
+                             .where(pid: nil)
+                             .where.not(heartbeat_at: nil)
+                             .where("updated_at < ?", HEARTBEAT_TIMEOUT.ago)
+
+    orphaned_reports.find_each do |report|
+      report.reload
+
+      next unless report.running?
+      next unless report.pid.nil?
+      next if report.heartbeat_at.nil?
+
+      reason = "Scan process orphaned (running with no owning process — pid cleared but status not updated)"
+
+      if report.retry_count < MAX_INTERRUPT_RETRIES
+        Rails.logger.warn(
+          "[CheckStaleReports] Report #{report.id} (#{report.uuid}) is orphaned " \
+          "(running, pid=nil, heartbeat present) - marking as interrupted"
+        )
+        mark_report_interrupted(report, reason)
+      else
+        Rails.logger.error(
+          "[CheckStaleReports] Report #{report.id} (#{report.uuid}) is orphaned " \
+          "(running, pid=nil, heartbeat present) - " \
           "exceeded #{MAX_INTERRUPT_RETRIES} retries, marking as failed"
         )
         mark_report_failed(report, "#{reason} (after #{MAX_INTERRUPT_RETRIES} retry attempts)")
