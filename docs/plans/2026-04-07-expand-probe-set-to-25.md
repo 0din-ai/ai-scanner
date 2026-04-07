@@ -148,8 +148,8 @@ CM probes to add:
 
 ### Task 4: Update CHANGELOG and verify
 
-- [ ] Update CHANGELOG.md to note the probe count increase from 6 to 25
-- [ ] Run final Python syntax check on the full plugin file
-- [ ] Run final JSON validation — expect exactly 25 probes in `config/probes/0din_probes.json`
-- [ ] Confirm no private fields (variant_count, published, tag, goal, variants) leaked into the JSON: `python3 -c "import json; d=json.load(open('config/probes/0din_probes.json')); bad=[k for p in d['probes'].values() for k in p if k in ['variant_count','published','tag','goal','variants']]; print('Private fields found:', bad or 'none')"`
-- [ ] Verify existing 6 probes are untouched (check their GUIDs match original)
+- [x] Update CHANGELOG.md to note the probe count increase from 6 to 25
+- [x] Run final Python syntax check on the full plugin file
+- [x] Run final JSON validation — expect exactly 25 probes in `config/probes/0din_probes.json`
+- [x] Confirm no private fields (variant_count, published, tag, goal, variants) leaked into the JSON: `python3 -c "import json; d=json.load(open('config/probes/0din_probes.json')); bad=[k for p in d['probes'].values() for k in p if k in ['variant_count','published','tag','goal','variants']]; print('Private fields found:', bad or 'none')"`
+- [x] Verify existing 6 probes are untouched (check their GUIDs match original)
