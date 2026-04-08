@@ -125,8 +125,6 @@ def extract_probe_metadata(probe_class, module_name):
         'summary': docstring or goal or f"Garak {class_name} probe",
         'description': description,
         'goal': goal,
-        'release_date': str(date.today()),
-        'modified_date': str(date.today()),
         'techniques': extract_techniques(tags),
         'social_impact_score': TIER_TO_SCORE.get(get_tier_name(tier), 2),
         'detector': primary_detector,
@@ -177,8 +175,48 @@ def extract_community_probes():
         'probes': probes,
         'count': len(probes),
         'errors': errors if errors else None,
-        'extracted_at': str(date.today()),
     }
+
+
+def load_existing(output_path):
+    """Load existing probes JSON, returning {} on missing/corrupt file."""
+    try:
+        with open(output_path, 'r') as f:
+            data = json.load(f)
+        if isinstance(data, dict) and isinstance(data.get('probes'), dict):
+            return data
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    return {}
+
+
+# Fields that carry semantic probe content (everything except dates)
+_DATE_KEYS = {'release_date', 'modified_date'}
+
+
+def merge_dates(new_probes, existing_probes):
+    """Assign release_date and modified_date per probe based on content diff."""
+    today = str(date.today())
+
+    for name, probe in new_probes.items():
+        old = existing_probes.get(name)
+        if old is None:
+            # New probe — both dates are today
+            probe['release_date'] = today
+            probe['modified_date'] = today
+        else:
+            # Compare semantic content (everything except date fields)
+            old_content = {k: v for k, v in old.items() if k not in _DATE_KEYS}
+            new_content = {k: v for k, v in probe.items() if k not in _DATE_KEYS}
+
+            if old_content == new_content:
+                # Unchanged — preserve both dates
+                probe['release_date'] = old.get('release_date', today)
+                probe['modified_date'] = old.get('modified_date', today)
+            else:
+                # Changed — preserve release_date, bump modified_date
+                probe['release_date'] = old.get('release_date', today)
+                probe['modified_date'] = today
 
 
 def main():
@@ -204,10 +242,23 @@ def main():
         for err in result['errors']:
             print(f"  - {err}", file=sys.stderr)
 
-    # Write output
-    with open(output_path, 'w') as f:
-        json.dump(result, f, indent=2)
+    # Merge dates from existing file to keep output deterministic
+    existing = load_existing(output_path)
+    merge_dates(result['probes'], existing.get('probes', {}))
 
+    # Serialize with sorted keys for stable ordering
+    new_json = json.dumps(result, indent=2, sort_keys=True) + "\n"
+
+    # Skip rewrite if byte-identical
+    try:
+        existing_bytes = output_path.read_text()
+        if existing_bytes == new_json:
+            print(f"No changes — {output_path} is up to date ({result['count']} probes)")
+            return
+    except OSError:
+        pass
+
+    output_path.write_text(new_json)
     print(f"Extracted {result['count']} community probes to {output_path}")
 
 
