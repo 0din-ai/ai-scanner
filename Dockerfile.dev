@@ -85,6 +85,14 @@ RUN mkdir -p /opt/playwright-browsers && \
 
 COPY . .
 
+# Install OSS-local 0DIN garak plugin files into garak runtime so scan execution
+# can import the same probes/detectors that SyncProbesJob reads from repo JSON.
+RUN GARAK_SITE=$(/opt/venv/bin/python -c "import site; print([p for p in site.getsitepackages() if 'site-packages' in p][0])") && \
+    mkdir -p "$GARAK_SITE/garak/probes" "$GARAK_SITE/garak/detectors" && \
+    cp script/garak_plugins/probes/0din.py "$GARAK_SITE/garak/probes/0din.py" && \
+    cp script/garak_plugins/probes/0din_variants.py "$GARAK_SITE/garak/probes/0din_variants.py" && \
+    cp script/garak_plugins/detectors/0din.py "$GARAK_SITE/garak/detectors/0din.py"
+
 RUN chmod +x StartApplication.sh
 
 # Run and own only the runtime files as a non-root user for security

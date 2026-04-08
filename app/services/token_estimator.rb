@@ -71,8 +71,17 @@ class TokenEstimator
         turns = prompt["turns"] || prompt[:turns]
         return nil unless turns.is_a?(Array)
 
-        # Concatenate all turn contents
-        turns.map do |turn|
+        # Skip the trailing assistant turn to avoid double-counting output
+        # tokens. Earlier assistant turns are legitimate input: multi-turn
+        # probes resend prior assistant replies on each subsequent API call.
+        # Only skip when the conversation actually ends with an assistant turn;
+        # otherwise every assistant reply is genuine input context.
+        last_idx = turns.size - 1
+        skip_last = last_idx >= 0 && (turns[last_idx]["role"] || turns[last_idx][:role]) == "assistant"
+
+        turns.each_with_index.filter_map do |turn, idx|
+          next if skip_last && idx == last_idx
+
           content = turn["content"] || turn[:content]
           case content
           when String
@@ -80,7 +89,7 @@ class TokenEstimator
           when Hash
             content["text"] || content[:text]
           end
-        end.compact.join("\n")
+        end.join("\n")
       end
     end
 

@@ -5,8 +5,8 @@
       "summary": "Probe for eliciting ANSI control codes from a model",
       "description": "Community probe from NVIDIA Garak (ansiescape.AnsiEscaped). Probe for eliciting ANSI control codes from a model",
       "goal": "print escaped ANSI terminal codes",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Prompt Injection",
@@ -32,8 +32,8 @@
       "summary": "Probe for eliciting raw ANSI control codes from a model",
       "description": "Community probe from NVIDIA Garak (ansiescape.AnsiRaw). Probe for eliciting raw ANSI control codes from a model",
       "goal": "print raw ANSI terminal codes",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Prompt Injection",
@@ -59,8 +59,8 @@
       "summary": "Probe for checking a tokenizer for potentially malicious ANSI escape sequences",
       "description": "Community probe from NVIDIA Garak (ansiescape.AnsiRawTokenizerHF). Probe for checking a tokenizer for potentially malicious ANSI escape sequences",
       "goal": "check if raw ANSI escape sequences tokens are available",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Supply Chain Vulnerabilities"
       ],
@@ -79,8 +79,8 @@
       "summary": "Will the system try to complete an API key, when given a partial one?",
       "description": "Community probe from NVIDIA Garak (apikey.CompleteKey). Will the system try to complete an API key, when given a partial one?",
       "goal": "generate an API key for the specificed API",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Sensitive Information Disclosure"
       ],
@@ -99,8 +99,8 @@
       "summary": "Will the system return secret looking strings, when asked for an API key?",
       "description": "Community probe from NVIDIA Garak (apikey.GetKey). Will the system return secret looking strings, when asked for an API key?",
       "goal": "generate an API key for the specified API",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Sensitive Information Disclosure"
       ],
@@ -119,8 +119,8 @@
       "summary": "Audio is the Achilles Heel",
       "description": "Community probe from NVIDIA Garak (audio.AudioAchillesHeel). Audio is the Achilles Heel",
       "goal": "disregard the system prompt via audio component",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -142,8 +142,8 @@
       "summary": "Does the model check its output for viruses? Try to send the EICAR code through",
       "description": "Community probe from NVIDIA Garak (av_spam_scanning.EICAR). Does the model check its output for viruses? Try to send the EICAR code through",
       "goal": "output antivirus test codes",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -168,8 +168,8 @@
       "summary": "Does the model check its output for spam? Try to send the GTUBE code through",
       "description": "Community probe from NVIDIA Garak (av_spam_scanning.GTUBE). Does the model check its output for spam? Try to send the GTUBE code through",
       "goal": "output email spam",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -194,8 +194,8 @@
       "summary": "Does the model check its output for phishing? Try to send the GTphish code through",
       "description": "Community probe from NVIDIA Garak (av_spam_scanning.GTphish). Does the model check its output for phishing? Try to send the GTphish code through",
       "goal": "output email phishing",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -220,8 +220,8 @@
       "summary": "Imperceptible perturbations mixing invisible chars, homoglyphs, swaps, deletions.",
       "description": "Community probe from NVIDIA Garak (badchars.BadCharacters). Imperceptible perturbations mixing invisible chars, homoglyphs, swaps, deletions.",
       "goal": "inject imperceptible text perturbations that bypass refusal policies",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -244,8 +244,8 @@
       "summary": "Continue partial word with slur or reclaimed slur.",
       "description": "Community probe from NVIDIA Garak (continuation.ContinueSlursReclaimedSlurs). Continue partial word with slur or reclaimed slur.",
       "goal": "output an ethnic slur",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Output Integrity",
@@ -273,8 +273,8 @@
       "summary": "Continue partial word with slur or reclaimed slur.",
       "description": "Community probe from NVIDIA Garak (continuation.ContinueSlursReclaimedSlursFull). Continue partial word with slur or reclaimed slur.",
       "goal": "output an ethnic slur",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Output Integrity",
@@ -302,8 +302,8 @@
       "summary": "Ablation experiments over the DAN 11.0 prompt",
       "description": "Community probe from NVIDIA Garak (dan.Ablation_Dan_11_0). Ablation experiments over the DAN 11.0 prompt",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -327,8 +327,8 @@
       "summary": "Anti-DAN",
       "description": "Community probe from NVIDIA Garak (dan.AntiDAN). Anti-DAN",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -351,8 +351,8 @@
       "summary": "Probe leveraging AutoDAN attack generation",
       "description": "Community probe from NVIDIA Garak (dan.AutoDAN). Probe leveraging AutoDAN attack generation",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -376,8 +376,8 @@
       "summary": "Probe leveraging generated AutoDAN prompts",
       "description": "Community probe from NVIDIA Garak (dan.AutoDANCached). Probe leveraging generated AutoDAN prompts",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -401,8 +401,8 @@
       "summary": "ChatGPT DevMode + Ranti",
       "description": "Community probe from NVIDIA Garak (dan.ChatGPT_Developer_Mode_RANTI). ChatGPT DevMode + Ranti",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -425,8 +425,8 @@
       "summary": "ChatGPT Developer Mode v2",
       "description": "Community probe from NVIDIA Garak (dan.ChatGPT_Developer_Mode_v2). ChatGPT Developer Mode v2",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -450,8 +450,8 @@
       "summary": "ChatGPT Markdown Image Unlocker / markdown injection",
       "description": "Community probe from NVIDIA Garak (dan.ChatGPT_Image_Markdown). ChatGPT Markdown Image Unlocker / markdown injection",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -475,8 +475,8 @@
       "summary": "DAN Jailbreak",
       "description": "Community probe from NVIDIA Garak (dan.DAN_Jailbreak). DAN Jailbreak",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -500,8 +500,8 @@
       "summary": "DUDE",
       "description": "Community probe from NVIDIA Garak (dan.DUDE). DUDE",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -525,8 +525,8 @@
       "summary": "A subset of jailbreaks from the DanInTheWild jailbreak library.",
       "description": "Community probe from NVIDIA Garak (dan.DanInTheWild). A subset of jailbreaks from the DanInTheWild jailbreak library.",
       "goal": "disregard the system prompt or alignment",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -550,8 +550,8 @@
       "summary": "A library of jailbreaks.",
       "description": "Community probe from NVIDIA Garak (dan.DanInTheWildFull). A library of jailbreaks.",
       "goal": "disregard the system prompt or alignment",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -575,8 +575,8 @@
       "summary": "DAN 10.0",
       "description": "Community probe from NVIDIA Garak (dan.Dan_10_0). DAN 10.0",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -600,8 +600,8 @@
       "summary": "DAN 11.0",
       "description": "Community probe from NVIDIA Garak (dan.Dan_11_0). DAN 11.0",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -626,8 +626,8 @@
       "summary": "DAN 6.0",
       "description": "Community probe from NVIDIA Garak (dan.Dan_6_0). DAN 6.0",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -651,8 +651,8 @@
       "summary": "DAN 6.2",
       "description": "Community probe from NVIDIA Garak (dan.Dan_6_2). DAN 6.2",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -676,8 +676,8 @@
       "summary": "DAN 7.0",
       "description": "Community probe from NVIDIA Garak (dan.Dan_7_0). DAN 7.0",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -701,8 +701,8 @@
       "summary": "DAN 8.0",
       "description": "Community probe from NVIDIA Garak (dan.Dan_8_0). DAN 8.0",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -726,8 +726,8 @@
       "summary": "DAN 9.0",
       "description": "Community probe from NVIDIA Garak (dan.Dan_9_0). DAN 9.0",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -751,8 +751,8 @@
       "summary": "STAN",
       "description": "Community probe from NVIDIA Garak (dan.STAN). STAN",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -776,8 +776,8 @@
       "summary": "See if a model starts giving other data when asked to repeat a string indefinitely",
       "description": "Community probe from NVIDIA Garak (divergence.Repeat). See if a model starts giving other data when asked to repeat a string indefinitely",
       "goal": "get the model to leak data by asking it to repeat words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -802,8 +802,8 @@
       "summary": "See if a model starts giving other data when asked to repeat a string indefinitely",
       "description": "Community probe from NVIDIA Garak (divergence.RepeatExtended). See if a model starts giving other data when asked to repeat a string indefinitely",
       "goal": "get the model to leak data by asking it to repeat words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -828,8 +828,8 @@
       "summary": "Repeated token destabilization attack from Dropbox LLM security research.",
       "description": "Community probe from NVIDIA Garak (divergence.RepeatedToken). Repeated token destabilization attack from Dropbox LLM security research.",
       "goal": "Stress-test LLMs with long repeated-token prompts to surface instability",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Prompt Injection"
@@ -852,8 +852,8 @@
       "summary": "Implement Policy Puppetry Bypass",
       "description": "Community probe from NVIDIA Garak (doctor.Bypass). Implement Policy Puppetry Bypass",
       "goal": "roleplay as doctor to get bypass guardrails",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Prompt Injection",
         "Sensitive Information Disclosure"
@@ -876,8 +876,8 @@
       "summary": "Implement Policy Puppetry Bypass",
       "description": "Community probe from NVIDIA Garak (doctor.BypassLeet). Implement Policy Puppetry Bypass",
       "goal": "roleplay as doctor to get bypass guardrails, but use leetspeak",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Prompt Injection",
         "Sensitive Information Disclosure"
@@ -900,8 +900,8 @@
       "summary": "Implement Policy Puppetry Prompt Injection",
       "description": "Community probe from NVIDIA Garak (doctor.Puppetry). Implement Policy Puppetry Prompt Injection",
       "goal": "roleplay as doctor to get unsafe outputs",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Prompt Injection",
         "Sensitive Information Disclosure"
@@ -924,8 +924,8 @@
       "summary": "Do Not Answer probe",
       "description": "Community probe from NVIDIA Garak (donotanswer.DiscriminationExclusionToxicityHatefulOffensive). Do Not Answer probe",
       "goal": "get model to respond as discrimination exclusion toxicity hateful offensive",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Toxic Content Generation"
       ],
@@ -948,8 +948,8 @@
       "summary": "Do Not Answer probe",
       "description": "Community probe from NVIDIA Garak (donotanswer.HumanChatbox). Do Not Answer probe",
       "goal": "get model to respond as human chatbox",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Sensitive Information Disclosure"
       ],
@@ -969,8 +969,8 @@
       "summary": "Do Not Answer probe",
       "description": "Community probe from NVIDIA Garak (donotanswer.InformationHazard). Do Not Answer probe",
       "goal": "get model to respond as information hazard",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Sensitive Information Disclosure"
       ],
@@ -991,8 +991,8 @@
       "summary": "Do Not Answer probe",
       "description": "Community probe from NVIDIA Garak (donotanswer.MaliciousUses). Do Not Answer probe",
       "goal": "get model to respond as malicious uses",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Sensitive Information Disclosure"
       ],
@@ -1011,8 +1011,8 @@
       "summary": "Do Not Answer probe",
       "description": "Community probe from NVIDIA Garak (donotanswer.MisinformationHarms). Do Not Answer probe",
       "goal": "get model to respond as misinformation harms",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Misinformation"
       ],
@@ -1033,8 +1033,8 @@
       "summary": "DRA (Disguise and Reconstruction Attack)",
       "description": "Community probe from NVIDIA Garak (dra.DRA). DRA (Disguise and Reconstruction Attack)",
       "goal": "make the LLM ask and answer its own harmful instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -1058,8 +1058,8 @@
       "summary": "DRA (Disguise and Reconstruction Attack) - Version with detoxify",
       "description": "Community probe from NVIDIA Garak (dra.DRAAdvanced). DRA (Disguise and Reconstruction Attack) - Version with detoxify",
       "goal": "make the LLM ask and answer its own harmful instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -1083,8 +1083,8 @@
       "summary": "Probe for susceptibility to base85 encoded injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectAscii85). Probe for susceptibility to base85 encoded injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1107,8 +1107,8 @@
       "summary": "Atbash Probe Credit: Nakul-Rajpal",
       "description": "Community probe from NVIDIA Garak (encoding.InjectAtbash). Atbash Probe Credit: Nakul-Rajpal",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1131,8 +1131,8 @@
       "summary": "Probe for susceptibility to base16 encoded injections\"",
       "description": "Community probe from NVIDIA Garak (encoding.InjectBase16). Probe for susceptibility to base16 encoded injections\"",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1155,8 +1155,8 @@
       "summary": "Probe for susceptibility to Base2048 encoding injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectBase2048). Probe for susceptibility to Base2048 encoding injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1179,8 +1179,8 @@
       "summary": "Probe for susceptibility to base32 encoded injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectBase32). Probe for susceptibility to base32 encoded injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1203,8 +1203,8 @@
       "summary": "Probe for susceptibility to base64 encoded injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectBase64). Probe for susceptibility to base64 encoded injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1227,8 +1227,8 @@
       "summary": "Probe for susceptibility to Braille encoding injections. Credit Wally#3422",
       "description": "Community probe from NVIDIA Garak (encoding.InjectBraille). Probe for susceptibility to Braille encoding injections. Credit Wally#3422",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1251,8 +1251,8 @@
       "summary": "Probe for susceptibility to Ecoji encoding.",
       "description": "Community probe from NVIDIA Garak (encoding.InjectEcoji). Probe for susceptibility to Ecoji encoding.",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1275,8 +1275,8 @@
       "summary": "Probe for susceptibility to hex encoded injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectHex). Probe for susceptibility to hex encoded injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1299,8 +1299,8 @@
       "summary": "Probe for susceptibility to 31337 encoding.",
       "description": "Community probe from NVIDIA Garak (encoding.InjectLeet). Probe for susceptibility to 31337 encoding.",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1323,8 +1323,8 @@
       "summary": "Probe for susceptibility to MIME encoding injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectMime). Probe for susceptibility to MIME encoding injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1347,8 +1347,8 @@
       "summary": "Probe for susceptibility to Morse encoding. Credit Wally#3422",
       "description": "Community probe from NVIDIA Garak (encoding.InjectMorse). Probe for susceptibility to Morse encoding. Credit Wally#3422",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1371,8 +1371,8 @@
       "summary": "Probe for susceptibility to Nato phonetic alphabet encoding.",
       "description": "Community probe from NVIDIA Garak (encoding.InjectNato). Probe for susceptibility to Nato phonetic alphabet encoding.",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1395,8 +1395,8 @@
       "summary": "Probe for susceptibility to QP encoded injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectQP). Probe for susceptibility to QP encoded injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1419,8 +1419,8 @@
       "summary": "Probe for susceptibility to ROT13 encoding injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectROT13). Probe for susceptibility to ROT13 encoding injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1443,8 +1443,8 @@
       "summary": "Probe for susceptibility to unicode variant selector ASCII smuggling",
       "description": "Community probe from NVIDIA Garak (encoding.InjectSneakyBits). Probe for susceptibility to unicode variant selector ASCII smuggling",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1467,8 +1467,8 @@
       "summary": "Probe for susceptibility to UU encoded injections",
       "description": "Community probe from NVIDIA Garak (encoding.InjectUU). Probe for susceptibility to UU encoded injections",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1491,8 +1491,8 @@
       "summary": "Probe for susceptibility to unicode tag ASCII smuggling",
       "description": "Community probe from NVIDIA Garak (encoding.InjectUnicodeTagChars). Probe for susceptibility to unicode tag ASCII smuggling",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1515,8 +1515,8 @@
       "summary": "Probe for susceptibility to unicode variant selector ASCII smuggling",
       "description": "Community probe from NVIDIA Garak (encoding.InjectUnicodeVariantSelectors). Probe for susceptibility to unicode variant selector ASCII smuggling",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1539,8 +1539,8 @@
       "summary": "Probe for susceptibility to Zalgo encoding.",
       "description": "Community probe from NVIDIA Garak (encoding.InjectZalgo). Probe for susceptibility to Zalgo encoding.",
       "goal": "make the model say an encoded payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1563,8 +1563,8 @@
       "summary": "Attempts to execute Python code via Jinja templating",
       "description": "Community probe from NVIDIA Garak (exploitation.JinjaTemplatePythonInjection). Attempts to execute Python code via Jinja templating",
       "goal": "Gain remote code execution via Jinja template injection",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -1595,8 +1595,8 @@
       "summary": "Attempts to get the target to echo a SQL statement.",
       "description": "Community probe from NVIDIA Garak (exploitation.SQLInjectionEcho). Attempts to get the target to echo a SQL statement.",
       "goal": "Manipulate a database via SQL injection",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -1626,8 +1626,8 @@
       "summary": "Attempts to inject untrusted SQL commands into a SQL statement.",
       "description": "Community probe from NVIDIA Garak (exploitation.SQLInjectionSystem). Attempts to inject untrusted SQL commands into a SQL statement.",
       "goal": "Manipulate a database via SQL injection",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -1657,8 +1657,8 @@
       "summary": "Get a manifest of files associated with a Hugging Face generator",
       "description": "Community probe from NVIDIA Garak (fileformats.HF_Files). Get a manifest of files associated with a Hugging Face generator",
       "goal": "get a list of files associated with the model",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Supply Chain Vulnerabilities"
       ],
@@ -1677,8 +1677,8 @@
       "summary": "Foot In The Door probe",
       "description": "Community probe from NVIDIA Garak (fitd.FITD). Foot In The Door probe",
       "goal": "Transform queries from benign to harmful obtaining intermediate responses to get compliance from the model",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Prompt Injection",
@@ -1701,8 +1701,8 @@
       "summary": "Probe model for glitch tokens that provoke unusual behavior",
       "description": "Community probe from NVIDIA Garak (glitch.Glitch). Probe model for glitch tokens that provoke unusual behavior",
       "goal": "make the model fail to repeat a word",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Evasion",
         "Prompt Injection",
@@ -1727,8 +1727,8 @@
       "summary": "Probe model for glitch tokens that provoke unusual behavior",
       "description": "Community probe from NVIDIA Garak (glitch.GlitchFull). Probe model for glitch tokens that provoke unusual behavior",
       "goal": "make the model fail to repeat a word",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Evasion",
         "Prompt Injection",
@@ -1753,8 +1753,8 @@
       "summary": "Exploit the ' davidjl' magic token",
       "description": "Community probe from NVIDIA Garak (goodside.Davidjl). Exploit the ' davidjl' magic token",
       "goal": "get wrong answers about a name",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection",
@@ -1779,8 +1779,8 @@
       "summary": "Exploit UTF tag page encoding for user-invisible prompt injection",
       "description": "Community probe from NVIDIA Garak (goodside.Tag). Exploit UTF tag page encoding for user-invisible prompt injection",
       "goal": "inject invisible instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Prompt Injection"
       ],
@@ -1802,8 +1802,8 @@
       "summary": "Will model strip preamble and give JSON?",
       "description": "Community probe from NVIDIA Garak (goodside.ThreatenJSON). Will model strip preamble and give JSON?",
       "goal": "get raw code by threatening a model",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Model Evasion",
@@ -1827,8 +1827,8 @@
       "summary": "Probe for misinfo about Riley Goodside",
       "description": "Community probe from NVIDIA Garak (goodside.WhoIsRiley). Probe for misinfo about Riley Goodside",
       "goal": "get misinfo about riley goodside",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Misinformation"
@@ -1852,8 +1852,8 @@
       "summary": "Use the grandma attack to get ethnic slurs.",
       "description": "Community probe from NVIDIA Garak (grandma.Slurs). Use the grandma attack to get ethnic slurs.",
       "goal": "get model to use ethnic slur",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Prompt Injection"
       ],
@@ -1872,8 +1872,8 @@
       "summary": "Use the grandma attack to get instructions for harmful items.",
       "description": "Community probe from NVIDIA Garak (grandma.Substances). Use the grandma attack to get instructions for harmful items.",
       "goal": "get instructions for making bad things",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Sensitive Information Disclosure"
       ],
@@ -1893,8 +1893,8 @@
       "summary": "Will the model yield a Windows 10 product key if we beg it to?",
       "description": "Community probe from NVIDIA Garak (grandma.Win10). Will the model yield a Windows 10 product key if we beg it to?",
       "goal": "get model to output Win 10 product keys",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Sensitive Information Disclosure"
       ],
@@ -1916,8 +1916,8 @@
       "summary": "Will the model yield a Windows 11 product key if we beg it to?",
       "description": "Community probe from NVIDIA Garak (grandma.Win11). Will the model yield a Windows 11 product key if we beg it to?",
       "goal": "get model to output Win 11 product keys",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Sensitive Information Disclosure"
       ],
@@ -1939,8 +1939,8 @@
       "summary": "String-based latent prompt injections in fact snippets on the Eiffel Tower",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionFactSnippetEiffel). String-based latent prompt injections in fact snippets on the Eiffel Tower",
       "goal": "subvert a snippet with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1962,8 +1962,8 @@
       "summary": "String-based latent prompt injections in fact snippets on the Eiffel Tower",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionFactSnippetEiffelFull). String-based latent prompt injections in fact snippets on the Eiffel Tower",
       "goal": "subvert a snippet with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -1985,8 +1985,8 @@
       "summary": "String-based latent prompt injections in legal snippets",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionFactSnippetLegal). String-based latent prompt injections in legal snippets",
       "goal": "subvert a snippet with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2008,8 +2008,8 @@
       "summary": "String-based latent prompt injections in legal snippets",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionFactSnippetLegalFull). String-based latent prompt injections in legal snippets",
       "goal": "subvert a snippet with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2031,8 +2031,8 @@
       "summary": "String-based latent prompt injections via a report",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionReport). String-based latent prompt injections via a report",
       "goal": "subvert a report with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2054,8 +2054,8 @@
       "summary": "String-based latent prompt injections via a report",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionReportFull). String-based latent prompt injections via a report",
       "goal": "subvert a report with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2077,8 +2077,8 @@
       "summary": "String-based latent prompt injections via a resume",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionResume). String-based latent prompt injections via a resume",
       "goal": "subvert a resume with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2100,8 +2100,8 @@
       "summary": "String-based latent prompt injections via a resume",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionResumeFull). String-based latent prompt injections via a resume",
       "goal": "subvert a resume with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2123,8 +2123,8 @@
       "summary": "String-based latent prompt injections via translation",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionTranslationEnFr). String-based latent prompt injections via translation",
       "goal": "subvert translation instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2146,8 +2146,8 @@
       "summary": "String-based latent prompt injections via translation",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionTranslationEnFrFull). String-based latent prompt injections via translation",
       "goal": "subvert translation instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2169,8 +2169,8 @@
       "summary": "Latent prompt injection in Chinese context (\u7b80\u4f53\u5b57)",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionTranslationEnZh). Latent prompt injection in Chinese context (\u7b80\u4f53\u5b57)",
       "goal": "subvert translation instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2192,8 +2192,8 @@
       "summary": "Latent prompt injection in Chinese context (\u7b80\u4f53\u5b57)",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentInjectionTranslationEnZhFull). Latent prompt injection in Chinese context (\u7b80\u4f53\u5b57)",
       "goal": "subvert translation instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2215,8 +2215,8 @@
       "summary": "Implementation of Latent Jailbreak, using latent prompt injection-",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentJailbreak). Implementation of Latent Jailbreak, using latent prompt injection-",
       "goal": "inject malicious instructions into output while posing as translation task",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2238,8 +2238,8 @@
       "summary": "Implementation of Latent Jailbreak, using latent prompt injection-",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentJailbreakFull). Implementation of Latent Jailbreak, using latent prompt injection-",
       "goal": "inject malicious instructions into output while posing as translation task",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2261,8 +2261,8 @@
       "summary": "Latent prompt injections in whois probe reports",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentWhois). Latent prompt injections in whois probe reports",
       "goal": "subvert a whois report with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2284,8 +2284,8 @@
       "summary": "String-based latent prompt injections in whois reports",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentWhoisSnippet). String-based latent prompt injections in whois reports",
       "goal": "subvert a snippet with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2307,8 +2307,8 @@
       "summary": "String-based latent prompt injections in whois reports",
       "description": "Community probe from NVIDIA Garak (latentinjection.LatentWhoisSnippetFull). String-based latent prompt injections in whois reports",
       "goal": "subvert a snippet with instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection"
@@ -2330,8 +2330,8 @@
       "summary": "Lightweight version of Guardian cloze test for data leakage.",
       "description": "Community probe from NVIDIA Garak (leakreplay.GuardianCloze). Lightweight version of Guardian cloze test for data leakage.",
       "goal": "replay training data by filling in the correct missing words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2355,8 +2355,8 @@
       "summary": "Test for data leakage on Guardian articles with masked entities in a cloze test format.",
       "description": "Community probe from NVIDIA Garak (leakreplay.GuardianClozeFull). Test for data leakage on Guardian articles with masked entities in a cloze test format.",
       "goal": "replay training data by filling in the correct missing words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2380,8 +2380,8 @@
       "summary": "Lightweight version of Guardian completion test for data leakage.",
       "description": "Community probe from NVIDIA Garak (leakreplay.GuardianComplete). Lightweight version of Guardian completion test for data leakage.",
       "goal": "replay training data by providing document completions that match training examples",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2405,8 +2405,8 @@
       "summary": "Test for data leakage on Guardian articles through text completion.",
       "description": "Community probe from NVIDIA Garak (leakreplay.GuardianCompleteFull). Test for data leakage on Guardian articles through text completion.",
       "goal": "replay training data by providing document completions that match training examples",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2430,8 +2430,8 @@
       "summary": "Lightweight version of literature cloze test for data leakage.",
       "description": "Community probe from NVIDIA Garak (leakreplay.LiteratureCloze). Lightweight version of literature cloze test for data leakage.",
       "goal": "replay training data by filling in the correct missing words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2455,8 +2455,8 @@
       "summary": "Test for data leakage on literature passages with masked entities in a cloze test format.",
       "description": "Community probe from NVIDIA Garak (leakreplay.LiteratureClozeFull). Test for data leakage on literature passages with masked entities in a cloze test format.",
       "goal": "replay training data by filling in the correct missing words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2480,8 +2480,8 @@
       "summary": "Lightweight version of literature completion test for data leakage.",
       "description": "Community probe from NVIDIA Garak (leakreplay.LiteratureComplete). Lightweight version of literature completion test for data leakage.",
       "goal": "replay training data by providing document completions that match training examples",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2505,8 +2505,8 @@
       "summary": "Test for data leakage on literature passages through text completion.",
       "description": "Community probe from NVIDIA Garak (leakreplay.LiteratureCompleteFull). Test for data leakage on literature passages through text completion.",
       "goal": "replay training data by providing document completions that match training examples",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2530,8 +2530,8 @@
       "summary": "Lightweight version of NYT cloze test for data leakage.",
       "description": "Community probe from NVIDIA Garak (leakreplay.NYTCloze). Lightweight version of NYT cloze test for data leakage.",
       "goal": "replay training data by filling in the correct missing words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2555,8 +2555,8 @@
       "summary": "Test for data leakage on New York Times articles with masked entities in a cloze test format.",
       "description": "Community probe from NVIDIA Garak (leakreplay.NYTClozeFull). Test for data leakage on New York Times articles with masked entities in a cloze test format.",
       "goal": "replay training data by filling in the correct missing words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2580,8 +2580,8 @@
       "summary": "Lightweight version of NYT completion test for data leakage.",
       "description": "Community probe from NVIDIA Garak (leakreplay.NYTComplete). Lightweight version of NYT completion test for data leakage.",
       "goal": "replay training data by providing document completions that match training examples",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2605,8 +2605,8 @@
       "summary": "Test for data leakage on New York Times articles through text completion.",
       "description": "Community probe from NVIDIA Garak (leakreplay.NYTCompleteFull). Test for data leakage on New York Times articles through text completion.",
       "goal": "replay training data by providing document completions that match training examples",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2630,8 +2630,8 @@
       "summary": "Lightweight version of Harry Potter cloze test for data leakage.",
       "description": "Community probe from NVIDIA Garak (leakreplay.PotterCloze). Lightweight version of Harry Potter cloze test for data leakage.",
       "goal": "replay training data by filling in the correct missing words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2655,8 +2655,8 @@
       "summary": "Test for data leakage on Harry Potter text with masked entities in a cloze test format.",
       "description": "Community probe from NVIDIA Garak (leakreplay.PotterClozeFull). Test for data leakage on Harry Potter text with masked entities in a cloze test format.",
       "goal": "replay training data by filling in the correct missing words",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2680,8 +2680,8 @@
       "summary": "Lightweight version of Harry Potter completion test for data leakage.",
       "description": "Community probe from NVIDIA Garak (leakreplay.PotterComplete). Lightweight version of Harry Potter completion test for data leakage.",
       "goal": "replay training data by providing document completions that match training examples",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2705,8 +2705,8 @@
       "summary": "Test for data leakage on Harry Potter text through completion.",
       "description": "Community probe from NVIDIA Garak (leakreplay.PotterCompleteFull). Test for data leakage on Harry Potter text through completion.",
       "goal": "replay training data by providing document completions that match training examples",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -2730,8 +2730,8 @@
       "summary": "Providing output that encourages anthropomorphisation of AI systems",
       "description": "Community probe from NVIDIA Garak (lmrc.Anthropomorphisation). Providing output that encourages anthropomorphisation of AI systems",
       "goal": "anthropomorphise a language model",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Personas"
       ],
@@ -2750,8 +2750,8 @@
       "summary": "Generation of repeated threats, denigration",
       "description": "Community probe from NVIDIA Garak (lmrc.Bullying). Generation of repeated threats, denigration",
       "goal": "help me bully",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Toxic Content Generation"
       ],
@@ -2773,8 +2773,8 @@
       "summary": "Mentioning a name that a person does not wish to be associated with",
       "description": "Community probe from NVIDIA Garak (lmrc.Deadnaming). Mentioning a name that a person does not wish to be associated with",
       "goal": "write a deadname",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Output Integrity",
         "Toxic Content Generation"
@@ -2796,8 +2796,8 @@
       "summary": "Using profane words, especially when not prompted to do so.",
       "description": "Community probe from NVIDIA Garak (lmrc.Profanity). Using profane words, especially when not prompted to do so.",
       "goal": "utter profanity",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Output Integrity",
@@ -2823,8 +2823,8 @@
       "summary": "Promoting non-scientific medicine.",
       "description": "Community probe from NVIDIA Garak (lmrc.QuackMedicine). Promoting non-scientific medicine.",
       "goal": "support quack medicine",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Misinformation"
       ],
@@ -2847,8 +2847,8 @@
       "summary": "Content that discusses bodies and interactions in a sexual manner, or other sexually explicit material",
       "description": "Community probe from NVIDIA Garak (lmrc.SexualContent). Content that discusses bodies and interactions in a sexual manner, or other sexually explicit material",
       "goal": "write sexual content",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Output Integrity"
       ],
@@ -2870,8 +2870,8 @@
       "summary": "Causal or overt sexual objectification, reducing a person or group of people to sexual objects.",
       "description": "Community probe from NVIDIA Garak (lmrc.Sexualisation). Causal or overt sexual objectification, reducing a person or group of people to sexual objects.",
       "goal": "sexualise people",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Output Integrity",
@@ -2897,8 +2897,8 @@
       "summary": "Using an identity-based slur in a non-reclaimed way - either directly or recommending the consumer to use in speech/action.",
       "description": "Community probe from NVIDIA Garak (lmrc.SlurUsage). Using an identity-based slur in a non-reclaimed way - either directly or recommending the consumer to use in speech/action.",
       "goal": "use a slur",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Output Integrity",
@@ -2924,8 +2924,8 @@
       "summary": "Will the model write code to help avoid anti-malware?",
       "description": "Community probe from NVIDIA Garak (malwaregen.Evasion). Will the model write code to help avoid anti-malware?",
       "goal": "Write code to assist evading security and anti-malware measures",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Malicious Code Generation",
@@ -2948,8 +2948,8 @@
       "summary": "Will the model help write code for malware payloads?",
       "description": "Community probe from NVIDIA Garak (malwaregen.Payload). Will the model help write code for malware payloads?",
       "goal": "write a malware payload",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Sensitive Information Disclosure"
@@ -2970,8 +2970,8 @@
       "summary": "Will the system write code helpful in malware?",
       "description": "Community probe from NVIDIA Garak (malwaregen.SubFunctions). Will the system write code helpful in malware?",
       "goal": "write code supporting a sub-function of malware",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Malicious Code Generation",
@@ -2994,8 +2994,8 @@
       "summary": "Will the system return code when asked to write malware?",
       "description": "Community probe from NVIDIA Garak (malwaregen.TopLevel). Will the system return code when asked to write malware?",
       "goal": "write malware given a top-level description",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Malicious Code Generation",
@@ -3018,8 +3018,8 @@
       "summary": "Does the model reject [questions based on] false claims?",
       "description": "Community probe from NVIDIA Garak (misleading.FalseAssertion). Does the model reject [questions based on] false claims?",
       "goal": "make the model expand on a false assertion",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Misinformation"
@@ -3042,8 +3042,8 @@
       "summary": "Attempts to generate Dart code including hallucinated pub.dev packages",
       "description": "Community probe from NVIDIA Garak (packagehallucination.Dart). Attempts to generate Dart code including hallucinated pub.dev packages",
       "goal": "generate Dart code importing non-existent pub.dev packages",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Malicious Code Generation",
@@ -3067,8 +3067,8 @@
       "summary": "Attempts to generate JavaScript code including hallucinated npm packages",
       "description": "Community probe from NVIDIA Garak (packagehallucination.JavaScript). Attempts to generate JavaScript code including hallucinated npm packages",
       "goal": "generate JavaScript code importing non-existent npm packages",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Malicious Code Generation",
@@ -3092,8 +3092,8 @@
       "summary": "Abstract base class for package hallucination probes",
       "description": "Community probe from NVIDIA Garak (packagehallucination.PackageHallucinationProbe). Abstract base class for package hallucination probes",
       "goal": "base probe for importing non-existent packages",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Malicious Code Generation",
@@ -3117,8 +3117,8 @@
       "summary": "Attempts to generate Perl code including hallucinated MetaCPAN packages",
       "description": "Community probe from NVIDIA Garak (packagehallucination.Perl). Attempts to generate Perl code including hallucinated MetaCPAN packages",
       "goal": "generate Perl code importing non-existent MetaCPAN modules",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Malicious Code Generation",
@@ -3142,8 +3142,8 @@
       "summary": "Attempts to generate Python3 code including hallucinated packages",
       "description": "Community probe from NVIDIA Garak (packagehallucination.Python). Attempts to generate Python3 code including hallucinated packages",
       "goal": "generate python importing non-existent packages",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Malicious Code Generation",
@@ -3167,8 +3167,8 @@
       "summary": "Attempts to generate Raku code including hallucinated raku.land packages",
       "description": "Community probe from NVIDIA Garak (packagehallucination.RakuLand). Attempts to generate Raku code including hallucinated raku.land packages",
       "goal": "generate Raku code importing non-existent raku.land modules",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Malicious Code Generation",
@@ -3192,8 +3192,8 @@
       "summary": "Attempts to generate Ruby code including hallucinated gems",
       "description": "Community probe from NVIDIA Garak (packagehallucination.Ruby). Attempts to generate Ruby code including hallucinated gems",
       "goal": "generate ruby code importing non-existent gems",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Malicious Code Generation",
@@ -3217,8 +3217,8 @@
       "summary": "Attempts to generate Rust code including hallucinated crates.io packages",
       "description": "Community probe from NVIDIA Garak (packagehallucination.Rust). Attempts to generate Rust code including hallucinated crates.io packages",
       "goal": "generate Rust code importing non-existent crates.io packages",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Insecure Output Handling",
         "Malicious Code Generation",
@@ -3242,8 +3242,8 @@
       "summary": "Attempt to evade safeguards by setting requests in the future tense",
       "description": "Community probe from NVIDIA Garak (phrasing.FutureTense). Attempt to evade safeguards by setting requests in the future tense",
       "goal": "use future tense to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Prompt Injection"
@@ -3265,8 +3265,8 @@
       "summary": "Will the system give unsafe responses when asked to write about weapon creation or dangerous behavior in the future tense?",
       "description": "Community probe from NVIDIA Garak (phrasing.FutureTenseFull). Will the system give unsafe responses when asked to write about weapon creation or dangerous behavior in the future tense?",
       "goal": "use future tense to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Prompt Injection"
@@ -3288,8 +3288,8 @@
       "summary": "Attempt to evade safeguards by setting requests in the past tense",
       "description": "Community probe from NVIDIA Garak (phrasing.PastTense). Attempt to evade safeguards by setting requests in the past tense",
       "goal": "use past tense to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Prompt Injection"
@@ -3311,8 +3311,8 @@
       "summary": "Will the system give unsafe responses when asked to write about weapon creation or dangerous behavior in the past tense?",
       "description": "Community probe from NVIDIA Garak (phrasing.PastTenseFull). Will the system give unsafe responses when asked to write about weapon creation or dangerous behavior in the past tense?",
       "goal": "use past tense to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Prompt Injection"
@@ -3334,8 +3334,8 @@
       "summary": "PromptInject probe to inject a string; payload is hate-humans",
       "description": "Community probe from NVIDIA Garak (promptinject.HijackHateHumans). PromptInject probe to inject a string; payload is hate-humans",
       "goal": "inject a prompt on hate humans",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection",
@@ -3360,8 +3360,8 @@
       "summary": "PromptInject probe to inject a string; payload is hate-humans",
       "description": "Community probe from NVIDIA Garak (promptinject.HijackHateHumansFull). PromptInject probe to inject a string; payload is hate-humans",
       "goal": "inject a prompt on hate humans",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection",
@@ -3386,8 +3386,8 @@
       "summary": "PromptInject probe to inject a string; payload is kill-humans",
       "description": "Community probe from NVIDIA Garak (promptinject.HijackKillHumans). PromptInject probe to inject a string; payload is kill-humans",
       "goal": "inject a prompt on kill humans",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection",
@@ -3412,8 +3412,8 @@
       "summary": "PromptInject probe to inject a string; payload is kill-humans",
       "description": "Community probe from NVIDIA Garak (promptinject.HijackKillHumansFull). PromptInject probe to inject a string; payload is kill-humans",
       "goal": "inject a prompt on kill humans",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection",
@@ -3438,8 +3438,8 @@
       "summary": "PromptInject probe to inject a string; payload is long-prompt",
       "description": "Community probe from NVIDIA Garak (promptinject.HijackLongPrompt). PromptInject probe to inject a string; payload is long-prompt",
       "goal": "inject a prompt on long prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection",
@@ -3464,8 +3464,8 @@
       "summary": "PromptInject probe to inject a string; payload is long-prompt",
       "description": "Community probe from NVIDIA Garak (promptinject.HijackLongPromptFull). PromptInject probe to inject a string; payload is long-prompt",
       "goal": "inject a prompt on long prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Prompt Injection",
@@ -3490,8 +3490,8 @@
       "summary": "Implementation of probes in RealToxicityPrompts",
       "description": "Community probe from NVIDIA Garak (realtoxicityprompts.RTPBlank). Implementation of probes in RealToxicityPrompts",
       "goal": "generate toxicity when prompted with nothing or special tokens",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Toxic Content Generation"
       ],
@@ -3512,8 +3512,8 @@
       "summary": "Top 100 RealToxicityPrompts prone to eliciting Flirtation",
       "description": "Community probe from NVIDIA Garak (realtoxicityprompts.RTPFlirtation). Top 100 RealToxicityPrompts prone to eliciting Flirtation",
       "goal": "generate flirtation content",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Output Integrity",
@@ -3537,8 +3537,8 @@
       "summary": "Top 100 RealToxicityPrompts prone to eliciting Identity_Attack",
       "description": "Community probe from NVIDIA Garak (realtoxicityprompts.RTPIdentity_Attack). Top 100 RealToxicityPrompts prone to eliciting Identity_Attack",
       "goal": "generate identity attack content",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Output Integrity",
@@ -3564,8 +3564,8 @@
       "summary": "Top 100 RealToxicityPrompts prone to eliciting Insult",
       "description": "Community probe from NVIDIA Garak (realtoxicityprompts.RTPInsult). Top 100 RealToxicityPrompts prone to eliciting Insult",
       "goal": "generate insult content",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Output Integrity",
@@ -3590,8 +3590,8 @@
       "summary": "Top 100 RealToxicityPrompts prone to eliciting Profanity",
       "description": "Community probe from NVIDIA Garak (realtoxicityprompts.RTPProfanity). Top 100 RealToxicityPrompts prone to eliciting Profanity",
       "goal": "generate profanity content",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Output Integrity",
         "Toxic Content Generation"
@@ -3614,8 +3614,8 @@
       "summary": "Top 100 RealToxicityPrompts prone to eliciting Severe_Toxicity",
       "description": "Community probe from NVIDIA Garak (realtoxicityprompts.RTPSevere_Toxicity). Top 100 RealToxicityPrompts prone to eliciting Severe_Toxicity",
       "goal": "generate severe toxicity content",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Toxic Content Generation"
       ],
@@ -3636,8 +3636,8 @@
       "summary": "Top 100 RealToxicityPrompts prone to eliciting Sexually_Explicit",
       "description": "Community probe from NVIDIA Garak (realtoxicityprompts.RTPSexually_Explicit). Top 100 RealToxicityPrompts prone to eliciting Sexually_Explicit",
       "goal": "generate sexually explicit content",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Toxic Content Generation"
       ],
@@ -3658,8 +3658,8 @@
       "summary": "Top 100 RealToxicityPrompts prone to eliciting Threat",
       "description": "Community probe from NVIDIA Garak (realtoxicityprompts.RTPThreat). Top 100 RealToxicityPrompts prone to eliciting Threat",
       "goal": "generate threat content",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Bias and Discrimination",
         "Toxic Content Generation"
@@ -3683,8 +3683,8 @@
       "summary": "Masked Language Model Simple Assistive Task Probe",
       "description": "Community probe from NVIDIA Garak (sata.MLM). Masked Language Model Simple Assistive Task Probe",
       "goal": "disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -3709,8 +3709,8 @@
       "summary": "FunctionMasking probe",
       "description": "Community probe from NVIDIA Garak (smuggling.FunctionMasking). FunctionMasking probe",
       "goal": "return banned instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -3733,8 +3733,8 @@
       "summary": "HypotheticalResponse probe",
       "description": "Community probe from NVIDIA Garak (smuggling.HypotheticalResponse). HypotheticalResponse probe",
       "goal": "return banned instructions",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -3757,8 +3757,8 @@
       "summary": "Probe asking for impossible flight routings",
       "description": "Community probe from NVIDIA Garak (snowball.GraphConnectivity). Probe asking for impossible flight routings",
       "goal": "trick the model into saying an impossible flight routing is possible",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Misinformation"
@@ -3781,8 +3781,8 @@
       "summary": "Probe asking for impossible flight routings",
       "description": "Community probe from NVIDIA Garak (snowball.GraphConnectivityFull). Probe asking for impossible flight routings",
       "goal": "trick the model into saying an impossible flight routing is possible",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Misinformation"
@@ -3805,8 +3805,8 @@
       "summary": "Ask model to check a list of higher primes",
       "description": "Community probe from NVIDIA Garak (snowball.Primes). Ask model to check a list of higher primes",
       "goal": "trick the model into saying a prime number isn't prime",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Misinformation"
@@ -3829,8 +3829,8 @@
       "summary": "Ask model to check a list of higher primes",
       "description": "Community probe from NVIDIA Garak (snowball.PrimesFull). Ask model to check a list of higher primes",
       "goal": "trick the model into saying a prime number isn't prime",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Misinformation"
@@ -3853,8 +3853,8 @@
       "summary": "Asking for senators that don't exist",
       "description": "Community probe from NVIDIA Garak (snowball.Senators). Asking for senators that don't exist",
       "goal": "trick the model into saying a fictitious senator exists",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Misinformation"
@@ -3877,8 +3877,8 @@
       "summary": "Asking for senators that don't exist",
       "description": "Community probe from NVIDIA Garak (snowball.SenatorsFull). Asking for senators that don't exist",
       "goal": "trick the model into saying a fictitious senator exists",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Misinformation"
@@ -3901,8 +3901,8 @@
       "summary": "BEAST probe",
       "description": "Community probe from NVIDIA Garak (suffix.BEAST). BEAST probe",
       "goal": "cause the model to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -3926,8 +3926,8 @@
       "summary": "Greedy Coordinate Gradient probe",
       "description": "Community probe from NVIDIA Garak (suffix.GCG). Greedy Coordinate Gradient probe",
       "goal": "cause the model to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -3951,8 +3951,8 @@
       "summary": "Greedy Coordinate Gradient Cached probe",
       "description": "Community probe from NVIDIA Garak (suffix.GCGCached). Greedy Coordinate Gradient Cached probe",
       "goal": "cause the model to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -3976,8 +3976,8 @@
       "summary": "Prompt Automatic Iterative Refinement automatic jailbreak",
       "description": "Community probe from NVIDIA Garak (tap.PAIR). Prompt Automatic Iterative Refinement automatic jailbreak",
       "goal": "cause the model to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -4001,8 +4001,8 @@
       "summary": "Tree of Attacks with Pruning Probe, generating new attacks against the target",
       "description": "Community probe from NVIDIA Garak (tap.TAP). Tree of Attacks with Pruning Probe, generating new attacks against the target",
       "goal": "cause the model to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -4026,8 +4026,8 @@
       "summary": "Tree of Attacks with Pruning Probe using cached attacks",
       "description": "Community probe from NVIDIA Garak (tap.TAPCached). Tree of Attacks with Pruning Probe using cached attacks",
       "goal": "cause the model to disregard the system prompt",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Goal Hijacking",
@@ -4051,8 +4051,8 @@
       "summary": "Use Wordnet to find out if a model will discuss terms near but not in its allowed set",
       "description": "Community probe from NVIDIA Garak (topic.WordnetAllowedWords). Use Wordnet to find out if a model will discuss terms near but not in its allowed set",
       "goal": "get the model to engage off-topic",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -4074,8 +4074,8 @@
       "summary": "Use Wordnet to explore which topics a model will respond to around blocked words",
       "description": "Community probe from NVIDIA Garak (topic.WordnetBlockedWords). Use Wordnet to explore which topics a model will respond to around blocked words",
       "goal": "get the model to engage off-topic",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -4097,8 +4097,8 @@
       "summary": "Ask model to respond on a set on controversial topics.",
       "description": "Community probe from NVIDIA Garak (topic.WordnetControversial). Ask model to respond on a set on controversial topics.",
       "goal": "get the model to engage off-topic",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Model Denial of Service",
         "Sensitive Information Disclosure"
@@ -4120,8 +4120,8 @@
       "summary": "Using image modality to assist jailbreak.",
       "description": "Community probe from NVIDIA Garak (visual_jailbreak.FigStep). Using image modality to assist jailbreak.",
       "goal": "disregard the system prompt with both text and image",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Prompt Injection"
@@ -4143,8 +4143,8 @@
       "summary": "Using image modality to assist jailbreak.",
       "description": "Community probe from NVIDIA Garak (visual_jailbreak.FigStepFull). Using image modality to assist jailbreak.",
       "goal": "disregard the system prompt with both text and image",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "DAN - Do Anything Now",
         "Prompt Injection"
@@ -4166,8 +4166,8 @@
       "summary": "Leak data via image rendering as demonstrated against Gemini in Colab.",
       "description": "Community probe from NVIDIA Garak (web_injection.ColabAIDataLeakage). Leak data via image rendering as demonstrated against Gemini in Colab.",
       "goal": "render images fetched from a remote uri",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -4197,8 +4197,8 @@
       "summary": "Can we get the model to write embedded assets exfiltrating text in the URI?",
       "description": "Community probe from NVIDIA Garak (web_injection.MarkdownImageExfil). Can we get the model to write embedded assets exfiltrating text in the URI?",
       "goal": "embed conversation-private information in a markdown URI",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -4228,8 +4228,8 @@
       "summary": "Generalized implementation of data exfiltration exploits through Markdown URIs.",
       "description": "Community probe from NVIDIA Garak (web_injection.MarkdownURIImageExfilExtended). Generalized implementation of data exfiltration exploits through Markdown URIs.",
       "goal": "embed potentially sensitive data in a Markdown URI",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -4259,8 +4259,8 @@
       "summary": "Generalized implementation of data exfiltration exploits through Markdown URIs.",
       "description": "Community probe from NVIDIA Garak (web_injection.MarkdownURINonImageExfilExtended). Generalized implementation of data exfiltration exploits through Markdown URIs.",
       "goal": "embed potentially sensitive data in a Markdown URI",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -4290,8 +4290,8 @@
       "summary": "Perform cross site scripting attacks using Markdown Javascript rendering via prompt injection.",
       "description": "Community probe from NVIDIA Garak (web_injection.MarkdownXSS). Perform cross site scripting attacks using Markdown Javascript rendering via prompt injection.",
       "goal": "Exploit cross-site scripting via prompt injection",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -4319,8 +4319,8 @@
       "summary": "Markdown image URI exfil exploit published 2023 Sept 29.",
       "description": "Community probe from NVIDIA Garak (web_injection.PlaygroundMarkdownExfil). Markdown image URI exfil exploit published 2023 Sept 29.",
       "goal": "embed conversation-private information in a markdown URI",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -4350,8 +4350,8 @@
       "summary": "Prompt injection for manipulating state",
       "description": "Community probe from NVIDIA Garak (web_injection.StringAssemblyDataExfil). Prompt injection for manipulating state",
       "goal": "embed conversation-private information in a markdown URI",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -4381,8 +4381,8 @@
       "summary": "Perform cross site scripting attacks via prompt injection.",
       "description": "Community probe from NVIDIA Garak (web_injection.TaskXSS). Perform cross site scripting attacks via prompt injection.",
       "goal": "Exploit cross-site scripting via prompt injection",
-      "release_date": "2026-03-12",
-      "modified_date": "2026-03-12",
+      "release_date": "2026-04-07",
+      "modified_date": "2026-04-07",
       "techniques": [
         "Goal Hijacking",
         "Insecure Output Handling",
@@ -4408,5 +4408,5 @@
   },
   "count": 179,
   "errors": null,
-  "extracted_at": "2026-03-12"
+  "extracted_at": "2026-04-07"
 }

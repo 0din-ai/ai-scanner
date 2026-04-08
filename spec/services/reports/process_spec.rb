@@ -311,6 +311,89 @@ RSpec.describe Reports::Process, type: :service do
       end
     end
 
+    context 'when processing variant probe results' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:industry) { create(:threat_variant_industry, name: 'Automotive') }
+      let(:subindustry) { create(:threat_variant_subindustry, name: 'Autonomous Driving', threat_variant_industry: industry) }
+      let!(:variant) { create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving', probe: probe, threat_variant_subindustry: subindustry) }
+
+      let(:variant_jsonl_content) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din_variants.Variant_TAG_Automotive_Autonomous_Driving', uuid: 'attempt-v1', prompt: 'Variant prompt', outputs: [ 'Variant output' ], notes: { score_percentage: 85 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_TAG_Automotive_Autonomous_Driving', passed: 2, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: variant_jsonl_content) }
+
+      it 'creates probe results linked to the variant' do
+        expect { service.call }.to change { ProbeResult.count }.by(1)
+
+        probe_result = ProbeResult.last
+        expect(probe_result.probe).to eq(probe)
+        expect(probe_result.threat_variant).to eq(variant)
+        expect(probe_result.passed).to eq(8) # 10 - 2
+        expect(probe_result.total).to eq(10)
+        expect(probe_result.max_score).to eq(85)
+      end
+
+      it 'completes the report successfully' do
+        service.call
+        expect(report.status).to eq('completed')
+      end
+
+      context 'with shared class names across base and CM probes' do
+        let(:cm_probe) { create(:probe, name: 'TestProbeCM') }
+        let!(:cm_variant) do
+          create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving',
+                 probe: cm_probe, threat_variant_subindustry: subindustry)
+        end
+
+        it 'assigns tokens only once to avoid inflating totals' do
+          expect { service.call }.to change { ProbeResult.count }.by(2)
+
+          results = report.probe_results.where.not(threat_variant_id: nil).order(:id)
+          expect(results.size).to eq(2)
+
+          # First result gets the tokens
+          expect(results.first.input_tokens).to be >= 0
+          expect(results.first.output_tokens).to be >= 0
+
+          # Second result gets zero tokens (shared classname, single execution)
+          expect(results.second.input_tokens).to eq(0)
+          expect(results.second.output_tokens).to eq(0)
+        end
+      end
+    end
+
+    context 'when processing unknown variant probe results' do
+      let(:unknown_variant_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din_variants.Variant_TAG_Unknown_Missing', uuid: 'attempt-v2', prompt: 'Unknown variant', outputs: [ 'Output' ], notes: {} }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_TAG_Unknown_Missing', passed: 5, total: 5 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: unknown_variant_jsonl) }
+
+      before do
+        allow(Rails.logger).to receive(:warn)
+      end
+
+      it 'skips unknown variant probes without creating probe results' do
+        expect { service.call }.not_to change { ProbeResult.count }
+      end
+
+      it 'marks report as failed when no valid probes processed' do
+        service.call
+        expect(report.status).to eq('failed')
+      end
+    end
+
     context 'when updating target token rate' do
       let!(:probe) { create(:probe, name: 'TestProbe') }
       let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: jsonl_content, logs_data: 'Test logs') }
@@ -327,6 +410,85 @@ RSpec.describe Reports::Process, type: :service do
       it 'calls update_target_token_rate after processing' do
         expect(service).to receive(:update_target_token_rate)
         service.call
+      end
+    end
+  end
+
+  describe '#resolve_probe' do
+    let(:target) { create(:target) }
+    let(:scan) { create(:complete_scan) }
+    let(:report) { create(:report, target: target, scan: scan) }
+    let(:service) { described_class.new(report.id) }
+
+    context 'with a variant probe classname' do
+      let(:probe) { create(:probe, name: 'TestProbe') }
+      let(:industry) { create(:threat_variant_industry, name: 'Automotive') }
+      let(:subindustry) { create(:threat_variant_subindustry, name: 'Autonomous Driving', threat_variant_industry: industry) }
+      let!(:variant) { create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving', probe: probe, threat_variant_subindustry: subindustry) }
+
+      it 'resolves to the correct probe and variant' do
+        results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Automotive_Autonomous_Driving')
+        expect(results).to be_an(Array)
+        expect(results.length).to eq(1)
+        expect(results.first[:probe_id]).to eq(probe.id)
+        expect(results.first[:variant]).to eq(variant)
+        expect(results.first[:skip]).to be_nil
+      end
+
+      it 'returns skip when variant is not found' do
+        results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Unknown_Missing')
+        expect(results.first[:skip]).to be true
+        expect(results.first[:probe_id]).to be_nil
+      end
+
+      it 'logs a warning for unknown variant probes' do
+        allow(Rails.logger).to receive(:warn)
+        service.send(:resolve_probe, '0din_variants.Variant_TAG_Unknown_Missing')
+        expect(Rails.logger).to have_received(:warn).with(/Unknown variant probe: Variant_TAG_Unknown_Missing/)
+      end
+
+      context 'with shared class names across base and CM probes' do
+        let(:base_detector) { create(:detector, name: '0din.MitigationBypass') }
+        let(:cm_detector) { create(:detector, name: '0din.CrystalMethScore') }
+        let(:probe) { create(:probe, name: 'TestProbe', detector: base_detector) }
+        let(:cm_probe) { create(:probe, name: 'TestProbeCM', detector: cm_detector) }
+        let!(:variant) { create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving', probe: probe, threat_variant_subindustry: subindustry) }
+        let!(:cm_variant) { create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving', probe: cm_probe, threat_variant_subindustry: subindustry) }
+
+        it 'returns all matching probes when no detector is provided' do
+          results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Automotive_Autonomous_Driving')
+          expect(results.length).to eq(2)
+          probe_ids = results.map { |r| r[:probe_id] }
+          expect(probe_ids).to contain_exactly(probe.id, cm_probe.id)
+        end
+
+        it 'filters to matching detector when detector_name is provided' do
+          results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Automotive_Autonomous_Driving', '0din.MitigationBypass')
+          expect(results.length).to eq(1)
+          expect(results.first[:probe_id]).to eq(probe.id)
+        end
+
+        it 'filters to CM probe when CM detector is provided' do
+          results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Automotive_Autonomous_Driving', '0din.CrystalMethScore')
+          expect(results.length).to eq(1)
+          expect(results.first[:probe_id]).to eq(cm_probe.id)
+        end
+      end
+    end
+
+    context 'with a standard probe classname' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+
+      it 'resolves by full classname' do
+        results = service.send(:resolve_probe, '0din.TestProbe')
+        expect(results).to be_an(Array)
+        expect(results.first[:probe_id]).to eq(probe.id)
+        expect(results.first[:variant]).to be_nil
+      end
+
+      it 'returns skip for unknown probes' do
+        results = service.send(:resolve_probe, '0din.UnknownProbe')
+        expect(results.first[:skip]).to be true
       end
     end
   end

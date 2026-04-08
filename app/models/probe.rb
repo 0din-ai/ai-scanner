@@ -5,6 +5,7 @@ class Probe < ApplicationRecord
   has_and_belongs_to_many :techniques
   has_and_belongs_to_many :taxonomy_categories
   has_many :probe_results
+  has_many :threat_variants, dependent: :destroy
   belongs_to :detector, optional: true
 
   scope :enabled, -> { where(enabled: true) }

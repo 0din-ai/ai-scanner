@@ -236,6 +236,46 @@ RSpec.describe TokenEstimator do
       expect(described_class.extract_prompt_text(prompt)).to eq("You are helpful.\nHello")
     end
 
+    it "skips the trailing assistant turn when conversation ends with assistant" do
+      prompt = {
+        "turns" => [
+          { "role" => "user", "content" => "First question" },
+          { "role" => "assistant", "content" => "First answer" },
+          { "role" => "user", "content" => "Second question" },
+          { "role" => "assistant", "content" => "Second answer" }
+        ]
+      }
+      result = described_class.extract_prompt_text(prompt)
+      expect(result).to include("First question")
+      expect(result).to include("First answer")
+      expect(result).to include("Second question")
+      expect(result).not_to include("Second answer")
+    end
+
+    it "includes all assistant turns when conversation does not end with assistant" do
+      prompt = {
+        "turns" => [
+          { "role" => "user", "content" => "First question" },
+          { "role" => "assistant", "content" => "First answer" },
+          { "role" => "user", "content" => "Second question" }
+        ]
+      }
+      result = described_class.extract_prompt_text(prompt)
+      expect(result).to include("First question")
+      expect(result).to include("First answer")
+      expect(result).to include("Second question")
+    end
+
+    it "includes all turns when there are no assistant turns" do
+      prompt = {
+        "turns" => [
+          { "role" => "system", "content" => "You are helpful." },
+          { "role" => "user", "content" => "Hello" }
+        ]
+      }
+      expect(described_class.extract_prompt_text(prompt)).to eq("You are helpful.\nHello")
+    end
+
     it "returns nil for hash without turns key" do
       expect(described_class.extract_prompt_text({ "other" => "value" })).to be_nil
     end

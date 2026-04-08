@@ -175,6 +175,7 @@ COPY --from=build /rails/RELEASE_NOTES.md* /rails/
 # Install custom garak plugins (OpenRouter generator, 0din probes & detectors)
 COPY --from=build /rails/script/garak_plugins/openrouter.py /opt/venv/lib/python3.13/site-packages/garak/generators/openrouter.py
 COPY --from=build /rails/script/garak_plugins/probes/0din.py /opt/venv/lib/python3.13/site-packages/garak/probes/0din.py
+COPY --from=build /rails/script/garak_plugins/probes/0din_variants.py /opt/venv/lib/python3.13/site-packages/garak/probes/0din_variants.py
 COPY --from=build /rails/script/garak_plugins/detectors/0din.py /opt/venv/lib/python3.13/site-packages/garak/detectors/0din.py
 
 # Create necessary directories with proper permissions

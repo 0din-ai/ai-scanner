@@ -87,17 +87,19 @@ module Reports
         end
       end
 
-      # Mark as completed only if we processed attempts AND evals
-      # Having attempts but no evals indicates a malformed report (garak exited early)
+      # Mark as completed only if we processed attempts AND evals AND created probe results.
+      # Having attempts but no evals indicates a malformed report (garak exited early).
+      # Having evals but no probe_results means all probes were unknown/skipped.
       if !attempts_processed
         Rails.logger.warn "Report #{report.id}: No attempts found in report, marking as failed"
         report.status = :failed
       elsif !evals_processed
         Rails.logger.warn "Report #{report.id}: Attempts found but no eval results - scan may have been interrupted, marking as failed"
         report.status = :failed
-      elsif processed && valid_lines > 0
+      elsif processed && valid_lines > 0 && report.probe_results.exists?
         report.status = :completed
       else
+        Rails.logger.warn "Report #{report.id}: No probe results created despite processing lines, marking as failed"
         report.status = :failed
       end
       # Note: logs, save, and save_detector_results are handled by callers
@@ -148,31 +150,49 @@ module Reports
       passed = total - data["passed"].to_i
       max_score = report_data.dig(probe_classname, "stats", "max_score")
 
-      # Resolve the probe from the classname (engine can override for variant handling)
-      resolved = resolve_probe(probe_classname)
-      return if resolved[:skip]
+      # Resolve the probe from the classname, passing detector to disambiguate
+      # variant probes with shared class names (base + CM probe pairs)
+      resolved_list = resolve_probe(probe_classname, detector_name)
+      return if resolved_list.all? { |r| r[:skip] }
 
-      # Use find_or_initialize_by to handle resumed scans where
-      # probe_results may already exist from a previous partial processing run
-      probe_result = report.probe_results.find_or_initialize_by(
-        probe_id: resolved[:probe_id],
-        threat_variant_id: resolved[:variant]&.id
-      )
       attempts_data = report_data.dig(probe_classname, "attempts")
-      probe_result.attempts = attempts_data if attempts_data.present?
+      token_estimate = nil
+      detector_id = find_or_create_detector(detector_name).id
 
-      # Calculate tokens from attempts for per-probe tracking
-      token_estimate = TokenEstimator.estimate_from_attempts(probe_result.attempts)
-      probe_result.input_tokens = token_estimate[:input_tokens]
-      probe_result.output_tokens = token_estimate[:output_tokens]
+      # Create a ProbeResult for each resolved probe
+      tokens_assigned = false
+      resolved_list.each do |resolved|
+        next if resolved[:skip]
 
-      probe_result.max_score = max_score
-      probe_result.passed = passed
-      probe_result.total = total
-      probe_result.detector_id = find_or_create_detector(detector_name).id
-      probe_result.save!
+        # Use find_or_initialize_by to handle resumed scans where
+        # probe_results may already exist from a previous partial processing run
+        probe_result = report.probe_results.find_or_initialize_by(
+          probe_id: resolved[:probe_id],
+          threat_variant_id: resolved[:variant]&.id
+        )
+        probe_result.attempts = attempts_data if attempts_data.present?
+
+        # Assign tokens only to the first result to avoid inflating totals
+        if !tokens_assigned
+          token_estimate ||= TokenEstimator.estimate_from_attempts(probe_result.attempts)
+          probe_result.input_tokens = token_estimate[:input_tokens]
+          probe_result.output_tokens = token_estimate[:output_tokens]
+          tokens_assigned = true
+        else
+          probe_result.input_tokens = 0
+          probe_result.output_tokens = 0
+        end
+
+        probe_result.max_score = max_score
+        probe_result.passed = passed
+        probe_result.total = total
+        probe_result.detector_id = detector_id
+        probe_result.save!
+      end
+
       report_data.delete(probe_classname)
 
+      # Count detector stats once per eval line (not per resolved probe)
       detector_stats[detector_name] ||= { passed: 0, total: 0 }
       detector_stats[detector_name][:passed] += passed
       detector_stats[detector_name][:total] += total
@@ -182,9 +202,12 @@ module Reports
       end
     end
 
-    # Resolves a probe classname to a probe_id and optional variant.
-    # Engine can override to add variant probe handling.
-    def resolve_probe(probe_classname)
+    # Resolves a probe classname to an array of { probe_id:, variant:, skip: } hashes.
+    def resolve_probe(probe_classname, detector_name = nil)
+      if probe_classname.start_with?("0din_variants.")
+        return resolve_variant_probe(probe_classname, detector_name)
+      end
+
       probe_name = probe_classname
       probe_id = Probe.where(name: probe_name).limit(1).pluck(:id).first
       if probe_id.nil? && probe_classname.include?(".")
@@ -193,9 +216,38 @@ module Reports
       end
       if probe_id.nil?
         Rails.logger.warn("[Reports::Process] Unknown probe classname: #{probe_classname}, skipping")
-        return { probe_id: nil, variant: nil, skip: true }
+        return [ { probe_id: nil, variant: nil, skip: true } ]
       end
-      { probe_id: probe_id, variant: nil }
+      [ { probe_id: probe_id, variant: nil } ]
+    end
+
+    def resolve_variant_probe(probe_classname, detector_name = nil)
+      variant_class_name = probe_classname.split(".").last
+
+      variants = if report.is_variant_report? && report.variant_probes.any?
+        ThreatVariant.where(prompt: variant_class_name, probe_id: report.variant_probes.select(:id)).to_a
+      else
+        ThreatVariant.where(prompt: variant_class_name).to_a
+      end
+
+      if variants.empty?
+        Rails.logger.warn("[Reports::Process] Unknown variant probe: #{variant_class_name}, skipping")
+        return [ { probe_id: nil, variant: nil, skip: true } ]
+      end
+
+      # When multiple variants match (base + CM probe pairs sharing a class name),
+      # filter to the variant whose probe uses the matching detector. The garak
+      # variant plugin evaluates with a single detector per run, so fanning out
+      # to probes with a different detector would fabricate incorrect results.
+      if variants.size > 1 && detector_name.present?
+        detector = Detector.find_by(name: detector_name)
+        if detector
+          matching = variants.select { |v| v.probe.detector_id == detector.id }
+          variants = matching if matching.any?
+        end
+      end
+
+      variants.map { |v| { probe_id: v.probe_id, variant: v } }
     end
 
     def find_or_create_detector(detector_name)

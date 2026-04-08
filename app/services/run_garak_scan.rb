@@ -77,7 +77,7 @@ class RunGarakScan
       # Environment variables are passed as a string prefix for bash shell execution.
       # This approach ensures variables are available in the shell context for proper command execution.
       evs = env_vars_string
-      c = "#{evs} python3 #{script_path} '#{report.uuid}' '#{params}' #{log_file}"
+      c = "#{evs} /opt/venv/bin/python3 #{script_path} '#{report.uuid}' '#{params}' #{log_file}"
       if Rails.configuration.log_level.to_s == "debug" || MonitoringService.active?
         trace_id = MonitoringService.current_trace_id
         yellow = "\e[33m"
@@ -331,9 +331,46 @@ class RunGarakScan
     end
   end
 
-  # Returns the probes to run for this scan. Engine can override for variant handling.
+  # Returns the probes to run for this scan.
+  # For variant reports, maps base probes to their variant probe identifiers.
   def scan_probes
-    remaining_probes
+    if report.is_variant_report?
+      variant_scan_probes
+    else
+      remaining_probes
+    end
+  end
+
+  # Returns variant probe identifiers for a variant (child) report, filtered by
+  # any probes already completed in a prior interrupted run.
+  def variant_scan_probes
+    probe_names = report.variant_probes.map(&:full_name)
+    subindustry_ids = report.scan.threat_variant_subindustry_ids
+
+    # Guard: if scan subindustries were cleared after this variant report was
+    # created, fall back to all variants for the persisted probes rather than
+    # treating the report as "all probes completed" and skipping remaining work.
+    all_variant_probes = if subindustry_ids.empty? && report.variant_probes.any?
+      Rails.logger.warn(
+        "[ScanResume] Report #{report.uuid}: scan subindustries were cleared after " \
+        "variant report was created. Falling back to all variants for persisted probes."
+      )
+      probe_ids = report.variant_probes.pluck(:id)
+      ThreatVariant.where(probe_id: probe_ids)
+        .pluck(:prompt).uniq
+        .map { |p| "0din_variants.#{p}" }
+    else
+      VariantProbeMapper.new(probe_names, subindustry_ids).call
+    end
+
+    completed = completed_probes_from_raw_data
+    if completed.empty?
+      all_variant_probes
+    else
+      remaining = all_variant_probes - completed.to_a
+      log_resumption_info(all_variant_probes.size, remaining.size) if remaining.size < all_variant_probes.size
+      remaining
+    end
   end
 
   # Parses existing raw_report_data JSONL for eval entries to identify completed probes.

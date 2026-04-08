@@ -46,7 +46,7 @@ class ValidateTarget
   def command
     script_path = Rails.root.join("script", "run_garak.py")
     evs = env_vars
-    c = "#{evs} HOME=/home/rails python3 #{script_path} '#{validation_uuid}' '#{params}' #{log_file}"
+    c = "#{evs} HOME=/home/rails /opt/venv/bin/python3 #{script_path} '#{validation_uuid}' '#{params}' #{log_file}"
 
     if Rails.configuration.log_level.to_s == "debug"
       yellow = "\e[33m"

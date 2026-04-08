@@ -159,6 +159,38 @@ RSpec.describe OdinProbeSource do
       expect(probe.input_tokens).to eq(single_prompt_tokens)
     end
 
+    it 'weights multi-shot prompt tokens for cumulative resending' do
+      multi_shot_data = {
+        "probes" => {
+          "MultiShotProbe" => {
+            "guid" => "eeee-ffff",
+            "summary" => "test",
+            "description" => "test",
+            "release_date" => "2025-01-01",
+            "modified_date" => "2025-01-01",
+            "techniques" => [],
+            "social_impact_score" => 3,
+            "disclosure_status" => "0-day",
+            "detector" => "0din.CrystalMethScore",
+            "prompts" => [ "First prompt", "Second prompt", "Third prompt" ]
+          }
+        }
+      }
+      allow(File).to receive(:read).with(Rails.root.join(described_class::FILE_PATH))
+                                   .and_return(multi_shot_data.to_json)
+
+      source.sync(sync_start_time)
+
+      probe = Probe.find_by(name: "MultiShotProbe")
+      t1 = TokenEstimator.estimate_tokens("First prompt")
+      t2 = TokenEstimator.estimate_tokens("Second prompt")
+      t3 = TokenEstimator.estimate_tokens("Third prompt")
+      # prompt 0 sent 3 times, prompt 1 sent 2 times, prompt 2 sent 1 time
+      expected = t1 * 3 + t2 * 2 + t3 * 1
+      expect(probe.input_tokens).to eq(expected)
+    end
+
+
     it 'disables outdated probes scoped to source 0din' do
       # Create an old 0din probe that should be disabled
       old_probe = Probe.create!(name: "OldProbe", category: "0din", source: "0din", enabled: true)
@@ -169,6 +201,87 @@ RSpec.describe OdinProbeSource do
 
       expect(old_probe.reload.enabled).to be false
       expect(garak_probe.reload.enabled).to be true
+    end
+
+    context 'with variant data' do
+      let(:variant_probes_data) do
+        {
+          "probes" => {
+            "PlaceholderInjectionHP" => {
+              "guid" => "8ccd7f81-4e36-4084-8061-cec6e2d83ece",
+              "summary" => "Placeholder injection probe",
+              "description" => "Guardrail Jailbreak via Placeholder Injection",
+              "release_date" => "2025-06-07",
+              "modified_date" => "2025-06-07",
+              "techniques" => [ "Chaff" ],
+              "social_impact_score" => 2,
+              "disclosure_status" => "0-day",
+              "detector" => "0din.CopyRightScoreHarryPotterChapterOne",
+              "prompts" => [ "Test prompt" ],
+              "variant_count" => 2,
+              "variants" => {
+                "automotive" => {
+                  "autonomous_driving" => [ "Variant_PlaceholderInjectionHP_Automotive_Autonomous_Driving" ],
+                  "ev" => [ "Variant_PlaceholderInjectionHP_Automotive_Ev" ]
+                }
+              }
+            }
+          }
+        }
+      end
+
+      before do
+        allow(File).to receive(:read).with(Rails.root.join(described_class::FILE_PATH))
+                                     .and_return(variant_probes_data.to_json)
+      end
+
+      it 'creates ThreatVariantIndustry records' do
+        source.sync(sync_start_time)
+        expect(ThreatVariantIndustry.count).to eq(1)
+        expect(ThreatVariantIndustry.first.name).to eq("Automotive")
+      end
+
+      it 'creates ThreatVariantSubindustry records' do
+        source.sync(sync_start_time)
+        expect(ThreatVariantSubindustry.count).to eq(2)
+        expect(ThreatVariantSubindustry.pluck(:name)).to contain_exactly("Autonomous Driving", "Electric Vehicles")
+      end
+
+      it 'creates ThreatVariant records linked to probes' do
+        source.sync(sync_start_time)
+        probe = Probe.find_by(name: "PlaceholderInjectionHP")
+        expect(ThreatVariant.count).to eq(2)
+        expect(ThreatVariant.where(probe: probe).count).to eq(2)
+        expect(ThreatVariant.first.prompt).to eq("Variant_PlaceholderInjectionHP_Automotive_Autonomous_Driving")
+      end
+
+      it 'is idempotent on repeated syncs' do
+        source.sync(sync_start_time)
+        described_class.new.sync(sync_start_time)
+        expect(ThreatVariantIndustry.count).to eq(1)
+        expect(ThreatVariantSubindustry.count).to eq(2)
+        expect(ThreatVariant.count).to eq(2)
+      end
+
+      it 'logs variant stats in sync version metadata' do
+        allow(DataSyncVersion).to receive(:record_sync)
+        source.sync(sync_start_time)
+
+        expect(DataSyncVersion).to have_received(:record_sync).with(
+          "0din_probes",
+          described_class::FILE_PATH,
+          1,
+          hash_including(variant_count: 2, variant_industries: 1, variant_subindustries: 2)
+        )
+      end
+
+      it 'skips variant classes when probe is not found' do
+        allow(Probe).to receive(:find_by).with(name: "PlaceholderInjectionHP", category: "0din").and_return(nil)
+        allow(Rails.logger).to receive(:warn)
+
+        source.sync(sync_start_time)
+        expect(Rails.logger).to have_received(:warn).with(/Probe not found for variants/)
+      end
     end
 
     context 'when JSON file is missing' do
