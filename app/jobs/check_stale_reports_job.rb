@@ -133,6 +133,16 @@ class CheckStaleReportsJob < ApplicationJob
   # guard prevent most orphan scenarios, but OOM kills or unexpected crashes
   # between PID-clear and status-update can still leave this state.
   #
+  # Note: raw_report_data may exist for orphaned reports because JournalSyncThread
+  # writes incrementally during the scan. Its presence does NOT mean the scan
+  # completed — it may contain partial data. OrphanRawReportDataJob handles
+  # recovery of raw_report_data after the report reaches a terminal state.
+  #
+  # Additionally, a report in this state may be a completed scan awaiting async
+  # processing — the scan finished, ProcessReportJob was enqueued, PID was cleared,
+  # but ProcessReportJob hasn't run yet. To avoid interrupting these reports, we
+  # skip any that have a pending ProcessReportJob in Solid Queue.
+  #
   # Conditions: running + pid=nil + heartbeat present + updated_at stale.
   # The heartbeat distinguishes from never-started (handled separately).
   # The updated_at check provides a safety window against race conditions.
@@ -150,6 +160,17 @@ class CheckStaleReportsJob < ApplicationJob
       next if report.heartbeat_at.nil?
       # Re-check updated_at safety window after reload
       next if report.updated_at > HEARTBEAT_TIMEOUT.ago
+
+      # Skip reports with a pending ProcessReportJob — these are completed scans
+      # awaiting async processing, not true orphans. This prevents interrupting
+      # reports during normal queue backlog between scan completion and processing.
+      if pending_process_job_report_ids.include?(report.id)
+        Rails.logger.info(
+          "[CheckStaleReports] Report #{report.id} (#{report.uuid}) has pending ProcessReportJob - " \
+          "skipping orphan detection (scan completed, awaiting processing)"
+        )
+        next
+      end
 
       reason = "Scan process orphaned (running with no owning process — pid cleared but status not updated)"
 
@@ -243,6 +264,27 @@ class CheckStaleReportsJob < ApplicationJob
       "#{existing_logs}\n#{new_entry}"
     else
       new_entry
+    end
+  end
+
+  # Report IDs that have a pending ProcessReportJob in Solid Queue.
+  # Used to distinguish completed scans awaiting processing from true orphans.
+  # Memoized per perform cycle to avoid repeated queries.
+  def pending_process_job_report_ids
+    @pending_process_job_report_ids ||= begin
+      pending_jobs = SolidQueue::Job
+        .where(class_name: "ProcessReportJob")
+        .where(finished_at: nil)
+        .pluck(:arguments)
+
+      report_ids = pending_jobs.filter_map do |args_json|
+        args = args_json.is_a?(String) ? JSON.parse(args_json) : args_json
+        args.dig("arguments", 0)&.to_i
+      rescue JSON::ParserError
+        nil
+      end
+
+      Set.new(report_ids)
     end
   end
 end

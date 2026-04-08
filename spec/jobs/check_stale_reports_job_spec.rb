@@ -10,6 +10,9 @@ RSpec.describe CheckStaleReportsJob, type: :job do
     allow_any_instance_of(ToastNotifier).to receive(:call)
     # Mock Turbo broadcast to avoid rendering partial in tests
     allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+    # Stub the Solid Queue lookup - in test env we don't have Solid Queue tables
+    # Default: return empty set (no pending jobs found)
+    allow_any_instance_of(described_class).to receive(:pending_process_job_report_ids).and_return(Set.new)
   end
 
   describe "#perform" do
@@ -249,6 +252,35 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
         report.reload
         expect(report.status).to eq("pending")
+      end
+
+      context "when raw_report_data exists (partial data from JournalSyncThread)" do
+        it "still marks as interrupted since raw_report_data may be partial" do
+          report = create(:report, target: target, scan: scan, status: :running,
+                          pid: nil, heartbeat_at: 1.minute.ago, updated_at: 3.minutes.ago, retry_count: 0)
+          create(:raw_report_data, report: report)
+
+          described_class.new.perform
+
+          report.reload
+          expect(report.status).to eq("interrupted")
+          expect(report.logs).to include("orphaned")
+        end
+      end
+
+      context "when a pending ProcessReportJob exists (completed scan awaiting processing)" do
+        it "skips the report instead of marking as orphaned" do
+          report = create(:report, target: target, scan: scan, status: :running,
+                          pid: nil, heartbeat_at: 1.minute.ago, updated_at: 3.minutes.ago, retry_count: 0)
+
+          allow_any_instance_of(described_class).to receive(:pending_process_job_report_ids)
+            .and_return(Set.new([ report.id ]))
+
+          described_class.new.perform
+
+          report.reload
+          expect(report.status).to eq("running")
+        end
       end
     end
 

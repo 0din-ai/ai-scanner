@@ -11,6 +11,8 @@ RSpec.describe "Interrupted Reports Lifecycle", type: :integration do
     allow_any_instance_of(ToastNotifier).to receive(:call)
     allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
     allow_any_instance_of(RunGarakScan).to receive(:call)
+    # Stub the Solid Queue lookup - in test env we don't have Solid Queue tables
+    allow_any_instance_of(CheckStaleReportsJob).to receive(:pending_process_job_report_ids).and_return(Set.new)
   end
 
   describe "complete lifecycle: running -> interrupted -> pending -> starting" do
