@@ -107,9 +107,7 @@ class ValidateWebChatTarget
   end
 
   def valid_url?(url)
-    uri = URI.parse(url)
-    uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)
-  rescue URI::InvalidURIError
-    false
+    result = UrlSafetyValidator.safe_url?(url, allow_localhost: UrlSafetyValidator.allow_localhost?)
+    result.safe?
   end
 end

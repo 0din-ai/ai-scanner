@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_19_001013) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_12_060000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -122,9 +122,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_19_001013) do
   end
 
   create_table "output_servers", force: :cascade do |t|
-    t.string "access_token"
+    t.text "access_token"
     t.json "additional_settings"
-    t.string "api_key"
+    t.text "api_key"
     t.bigint "company_id", null: false
     t.datetime "created_at", null: false
     t.text "description"
@@ -132,7 +132,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_19_001013) do
     t.string "endpoint_path"
     t.string "host", null: false
     t.string "name", null: false
-    t.string "password"
+    t.text "password"
     t.integer "port"
     t.integer "protocol", default: 0, null: false
     t.integer "server_type", null: false
@@ -145,6 +145,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_19_001013) do
   end
 
   create_table "probe_results", force: :cascade do |t|
+    t.boolean "any_detector_passed", default: false, null: false
     t.json "attempts", default: []
     t.datetime "created_at", null: false
     t.integer "detector_id"
@@ -411,8 +412,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_19_001013) do
     t.text "rationale"
     t.integer "threat_variant_subindustry_id", null: false
     t.datetime "updated_at", null: false
+    t.index ["probe_id", "prompt"], name: "index_threat_variants_on_probe_and_prompt", unique: true
     t.index ["probe_id", "threat_variant_subindustry_id"], name: "index_tv_on_probe_and_subindustry"
     t.index ["probe_id"], name: "index_threat_variants_on_probe_id"
+    t.index ["prompt"], name: "index_threat_variants_on_prompt"
     t.index ["threat_variant_subindustry_id"], name: "index_threat_variants_on_threat_variant_subindustry_id"
   end
 

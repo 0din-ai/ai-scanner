@@ -38,15 +38,84 @@ class RunGarakScan
 
         report.update(status: :starting) unless report.starting?
 
-        RunCommand.new(command).call_async
+        execute_scan
       end
     else
       report.update(status: :starting) unless report.starting?
-      RunCommand.new(command).call_async
+      execute_scan
     end
   end
 
   private
+
+  def execute_scan
+    ActsAsTenant.with_tenant(report.company) do
+      argv = build_argv
+      env = build_env
+      log_path = scan_log_path
+      log_scan_debug_info(argv)
+      RunCommand.new(argv, env: env).call_async(log_file: log_path)
+    rescue RunCommand::ImmediateExitError => e
+      Rails.logger.error("Scan process failed to start for report #{report.uuid}: #{e.message}")
+      stderr_tail = read_log_tail
+      message = "Scan process failed to start (exit status #{e.exit_status})."
+      message += " Output: #{stderr_tail}" if stderr_tail.present?
+      report.update(status: :failed, logs: message)
+    end
+  end
+
+  def build_argv
+    script_path = Rails.root.join("script", "run_garak.py")
+    [ "/opt/venv/bin/python3", script_path.to_s, report.uuid ] + params
+  end
+
+  def build_env
+    # Tenant context needed for decrypting EnvironmentVariable.env_value
+    # via per-tenant key provider
+    merged = merged_env_vars
+    env = merged.dup
+
+    env["HOME"] = "/home/rails"
+    env["VARIANT_SCAN"] = "true" if report.is_variant_report?
+
+    env["LOG_FILE_PATH"] = scan_log_path
+    env["DATABASE_URL"] = database_url_for_python
+
+    if MonitoringService.active?
+      MonitoringService.trace_context.each do |key, value|
+        env[key] = value
+      end
+    end
+
+    env["REPORT_UUID"] = report.uuid
+    env["SCAN_ID"] = report.scan.id.to_s
+    env["SCAN_NAME"] = report.scan.name
+    env["TARGET_ID"] = target.id.to_s
+    env["TARGET_NAME"] = target.name
+
+    env
+  end
+
+  def scan_log_path
+    @scan_log_path ||= LogPathManager.scan_log_file_for_report(report).to_s
+  end
+
+  def log_scan_debug_info(argv)
+    if Rails.configuration.log_level.to_s == "debug" || MonitoringService.active?
+      trace_id = MonitoringService.current_trace_id
+      yellow = "\e[33m"
+      reset = "\e[0m"
+      separator = yellow + ("-" * 80) + reset
+      Rails.logger.info(separator)
+      Rails.logger.info(yellow + "GARAK SCAN COMMAND:" + reset)
+      Rails.logger.info(yellow + "Report UUID: #{report.uuid}" + reset)
+      Rails.logger.info(yellow + "Scan: #{report.scan.name}" + reset)
+      Rails.logger.info(yellow + "Target: #{target.name}" + reset)
+      Rails.logger.info(yellow + "Monitoring Trace ID: #{trace_id}" + reset) if trace_id
+      Rails.logger.info(yellow + "argv: #{argv.inspect}" + reset)
+      Rails.logger.info(separator)
+    end
+  end
 
   def handle_invalid_target_status
     case target.status
@@ -69,73 +138,7 @@ class RunGarakScan
     )
   end
 
-  def command
-    # Tenant context needed for decrypting target.json_config, target.web_config,
-    # and EnvironmentVariable.env_value via per-tenant key provider
-    ActsAsTenant.with_tenant(report.company) do
-      script_path = Rails.root.join("script", "run_garak.py")
-      # Environment variables are passed as a string prefix for bash shell execution.
-      # This approach ensures variables are available in the shell context for proper command execution.
-      evs = env_vars_string
-      c = "#{evs} /opt/venv/bin/python3 #{script_path} '#{report.uuid}' '#{params}' #{log_file}"
-      if Rails.configuration.log_level.to_s == "debug" || MonitoringService.active?
-        trace_id = MonitoringService.current_trace_id
-        yellow = "\e[33m"
-        reset = "\e[0m"
-        separator = yellow + ("-" * 80) + reset
-        Rails.logger.info(separator)
-        Rails.logger.info(yellow + "GARAK SCAN COMMAND:" + reset)
-        Rails.logger.info(yellow + "Report UUID: #{report.uuid}" + reset)
-        Rails.logger.info(yellow + "Scan: #{report.scan.name}" + reset)
-        Rails.logger.info(yellow + "Target: #{target.name}" + reset)
-        Rails.logger.info(yellow + "Monitoring Trace ID: #{trace_id}" + reset) if trace_id
-        Rails.logger.info(yellow + c.sub(evs, "[REDACTED_ENV_VARS]") + reset)
-        Rails.logger.info(separator)
-      end
-      c
-    end
-  end
-
-  def env_vars_string
-    # Build environment variables as a string prefix for bash command
-    # Tenant context is set by the command method's with_tenant wrapper
-    # Per-target vars override global vars with the same name
-    merged = merged_env_vars
-    vars = merged.map { |name, value| "#{name}=#{Shellwords.escape(value)}" }
-
-    # Add HOME directory for rails user
-    vars << "HOME=/home/rails"
-
-    # Add variant scan flag for child reports with variants
-    vars << "VARIANT_SCAN=true" if report.is_variant_report?
-
-    # Pass log file path to Python for correct log reading/cleanup
-    # This ensures Python reads from the same path Ruby writes to via LogPathManager
-    log_path = LogPathManager.scan_log_file_for_report(report)
-    vars << "LOG_FILE_PATH=#{Shellwords.escape(log_path.to_s)}"
-
-    # Add DATABASE_URL for Python db_notifier to connect to PostgreSQL
-    # Required for multi-pod IPC: Python writes to raw_report_data and enqueues Solid Queue jobs
-    vars << "DATABASE_URL=#{Shellwords.escape(database_url_for_python)}"
-
-    if MonitoringService.active?
-      trace_context = MonitoringService.trace_context
-      trace_context.each do |key, value|
-        vars << "#{key}=#{Shellwords.escape(value)}"
-      end
-    end
-
-    vars << "REPORT_UUID=#{Shellwords.escape(report.uuid)}"
-    vars << "SCAN_ID=#{Shellwords.escape(report.scan.id.to_s)}"
-    vars << "SCAN_NAME=#{Shellwords.escape(report.scan.name)}"
-    vars << "TARGET_ID=#{Shellwords.escape(target.id.to_s)}"
-    vars << "TARGET_NAME=#{Shellwords.escape(target.name)}"
-
-    vars.join(" ")
-  end
-
   def database_url_for_python
-    # Use existing DATABASE_URL if set, otherwise construct from Rails config
     return ENV["DATABASE_URL"] if ENV["DATABASE_URL"].present?
 
     config = ActiveRecord::Base.connection_db_config.configuration_hash
@@ -160,7 +163,7 @@ class RunGarakScan
 
   def api_params
     [
-      "--skip_unknown",
+      [ "--skip_unknown" ],
       target_type_arg,
       target_name_arg,
       probes_config,
@@ -168,20 +171,20 @@ class RunGarakScan
       evaluation_threshold,
       parallel_attempts,
       generator_options
-    ].compact.join(" ")
+    ].compact.flatten
   end
 
   def web_chat_params
     [
-      "--skip_unknown",
-      "--target_type web_chatbot.WebChatbotGenerator",
+      [ "--skip_unknown" ],
+      [ "--target_type", "web_chatbot.WebChatbotGenerator" ],
       web_chat_target_name,
       probes_config,
       report_prefix,
       evaluation_threshold,
       parallel_attempts,
       web_chat_generator_options
-    ].compact.join(" ")
+    ].compact.flatten
   end
 
   def target
@@ -189,15 +192,15 @@ class RunGarakScan
   end
 
   def target_type_arg
-    "--target_type #{Target::INVERTED_MODEL_TYPES[target.model_type]}.#{target.model_type}"
+    [ "--target_type", "#{Target::INVERTED_MODEL_TYPES[target.model_type]}.#{target.model_type}" ]
   end
 
   def target_name_arg
-    "--target_name #{target.model}"
+    [ "--target_name", target.model ]
   end
 
   def web_chat_target_name
-    "--target_name web_chatbot"
+    [ "--target_name", "web_chatbot" ]
   end
 
   # Build a temporary YAML config containing the probe_spec, and return --config <path>
@@ -205,19 +208,19 @@ class RunGarakScan
     probes_list = scan_probes
 
     probes_csv = probes_list.join(",")
-    "--config #{write_probes_yaml(probes_csv)}"
+    [ "--config", write_probes_yaml(probes_csv) ]
   end
 
   def generator_options
     return if target.json_config.blank?
 
-    "--generator_option_file #{temp_json_file_path}"
+    [ "--generator_option_file", temp_json_file_path ]
   end
 
   def web_chat_generator_options
     return if target.web_config.blank?
 
-    "--generator_option_file #{temp_web_config_file_path}"
+    [ "--generator_option_file", temp_web_config_file_path ]
   end
 
   def temp_json_file_path
@@ -280,15 +283,15 @@ class RunGarakScan
   end
 
   def parallel_attempts
-    "--parallel_attempts #{SettingsService.parallel_attempts}"
+    [ "--parallel_attempts", SettingsService.parallel_attempts.to_s ]
   end
 
   def report_prefix
-    "--report_prefix #{report.uuid}"
+    [ "--report_prefix", report.uuid ]
   end
 
   # Merge global and per-target env vars. Per-target overrides global on name collision.
-  # Memoized — called from both env_vars_string and substitute_env_vars.
+  # Memoized — called from both build_env and substitute_env_vars.
   def merged_env_vars
     @merged_env_vars ||= begin
       global_vars = EnvironmentVariable
@@ -308,11 +311,15 @@ class RunGarakScan
   end
 
   def evaluation_threshold
-    # Tenant context is set by the command method's with_tenant wrapper
+    # Tenant context is set by execute_scan's with_tenant wrapper
     env_var = target.environment_variables.find_by(env_name: EVALUATION_THRESHOLD_ENV_NAME) ||
       EnvironmentVariable.global.find_by(env_name: EVALUATION_THRESHOLD_ENV_NAME)
 
-    "--eval_threshold #{Shellwords.escape(env_var.env_value)}" if env_var&.env_value
+    if env_var&.env_value
+      value = env_var.env_value.to_s.strip
+      raise ArgumentError, "Invalid evaluation threshold: #{value}" unless value.match?(/\A\d+(\.\d+)?\z/)
+      [ "--eval_threshold", value ]
+    end
   end
 
   # Returns the list of remaining probes for a regular report, filtering out
@@ -433,21 +440,21 @@ class RunGarakScan
     Rails.logger.warn("[ScanResume] Report #{report.uuid}: Could not persist logs: #{e.message}")
   end
 
+  def read_log_tail
+    log_path = LogPathManager.scan_log_file_for_report(report)
+    return nil unless log_path && File.exist?(log_path.to_s)
+
+    content = File.read(log_path.to_s)
+    content.lines.last(10).join.strip.truncate(500)
+  rescue StandardError
+    nil
+  end
+
   def log_resumption_info(total, remaining)
     completed = total - remaining
     Rails.logger.info(
       "[ScanResume] Report #{report.uuid}: Resuming scan — " \
       "#{completed}/#{total} probes already completed, #{remaining} remaining"
     )
-  end
-
-  def log_file
-    Rails.logger.info("Creating log file for report: #{report.uuid}")
-
-    full_log_path = LogPathManager.scan_log_file_for_report(report)
-
-    Rails.logger.info("Log file path: #{full_log_path}")
-
-    " 2>&1 | tee -a #{Shellwords.escape(full_log_path.to_s)} "
   end
 end

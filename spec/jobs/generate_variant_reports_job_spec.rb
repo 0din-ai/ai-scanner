@@ -79,11 +79,32 @@ RSpec.describe GenerateVariantReportsJob, type: :job do
     context "when no probes passed in parent report" do
       before do
         scan.threat_variant_subindustries << subindustry
-        create(:probe_result, report: report, probe: probe, detector: detector, passed: 0, total: 10)
+        create(:probe_result, report: report, probe: probe, detector: detector, passed: 0, total: 10, any_detector_passed: false)
       end
 
       it "does nothing" do
         expect { described_class.new.perform(report.id) }.not_to change(Report, :count)
+      end
+    end
+
+    context "when a backfilled historical row has passed=0 but any_detector_passed=true" do
+      # Historical rows predate max-merge on probe_result.passed and may retain
+      # the last detector's inverted count. The migration backfills
+      # any_detector_passed=true wherever passed>0, but rows that were
+      # post-processed to passed=0 keep any_detector_passed=true if set
+      # by the live processing code. Variant reports must still fire on that
+      # signal regardless of the stored passed magnitude.
+      before do
+        scan.threat_variant_subindustries << subindustry
+        create(:probe_result,
+               report: report, probe: probe, detector: detector,
+               passed: 0, total: 10, any_detector_passed: true)
+      end
+
+      it "creates a child variant report using any_detector_passed" do
+        allow_any_instance_of(RunGarakScan).to receive(:call)
+
+        expect { described_class.new.perform(report.id) }.to change(Report, :count).by(1)
       end
     end
 

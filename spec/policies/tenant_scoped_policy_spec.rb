@@ -93,21 +93,35 @@ RSpec.describe TenantScopedPolicy do
     end
   end
 
-  describe 'security note' do
-    # This test documents the security model
+  describe 'authorization model' do
+    it 'grants all CRUD actions to any authenticated tenant user (intentional flat-permission design)' do
+      policy = described_class.new(user, target)
+      expect(policy.index?).to be true
+      expect(policy.show?).to be true
+      expect(policy.create?).to be true
+      expect(policy.update?).to be true
+      expect(policy.destroy?).to be true
+    end
+
+    it 'grants identical permissions to super_admin and regular user within the same tenant' do
+      regular_policy = described_class.new(user, target)
+      admin_policy = described_class.new(super_admin, target)
+
+      %i[index? show? create? update? destroy?].each do |action|
+        expect(regular_policy.public_send(action)).to eq(admin_policy.public_send(action)),
+          "Expected #{action} to be the same for regular user and super_admin"
+      end
+    end
+
     it 'relies on ActsAsTenant for tenant isolation' do
-      # When ActsAsTenant.current_tenant is set, queries are automatically scoped
       ActsAsTenant.with_tenant(company) do
         expect(ActsAsTenant.current_tenant).to eq(company)
-        # All Target queries in this block are scoped to company
       end
     end
 
     it 'exposes all tenants when ActsAsTenant is bypassed' do
-      # This is intentional for super_admin contexts
       ActsAsTenant.without_tenant do
         expect(ActsAsTenant.current_tenant).to be_nil
-        # Queries here return all records - only use for super_admin!
       end
     end
   end

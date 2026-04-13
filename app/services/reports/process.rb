@@ -65,16 +65,23 @@ module Reports
             next
           end
 
-          process_method = "process_#{data['entry_type']}"
-          if respond_to?(process_method, true)
-            send(process_method, data)
-            valid_lines += 1
-            processed = true
-
-            # Track if we've processed attempts and evals
-            attempts_processed = true if data["entry_type"] == "attempt"
-            evals_processed = true if data["entry_type"] == "eval"
+          case data["entry_type"]
+          when "init"
+            process_init(data)
+          when "attempt"
+            process_attempt(data)
+            attempts_processed = true
+          when "eval"
+            process_eval(data)
+            evals_processed = true
+          when "completion"
+            process_completion(data)
+          else
+            next
           end
+
+          valid_lines += 1
+          processed = true
         rescue JSON::ParserError => e
           # Log the error but continue processing other lines
           Rails.logger.error "Report #{report.id}: JSON parse error on line #{line_number}: #{e.message}"
@@ -89,21 +96,20 @@ module Reports
 
       # Mark as completed only if we processed attempts AND evals AND created probe results.
       # Having attempts but no evals indicates a malformed report (garak exited early).
-      # Having evals but no probe_results means all probes were unknown/skipped.
+      # Having evals but no probe_results means all probes were unknown/skipped — treat as failed
+      # so operators see the drift between the runtime probe catalog and the database.
       if !attempts_processed
         Rails.logger.warn "Report #{report.id}: No attempts found in report, marking as failed"
         report.status = :failed
       elsif !evals_processed
         Rails.logger.warn "Report #{report.id}: Attempts found but no eval results - scan may have been interrupted, marking as failed"
         report.status = :failed
-      elsif processed && valid_lines > 0 && report.probe_results.exists?
+      elsif processed && valid_lines > 0 && @probe_results_saved_this_run
         report.status = :completed
       else
         Rails.logger.warn "Report #{report.id}: No probe results created despite processing lines, marking as failed"
         report.status = :failed
       end
-      # Note: logs, save, and save_detector_results are handled by callers
-      # (process_from_database or process_from_file)
     end
 
     def save_detector_results
@@ -150,49 +156,42 @@ module Reports
       passed = total - data["passed"].to_i
       max_score = report_data.dig(probe_classname, "stats", "max_score")
 
-      # Resolve the probe from the classname, passing detector to disambiguate
-      # variant probes with shared class names (base + CM probe pairs)
-      resolved_list = resolve_probe(probe_classname, detector_name)
-      return if resolved_list.all? { |r| r[:skip] }
+      # Resolve the probe from the classname (cached to avoid repeated queries)
+      resolved = resolve_probe(probe_classname)
+      if resolved[:skip]
+        report_data.delete(probe_classname)
+        return
+      end
 
+      # Use find_or_initialize_by to handle resumed scans where
+      # probe_results may already exist from a previous partial processing run
+      probe_result = report.probe_results.find_or_initialize_by(
+        probe_id: resolved[:probe_id],
+        threat_variant_id: resolved[:variant]&.id
+      )
       attempts_data = report_data.dig(probe_classname, "attempts")
-      token_estimate = nil
+      if attempts_data.present?
+        probe_result.attempts = attempts_data
+        token_estimate = TokenEstimator.estimate_from_attempts(probe_result.attempts)
+        probe_result.input_tokens = token_estimate[:input_tokens]
+        probe_result.output_tokens = token_estimate[:output_tokens]
+      end
+
+      probe_result.max_score = max_score unless max_score.nil?
+
+      # Multi-detector: keep the max passed across detectors; new_record?
+      # ensures first eval always sets the detector even when passed=0.
       detector_id = find_or_create_detector(detector_name).id
-
-      # Create a ProbeResult for each resolved probe
-      tokens_assigned = false
-      resolved_list.each do |resolved|
-        next if resolved[:skip]
-
-        # Use find_or_initialize_by to handle resumed scans where
-        # probe_results may already exist from a previous partial processing run
-        probe_result = report.probe_results.find_or_initialize_by(
-          probe_id: resolved[:probe_id],
-          threat_variant_id: resolved[:variant]&.id
-        )
-        probe_result.attempts = attempts_data if attempts_data.present?
-
-        # Assign tokens only to the first result to avoid inflating totals
-        if !tokens_assigned
-          token_estimate ||= TokenEstimator.estimate_from_attempts(probe_result.attempts)
-          probe_result.input_tokens = token_estimate[:input_tokens]
-          probe_result.output_tokens = token_estimate[:output_tokens]
-          tokens_assigned = true
-        else
-          probe_result.input_tokens = 0
-          probe_result.output_tokens = 0
-        end
-
-        probe_result.max_score = max_score
+      if passed > probe_result.passed.to_i || probe_result.new_record?
         probe_result.passed = passed
         probe_result.total = total
         probe_result.detector_id = detector_id
-        probe_result.save!
       end
-
+      probe_result.any_detector_passed ||= passed.positive?
+      probe_result.save!
+      @probe_results_saved_this_run = true
       report_data.delete(probe_classname)
 
-      # Count detector stats once per eval line (not per resolved probe)
       detector_stats[detector_name] ||= { passed: 0, total: 0 }
       detector_stats[detector_name][:passed] += passed
       detector_stats[detector_name][:total] += total
@@ -202,57 +201,69 @@ module Reports
       end
     end
 
-    # Resolves a probe classname to an array of { probe_id:, variant:, skip: } hashes.
-    def resolve_probe(probe_classname, detector_name = nil)
+    # Resolves a probe classname to a probe_id and optional variant.
+    # Tries full classname first, then falls back to last segment for 0din probes.
+    # Skips unknown probes with a warning.
+    def resolve_probe(probe_classname)
+      @resolved_probes ||= {}
+      return @resolved_probes[probe_classname] if @resolved_probes.key?(probe_classname)
+
+      result = resolve_probe_uncached(probe_classname)
+      @resolved_probes[probe_classname] = result
+    end
+
+    def resolve_probe_uncached(probe_classname)
+      # Variant probes: runtime emits "0din_variants.<VariantPrompt>" (see
+      # script/garak_plugins/probes/0din_variants.py and VariantProbeMapper).
+      # Map the variant prompt back to its base probe via ThreatVariant.
       if probe_classname.start_with?("0din_variants.")
-        return resolve_variant_probe(probe_classname, detector_name)
+        variant_prompt = probe_classname.split(".", 2).last
+
+        scope = ThreatVariant.where(prompt: variant_prompt)
+        scope = scope.where(probe_id: variant_probe_ids) if variant_probe_ids&.any?
+        # Order deterministically — prompts are unique per probe at the DB level,
+        # but the same prompt can exist across probes. Fall back to a stable pick
+        # and warn so operators see any future data drift.
+        matches = scope.order(:probe_id, :id).limit(2).to_a
+        variant = matches.first
+
+        unless variant
+          Rails.logger.warn("Report #{report.id}: Unknown variant probe: #{variant_prompt}, skipping")
+          return { probe_id: nil, variant: nil, skip: true }
+        end
+
+        if matches.size > 1
+          Rails.logger.warn("Report #{report.id}: Ambiguous variant prompt #{variant_prompt} matches multiple ThreatVariants; picked probe_id=#{variant.probe_id}")
+        end
+
+        return { probe_id: variant.probe_id, variant: variant }
       end
 
-      probe_name = probe_classname
-      probe_id = Probe.where(name: probe_name).limit(1).pluck(:id).first
+      # Standard probes: try full classname, then fall back to last segment
+      # for any dotted name (e.g., "0din.Foo" → "Foo", "dan.DAN_Jailbreak" → "DAN_Jailbreak").
+      probe_id = Probe.where(name: probe_classname).limit(1).pluck(:id).first
       if probe_id.nil? && probe_classname.include?(".")
         probe_name = probe_classname.split(".").last
         probe_id = Probe.where(name: probe_name).limit(1).pluck(:id).first
       end
+
       if probe_id.nil?
-        Rails.logger.warn("[Reports::Process] Unknown probe classname: #{probe_classname}, skipping")
-        return [ { probe_id: nil, variant: nil, skip: true } ]
-      end
-      [ { probe_id: probe_id, variant: nil } ]
-    end
-
-    def resolve_variant_probe(probe_classname, detector_name = nil)
-      variant_class_name = probe_classname.split(".").last
-
-      variants = if report.is_variant_report? && report.variant_probes.any?
-        ThreatVariant.where(prompt: variant_class_name, probe_id: report.variant_probes.select(:id)).to_a
-      else
-        ThreatVariant.where(prompt: variant_class_name).to_a
+        Rails.logger.warn("Report #{report.id}: Unknown probe classname: #{probe_classname}, skipping")
+        return { probe_id: nil, variant: nil, skip: true }
       end
 
-      if variants.empty?
-        Rails.logger.warn("[Reports::Process] Unknown variant probe: #{variant_class_name}, skipping")
-        return [ { probe_id: nil, variant: nil, skip: true } ]
-      end
-
-      # When multiple variants match (base + CM probe pairs sharing a class name),
-      # filter to the variant whose probe uses the matching detector. The garak
-      # variant plugin evaluates with a single detector per run, so fanning out
-      # to probes with a different detector would fabricate incorrect results.
-      if variants.size > 1 && detector_name.present?
-        detector = Detector.find_by(name: detector_name)
-        if detector
-          matching = variants.select { |v| v.probe.detector_id == detector.id }
-          variants = matching if matching.any?
-        end
-      end
-
-      variants.map { |v| { probe_id: v.probe_id, variant: v } }
+      { probe_id: probe_id, variant: nil }
     end
 
     def find_or_create_detector(detector_name)
       @detectors ||= {}
       @detectors[detector_name] ||= Detector.find_or_create_by(name: detector_name)
+    end
+
+    def variant_probe_ids
+      return @variant_probe_ids if defined?(@variant_probe_ids)
+
+      @variant_probe_ids = report.is_variant_report? ? report.variant_probes.pluck(:id) : nil
     end
 
     # Refine target's tokens_per_second using weighted average from actual report data
@@ -292,12 +303,22 @@ module Reports
         report_data.clear
         return
       end
-      report.start_time = Time.parse(data["start_time"]) rescue nil
+      begin
+        report.start_time = Time.parse(data["start_time"])
+      rescue ArgumentError, TypeError => e
+        Rails.logger.warn("Report #{report.id}: invalid start_time '#{data['start_time']}': #{e.message}")
+        report.start_time = nil
+      end
       report.save! if report.start_time_changed?
     end
 
     def process_completion(data)
-      report.end_time = Time.parse(data["end_time"]) rescue nil
+      begin
+        report.end_time = Time.parse(data["end_time"])
+      rescue ArgumentError, TypeError => e
+        Rails.logger.warn("Report #{report.id}: invalid end_time '#{data['end_time']}': #{e.message}")
+        report.end_time = nil
+      end
       report.save! if report.end_time_changed?
     end
 

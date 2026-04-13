@@ -7,7 +7,9 @@ RSpec.describe ReportDetailsController, type: :controller do
 
   before do
     sign_in user
-    allow(Report).to receive(:find).with("1").and_return(report)
+    report_scope = double("Report::Relation")
+    allow(Report).to receive(:includes).with(*ReportDetailsController::SHOW_INCLUDES).and_return(report_scope)
+    allow(report_scope).to receive(:find).with("1").and_return(report)
     allow(ReportDecorator).to receive(:new).with(report).and_return(decorated_report)
   end
 
@@ -15,7 +17,6 @@ RSpec.describe ReportDetailsController, type: :controller do
     it 'renders the show template with status 200' do
       get :show, params: { id: 1 }
 
-      expect(Report).to have_received(:find).with("1")
       expect(ReportDecorator).to have_received(:new).with(report)
       expect(response).to have_http_status(:ok)
     end

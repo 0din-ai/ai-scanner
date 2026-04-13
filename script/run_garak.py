@@ -28,7 +28,6 @@ Example:
 
 import os
 import sys
-import argparse
 import shlex
 import signal
 import logging
@@ -92,7 +91,10 @@ signal.signal(signal.SIGINT, signal_handler)
 def run_garak_scan(garak_params):
     """Run the Garak scan with the provided parameters."""
     try:
-        params_list = shlex.split(garak_params)
+        if isinstance(garak_params, str):
+            params_list = shlex.split(garak_params)
+        else:
+            params_list = list(garak_params)
 
         sys.argv = ['garak'] + params_list
 
@@ -168,25 +170,12 @@ def notify_report_stopped(report_uuid):
 
 def main():
     """Main function to parse arguments and run the Garak scan."""
-    parser = argparse.ArgumentParser(
-        description='Run Garak scan with database PID management',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
-    )
+    if len(sys.argv) < 2:
+        print("Usage: python3 run_garak.py <report_uuid> [garak_params...]", file=sys.stderr)
+        sys.exit(1)
 
-    parser.add_argument(
-        'report_uuid',
-        help='UUID of the report to update with the process ID'
-    )
-
-    parser.add_argument(
-        'garak_params',
-        help='Garak parameters as a single string (will be parsed into arguments)'
-    )
-
-    args = parser.parse_args()
-
-    report_uuid = args.report_uuid
+    report_uuid = sys.argv[1]
+    garak_params = sys.argv[2:]
     scan_id = os.environ.get('SCAN_ID', 'unknown')
     scan_name = os.environ.get('SCAN_NAME', 'unknown')
     target_id = os.environ.get('TARGET_ID', 'unknown')
@@ -226,7 +215,7 @@ def main():
             current_journal_sync = journal_sync
             journal_sync.start()
 
-        exit_code = run_garak_scan(args.garak_params)
+        exit_code = run_garak_scan(garak_params)
         logger.info(f"Garak scan completed - Report: {report_uuid}, "
                    f"Exit code: {exit_code}")
         print(f"Garak scan completed with exit code: {exit_code}")

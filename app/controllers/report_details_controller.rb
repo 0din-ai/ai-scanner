@@ -1,8 +1,11 @@
 class ReportDetailsController < ApplicationController
-  skip_before_action :authenticate_user!, only: [ :show ], if: :valid_pdf_token?
-  skip_before_action :set_tenant, only: [ :show ], if: :valid_pdf_token?
+  SHOW_INCLUDES = [ :target, :scan, probe_results: [ :probe, :detector ] ].freeze
+
+  skip_before_action :authenticate_user!, only: [ :show ]
+  skip_before_action :set_tenant, only: [ :show ]
+  before_action :authenticate_show, only: [ :show ]
+  before_action :set_show_tenant, only: [ :show ]
   before_action :set_report
-  before_action :set_tenant_from_report, only: [ :show ], if: :valid_pdf_token?
 
   def show
   end
@@ -60,7 +63,8 @@ class ReportDetailsController < ApplicationController
   private
 
   def set_report
-    @report = ReportDecorator.new(Report.find(params[:id]))
+    report = @_unscoped_report || Report.includes(*SHOW_INCLUDES).find(params[:id])
+    @report = ReportDecorator.new(report)
   end
 
   def pdf_filename
@@ -70,19 +74,33 @@ class ReportDetailsController < ApplicationController
   # Verify a short-lived signed token from the internal PDF renderer.
   # This allows the headless browser to access the report without a Devise session.
   def valid_pdf_token?
-    return false unless params[:pdf_token].present? && params[:pdf].present?
+    return @_valid_pdf_token if defined?(@_valid_pdf_token)
 
-    report_id = Rails.application.message_verifier("pdf").verify(
-      params[:pdf_token],
-      purpose: :pdf_render
-    )
-    report_id.to_s == params[:id].to_s
+    @_valid_pdf_token = if params[:pdf_token].present? && params[:pdf].present?
+      report_id = Rails.application.message_verifier("pdf").verify(
+        params[:pdf_token],
+        purpose: :pdf_render
+      )
+      report_id.to_s == params[:id].to_s
+    else
+      false
+    end
   rescue ActiveSupport::MessageVerifier::InvalidSignature
-    false
+    @_valid_pdf_token = false
   end
 
-  def set_tenant_from_report
-    report = Report.find(params[:id])
-    ActsAsTenant.current_tenant = report.company
+  def authenticate_show
+    return if valid_pdf_token?
+
+    redirect_to new_user_session_path unless current_user
+  end
+
+  def set_show_tenant
+    if valid_pdf_token?
+      @_unscoped_report = Report.includes(*SHOW_INCLUDES).find(params[:id])
+      ActsAsTenant.current_tenant = @_unscoped_report.company
+    else
+      set_tenant
+    end
   end
 end

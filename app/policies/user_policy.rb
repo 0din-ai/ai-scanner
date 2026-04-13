@@ -20,15 +20,14 @@ class UserPolicy < ApplicationPolicy
 
   def update?
     return true if super_admin?
-    return false if record.super_admin? # Can't edit super admins
-    same_company?
+    return false if record.super_admin?
+    record == user
   end
 
   def destroy?
     return false if record == user # Can't delete self
     return false if record.super_admin? # Can't delete super admins
-    return true if super_admin?
-    same_company?
+    super_admin?
   end
 
   # Custom permissions

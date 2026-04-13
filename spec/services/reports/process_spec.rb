@@ -179,6 +179,311 @@ RSpec.describe Reports::Process, type: :service do
       end
     end
 
+    context 'when entry_type is unknown' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:unknown_entry_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'evil_method', payload: 'should be ignored' }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: unknown_entry_jsonl, logs_data: nil) }
+
+      it 'ignores the unknown entry_type and processes the rest normally' do
+        expect { service.call }.to change { ProbeResult.count }.by(1)
+        expect(report.status).to eq('completed')
+      end
+
+      it 'does not dispatch to arbitrary private methods' do
+        expect(service).not_to receive(:send).with('process_evil_method', anything)
+        service.call
+      end
+    end
+
+    context 'when start_time is invalid' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:bad_start_time_jsonl) do
+        [
+          { entry_type: 'init', start_time: 'not-a-date' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: bad_start_time_jsonl, logs_data: nil) }
+
+      it 'logs a warning and leaves start_time nil' do
+        allow(Rails.logger).to receive(:warn).and_call_original
+        service.call
+        report.reload
+        expect(report.start_time).to be_nil
+        expect(Rails.logger).to have_received(:warn).with(/invalid start_time/i)
+      end
+    end
+
+    context 'when end_time is invalid' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:bad_end_time_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: 'garbage-time' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: bad_end_time_jsonl, logs_data: nil) }
+
+      it 'logs a warning and leaves end_time nil' do
+        allow(Rails.logger).to receive(:warn).and_call_original
+        service.call
+        report.reload
+        expect(report.end_time).to be_nil
+        expect(Rails.logger).to have_received(:warn).with(/invalid end_time/i)
+      end
+    end
+
+    context 'when processing a probe with multiple detectors' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:multi_detector_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 85 } }.to_json,
+          # First detector eval - has attempts and max_score in report_data
+          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 1, total: 4 }.to_json,
+          # Second detector eval - report_data already consumed by first eval
+          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 3, total: 4 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: multi_detector_jsonl, logs_data: nil) }
+
+      it 'preserves attempts from the first detector eval' do
+        service.call
+
+        probe_result = report.probe_results.find_by(probe: probe)
+        expect(probe_result.attempts).to be_present
+        expect(probe_result.attempts.first['uuid']).to eq('attempt-1')
+      end
+
+      it 'preserves max_score from the first detector eval' do
+        service.call
+
+        probe_result = report.probe_results.find_by(probe: probe)
+        expect(probe_result.max_score).to eq(85)
+      end
+
+      it 'keeps the max passed across detectors and associates the detector that produced it' do
+        service.call
+
+        probe_result = report.probe_results.find_by(probe: probe)
+        # First eval: inverted passed=3, detector=CrystalMethScore → new max
+        # Second eval: inverted passed=1, detector=MitigationBypass → not a new max, retained
+        expect(probe_result.passed).to eq(3)
+        expect(probe_result.total).to eq(4)
+        expect(probe_result.detector.name).to eq('0din.CrystalMethScore')
+      end
+
+      it 'creates detector results for both detectors' do
+        expect { service.call }.to change { DetectorResult.count }.by(2)
+
+        detector_names = report.detector_results.includes(:detector).map { |dr| dr.detector.name }
+        expect(detector_names).to contain_exactly('0din.CrystalMethScore', '0din.MitigationBypass')
+      end
+
+      it 'does not double-count tokens across detector evals' do
+        service.call
+
+        probe_result = report.probe_results.find_by(probe: probe)
+        first_eval_input = probe_result.input_tokens
+        first_eval_output = probe_result.output_tokens
+
+        # Re-run the same jsonl via a second pass should not inflate token counts —
+        # tokens are only recomputed when fresh attempts arrive on an eval.
+        expect(first_eval_input).to be > 0
+        expect(probe_result.attempts.size).to eq(1)
+        # The second detector eval had attempts_data blank, so input/output tokens
+        # come from the first eval only, not additively summed.
+        expect(first_eval_input).to eq(TokenEstimator.estimate_from_attempts(probe_result.attempts)[:input_tokens])
+        expect(first_eval_output).to eq(TokenEstimator.estimate_from_attempts(probe_result.attempts)[:output_tokens])
+      end
+
+      it 'sets any_detector_passed when any eval had successful attacks' do
+        service.call
+
+        probe_result = report.probe_results.find_by(probe: probe)
+        # First eval inverted passed=3; second inverted passed=1. any detector > 0 → true.
+        expect(probe_result.any_detector_passed).to be true
+      end
+    end
+
+    context 'when first detector is bypassed and last detector fully defends' do
+      # Regression guard for the "red vulnerable with 0/N numerator" contradiction.
+      # Without max-merge on probe_result.passed, the last detector's passed=0
+      # would overwrite the earlier detector's passed=4, producing a self-
+      # contradictory display (any_detector_passed=true but passed=0).
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:first_bypassed_then_defended_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: { score_percentage: 90 } }.to_json,
+          # First detector: 0 defenses out of 4 → inverted passed=4 (fully bypassed)
+          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 0, total: 4 }.to_json,
+          # Second detector: 4 defenses out of 4 → inverted passed=0 (fully defended)
+          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 4, total: 4 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: first_bypassed_then_defended_jsonl, logs_data: nil) }
+
+      it 'preserves the max passed so display and signal stay consistent' do
+        service.call
+
+        probe_result = report.probe_results.find_by(probe: probe)
+        expect(probe_result.passed).to eq(4)
+        expect(probe_result.any_detector_passed).to be true
+        expect(probe_result.detector.name).to eq('0din.CrystalMethScore')
+      end
+    end
+
+    context 'when two detectors tie on passed' do
+      # Regression guard: strict `>` tie-break keeps the first detector's
+      # attribution so detector_id is stable against eval re-ordering.
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:tie_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: {} }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 2, total: 4 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 2, total: 4 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: tie_jsonl, logs_data: nil) }
+
+      it 'keeps the first detector to reach the max' do
+        service.call
+
+        probe_result = report.probe_results.find_by(probe: probe)
+        expect(probe_result.passed).to eq(2)
+        expect(probe_result.detector.name).to eq('0din.CrystalMethScore')
+      end
+    end
+
+    context 'when detectors report different totals' do
+      # Regression guard: passed/total/detector_id must stay tied to the
+      # winning detector so we never produce `passed > total` or inconsistent
+      # ASR derivations.
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:divergent_totals_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: {} }.to_json,
+          # Winning detector: 1 defense out of 5 → inverted passed=4, total=5
+          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 1, total: 5 }.to_json,
+          # Later detector: 2 defenses out of 3 → inverted passed=1, total=3 (must not bleed total=3 in)
+          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 2, total: 3 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: divergent_totals_jsonl, logs_data: nil) }
+
+      it 'keeps passed and total tied to the winning detector' do
+        service.call
+
+        probe_result = report.probe_results.find_by(probe: probe)
+        expect(probe_result.passed).to eq(4)
+        expect(probe_result.total).to eq(5)
+        expect(probe_result.detector.name).to eq('0din.CrystalMethScore')
+        expect(probe_result.passed).to be <= probe_result.total
+      end
+    end
+
+    context 'when an existing probe_result has null detector_id but non-zero passed' do
+      # Regression guard: the new_record? fallback must not regress an existing
+      # max. A persisted row with detector_id=nil (data anomaly) and passed=5
+      # should not be overwritten by a later, lower-scoring eval just because
+      # the detector is unset.
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let!(:existing_detector) { create(:detector, name: 'legacy_detector') }
+      let!(:existing_probe_result) do
+        report.probe_results.create!(
+          probe: probe,
+          detector: existing_detector,
+          passed: 5,
+          total: 10,
+          any_detector_passed: true
+        ).tap { |pr| pr.update_column(:detector_id, nil) }
+      end
+      let(:lower_eval_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: {} }.to_json,
+          # Lower passed than the persisted max: 7 defenses out of 10 → inverted passed=3
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 7, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: lower_eval_jsonl, logs_data: nil) }
+
+      it 'preserves the persisted max instead of overwriting it' do
+        service.call
+
+        existing_probe_result.reload
+        expect(existing_probe_result.passed).to eq(5)
+        expect(existing_probe_result.total).to eq(10)
+      end
+    end
+
+    context 'when probe classname is a dotted name that falls back to last segment' do
+      # The runtime may emit classnames like "dan.DAN_Jailbreak" where the Probe row
+      # was persisted under just "DAN_Jailbreak". The resolver must fall back.
+      let!(:probe) { create(:probe, name: 'DAN_Jailbreak') }
+      let(:dotted_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: 'dan.DAN_Jailbreak', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: { score_percentage: 50 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: 'dan.DAN_Jailbreak', passed: 2, total: 5 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: dotted_jsonl, logs_data: nil) }
+
+      it 'resolves the probe via last-segment fallback' do
+        expect { service.call }.to change { ProbeResult.count }.by(1)
+        expect(ProbeResult.last.probe).to eq(probe)
+      end
+    end
+
+    context 'when probe classname is not found in database' do
+      let(:unknown_probe_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.NonExistentProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: {} }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.NonExistentProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: unknown_probe_jsonl, logs_data: nil) }
+
+      it 'does not create a probe result' do
+        expect { service.call }.not_to change { ProbeResult.count }
+      end
+
+      it 'logs a warning for the unknown probe' do
+        allow(Rails.logger).to receive(:warn)
+        service.call
+        expect(Rails.logger).to have_received(:warn).with(/Unknown probe classname: 0din.NonExistentProbe/)
+      end
+
+      it 'marks the report as failed when no probe results were created' do
+        service.call
+        expect(report.status).to eq('failed')
+      end
+    end
+
     context 'when processing garak 0.14.0 format with total_evaluated' do
       let(:logs_content) { 'Garak 0.14.0 log content' }
       let!(:probe) { create(:probe, name: 'dan.DAN_Jailbreak') }
@@ -207,6 +512,93 @@ RSpec.describe Reports::Process, type: :service do
         detector_result = DetectorResult.last
         expect(detector_result.total).to eq(5)
         expect(detector_result.passed).to eq(0)
+      end
+    end
+
+    context 'when processing variant report' do
+      let(:probe) { create(:probe, name: 'TestProbe') }
+      let(:industry) { create(:threat_variant_industry) }
+      let(:subindustry) { create(:threat_variant_subindustry, threat_variant_industry: industry) }
+      let!(:threat_variant) { create(:threat_variant, probe: probe, threat_variant_subindustry: subindustry, prompt: 'Variant_TEST_001') }
+
+      let(:variant_scan) do
+        s = build(:complete_scan)
+        s.threat_variant_subindustries << subindustry
+        s.save!(validate: false)
+        s
+      end
+
+      let(:parent_report) { create(:report, target: target, scan: variant_scan) }
+      let(:child_report) { create(:report, :running, target: target, scan: variant_scan, parent_report: parent_report, uuid: 'variant-test-uuid') }
+      let(:variant_service) { described_class.new(child_report.id) }
+
+      let(:variant_jsonl_content) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din_variants.Variant_TEST_001', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_TEST_001', passed: 3, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+
+      let!(:variant_raw_data) { create(:raw_report_data, report: child_report, jsonl_data: variant_jsonl_content, logs_data: 'Variant logs') }
+
+      before do
+        child_report.variant_probes << probe
+      end
+
+      it 'creates probe results with threat_variant_id' do
+        expect { variant_service.call }.to change { ProbeResult.count }.by(1)
+
+        probe_result = ProbeResult.last
+        expect(probe_result.threat_variant_id).to eq(threat_variant.id)
+        expect(probe_result.threat_variant).to eq(threat_variant)
+      end
+
+      it 'looks up variant from probe classname' do
+        variant_service.call
+
+        probe_result = ProbeResult.last
+        expect(probe_result.probe).to eq(probe)
+        expect(probe_result.threat_variant.prompt).to eq('Variant_TEST_001')
+      end
+
+      it 'handles unknown variant prompt gracefully' do
+        bad_content = [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din_variants.Variant_NONEXISTENT', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_NONEXISTENT', passed: 3, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+
+        variant_raw_data.update!(jsonl_data: bad_content)
+
+        allow(Rails.logger).to receive(:warn)
+        expect { variant_service.call }.not_to change { ProbeResult.count }
+        expect(Rails.logger).to have_received(:warn).with(/Unknown variant probe: Variant_NONEXISTENT/)
+      end
+
+      it 'scopes variant lookup to report.variant_probes when present' do
+        # A ThreatVariant with the same prompt but tied to a different probe
+        # must not be selected when variant_probes constrains the search.
+        other_probe = create(:probe, name: 'OtherProbe')
+        create(:threat_variant, probe: other_probe, threat_variant_subindustry: subindustry, prompt: 'Variant_TEST_001')
+
+        variant_service.call
+
+        probe_result = ProbeResult.last
+        expect(probe_result.probe).to eq(probe)
+        expect(probe_result.threat_variant).to eq(threat_variant)
+      end
+
+      it 'associates correct variant with probe result' do
+        variant_service.call
+
+        probe_result = ProbeResult.last
+        expect(probe_result.attempts.first['uuid']).to eq('attempt-1')
+        expect(probe_result.threat_variant.threat_variant_subindustry).to eq(subindustry)
+        expect(probe_result.passed).to eq(7) # 10 - 3
+        expect(probe_result.total).to eq(10)
       end
     end
 
@@ -311,89 +703,6 @@ RSpec.describe Reports::Process, type: :service do
       end
     end
 
-    context 'when processing variant probe results' do
-      let!(:probe) { create(:probe, name: 'TestProbe') }
-      let(:industry) { create(:threat_variant_industry, name: 'Automotive') }
-      let(:subindustry) { create(:threat_variant_subindustry, name: 'Autonomous Driving', threat_variant_industry: industry) }
-      let!(:variant) { create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving', probe: probe, threat_variant_subindustry: subindustry) }
-
-      let(:variant_jsonl_content) do
-        [
-          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
-          { entry_type: 'attempt', probe_classname: '0din_variants.Variant_TAG_Automotive_Autonomous_Driving', uuid: 'attempt-v1', prompt: 'Variant prompt', outputs: [ 'Variant output' ], notes: { score_percentage: 85 } }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_TAG_Automotive_Autonomous_Driving', passed: 2, total: 10 }.to_json,
-          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
-        ].join("\n")
-      end
-
-      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: variant_jsonl_content) }
-
-      it 'creates probe results linked to the variant' do
-        expect { service.call }.to change { ProbeResult.count }.by(1)
-
-        probe_result = ProbeResult.last
-        expect(probe_result.probe).to eq(probe)
-        expect(probe_result.threat_variant).to eq(variant)
-        expect(probe_result.passed).to eq(8) # 10 - 2
-        expect(probe_result.total).to eq(10)
-        expect(probe_result.max_score).to eq(85)
-      end
-
-      it 'completes the report successfully' do
-        service.call
-        expect(report.status).to eq('completed')
-      end
-
-      context 'with shared class names across base and CM probes' do
-        let(:cm_probe) { create(:probe, name: 'TestProbeCM') }
-        let!(:cm_variant) do
-          create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving',
-                 probe: cm_probe, threat_variant_subindustry: subindustry)
-        end
-
-        it 'assigns tokens only once to avoid inflating totals' do
-          expect { service.call }.to change { ProbeResult.count }.by(2)
-
-          results = report.probe_results.where.not(threat_variant_id: nil).order(:id)
-          expect(results.size).to eq(2)
-
-          # First result gets the tokens
-          expect(results.first.input_tokens).to be >= 0
-          expect(results.first.output_tokens).to be >= 0
-
-          # Second result gets zero tokens (shared classname, single execution)
-          expect(results.second.input_tokens).to eq(0)
-          expect(results.second.output_tokens).to eq(0)
-        end
-      end
-    end
-
-    context 'when processing unknown variant probe results' do
-      let(:unknown_variant_jsonl) do
-        [
-          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
-          { entry_type: 'attempt', probe_classname: '0din_variants.Variant_TAG_Unknown_Missing', uuid: 'attempt-v2', prompt: 'Unknown variant', outputs: [ 'Output' ], notes: {} }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_TAG_Unknown_Missing', passed: 5, total: 5 }.to_json,
-          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
-        ].join("\n")
-      end
-
-      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: unknown_variant_jsonl) }
-
-      before do
-        allow(Rails.logger).to receive(:warn)
-      end
-
-      it 'skips unknown variant probes without creating probe results' do
-        expect { service.call }.not_to change { ProbeResult.count }
-      end
-
-      it 'marks report as failed when no valid probes processed' do
-        service.call
-        expect(report.status).to eq('failed')
-      end
-    end
-
     context 'when updating target token rate' do
       let!(:probe) { create(:probe, name: 'TestProbe') }
       let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: jsonl_content, logs_data: 'Test logs') }
@@ -410,85 +719,6 @@ RSpec.describe Reports::Process, type: :service do
       it 'calls update_target_token_rate after processing' do
         expect(service).to receive(:update_target_token_rate)
         service.call
-      end
-    end
-  end
-
-  describe '#resolve_probe' do
-    let(:target) { create(:target) }
-    let(:scan) { create(:complete_scan) }
-    let(:report) { create(:report, target: target, scan: scan) }
-    let(:service) { described_class.new(report.id) }
-
-    context 'with a variant probe classname' do
-      let(:probe) { create(:probe, name: 'TestProbe') }
-      let(:industry) { create(:threat_variant_industry, name: 'Automotive') }
-      let(:subindustry) { create(:threat_variant_subindustry, name: 'Autonomous Driving', threat_variant_industry: industry) }
-      let!(:variant) { create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving', probe: probe, threat_variant_subindustry: subindustry) }
-
-      it 'resolves to the correct probe and variant' do
-        results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Automotive_Autonomous_Driving')
-        expect(results).to be_an(Array)
-        expect(results.length).to eq(1)
-        expect(results.first[:probe_id]).to eq(probe.id)
-        expect(results.first[:variant]).to eq(variant)
-        expect(results.first[:skip]).to be_nil
-      end
-
-      it 'returns skip when variant is not found' do
-        results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Unknown_Missing')
-        expect(results.first[:skip]).to be true
-        expect(results.first[:probe_id]).to be_nil
-      end
-
-      it 'logs a warning for unknown variant probes' do
-        allow(Rails.logger).to receive(:warn)
-        service.send(:resolve_probe, '0din_variants.Variant_TAG_Unknown_Missing')
-        expect(Rails.logger).to have_received(:warn).with(/Unknown variant probe: Variant_TAG_Unknown_Missing/)
-      end
-
-      context 'with shared class names across base and CM probes' do
-        let(:base_detector) { create(:detector, name: '0din.MitigationBypass') }
-        let(:cm_detector) { create(:detector, name: '0din.CrystalMethScore') }
-        let(:probe) { create(:probe, name: 'TestProbe', detector: base_detector) }
-        let(:cm_probe) { create(:probe, name: 'TestProbeCM', detector: cm_detector) }
-        let!(:variant) { create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving', probe: probe, threat_variant_subindustry: subindustry) }
-        let!(:cm_variant) { create(:threat_variant, prompt: 'Variant_TAG_Automotive_Autonomous_Driving', probe: cm_probe, threat_variant_subindustry: subindustry) }
-
-        it 'returns all matching probes when no detector is provided' do
-          results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Automotive_Autonomous_Driving')
-          expect(results.length).to eq(2)
-          probe_ids = results.map { |r| r[:probe_id] }
-          expect(probe_ids).to contain_exactly(probe.id, cm_probe.id)
-        end
-
-        it 'filters to matching detector when detector_name is provided' do
-          results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Automotive_Autonomous_Driving', '0din.MitigationBypass')
-          expect(results.length).to eq(1)
-          expect(results.first[:probe_id]).to eq(probe.id)
-        end
-
-        it 'filters to CM probe when CM detector is provided' do
-          results = service.send(:resolve_probe, '0din_variants.Variant_TAG_Automotive_Autonomous_Driving', '0din.CrystalMethScore')
-          expect(results.length).to eq(1)
-          expect(results.first[:probe_id]).to eq(cm_probe.id)
-        end
-      end
-    end
-
-    context 'with a standard probe classname' do
-      let!(:probe) { create(:probe, name: 'TestProbe') }
-
-      it 'resolves by full classname' do
-        results = service.send(:resolve_probe, '0din.TestProbe')
-        expect(results).to be_an(Array)
-        expect(results.first[:probe_id]).to eq(probe.id)
-        expect(results.first[:variant]).to be_nil
-      end
-
-      it 'returns skip for unknown probes' do
-        results = service.send(:resolve_probe, '0din.UnknownProbe')
-        expect(results.first[:skip]).to be true
       end
     end
   end

@@ -58,8 +58,12 @@ RSpec.describe UserPolicy do
       expect(described_class.new(super_admin, other_super_admin).update?).to be true
     end
 
-    it "allows user to update same company user" do
-      expect(described_class.new(regular_user, same_company_user).update?).to be true
+    it "allows user to update their own record" do
+      expect(described_class.new(regular_user, regular_user).update?).to be true
+    end
+
+    it "denies non-super-admin from updating a same-company peer" do
+      expect(described_class.new(regular_user, same_company_user).update?).to be false
     end
 
     it "denies user from updating other company user" do
@@ -84,15 +88,19 @@ RSpec.describe UserPolicy do
       expect(described_class.new(super_admin, regular_user).destroy?).to be true
     end
 
+    it "allows super admin to delete other company user" do
+      expect(described_class.new(super_admin, other_company_user).destroy?).to be true
+    end
+
     it "denies super admin from deleting another super admin" do
       expect(described_class.new(super_admin, other_super_admin).destroy?).to be false
     end
 
-    it "allows user to delete same company user" do
-      expect(described_class.new(regular_user, same_company_user).destroy?).to be true
+    it "denies regular user from deleting same company user" do
+      expect(described_class.new(regular_user, same_company_user).destroy?).to be false
     end
 
-    it "denies user from deleting other company user" do
+    it "denies regular user from deleting other company user" do
       expect(described_class.new(regular_user, other_company_user).destroy?).to be false
     end
 

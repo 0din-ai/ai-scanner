@@ -8,6 +8,7 @@ FactoryBot.define do
     max_score { rand(1..5) }
     passed { rand(0..10) }
     total { rand(10..20) }
+    any_detector_passed { passed.to_i.positive? }
 
     trait :high_score do
       max_score { 5 }

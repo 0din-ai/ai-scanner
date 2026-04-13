@@ -39,7 +39,8 @@ module Reports
             format: "A4",
             print_background: true,
             prefer_css_page_size: true,
-            timeout: 20000
+            timeout: 20000,
+            allow_localhost: true
           }
         )
 

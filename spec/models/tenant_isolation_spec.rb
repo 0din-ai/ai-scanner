@@ -37,7 +37,7 @@ RSpec.describe "Tenant Isolation", type: :model do
 
     it "automatically assigns current tenant on create" do
       ActsAsTenant.with_tenant(company_a) do
-        new_target = Target.create!(name: "New Target", model_type: "test", model: "test")
+        new_target = Target.create!(name: "New Target", model_type: "OpenAIGenerator", model: "gpt-4")
         expect(new_target.company).to eq(company_a)
       end
     end

@@ -25,8 +25,8 @@ class GenerateVariantReportsJob < ApplicationJob
   private
 
   def extract_passed_probes(report)
-    report.probe_results.includes(:probe).filter_map { |pr|
-      pr.probe&.full_name if pr.passed > 0 && pr.probe.present?
+    report.probe_results.where(any_detector_passed: true).includes(:probe).filter_map { |pr|
+      pr.probe&.full_name
     }.uniq
   end
 

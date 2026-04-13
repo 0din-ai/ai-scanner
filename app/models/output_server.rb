@@ -1,6 +1,10 @@
 class OutputServer < ApplicationRecord
   acts_as_tenant :company
 
+  encrypts :access_token, key_provider: Encryption::TenantKeyProvider.new
+  encrypts :api_key, key_provider: Encryption::TenantKeyProvider.new
+  encrypts :password, key_provider: Encryption::TenantKeyProvider.new
+
   # Known SIEM types (engine can extend via class attribute)
   ALL_SIEM_TYPES = %w[splunk rsyslog].freeze
 

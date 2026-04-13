@@ -198,4 +198,148 @@ RSpec.describe "ActiveRecord Encryption", type: :model do
       expect(decrypted).to eq('{"key": "value"}')
     end
   end
+
+  describe "OutputServer encrypted fields" do
+    it "encrypts access_token at rest" do
+      server = create(:output_server, :with_credentials)
+      plaintext = server.access_token
+      raw = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT access_token FROM output_servers WHERE id = ?", server.id ])
+      )
+      expect(raw).not_to eq(plaintext)
+    end
+
+    it "encrypts api_key at rest" do
+      server = create(:output_server, api_key: "sk-test-key-12345")
+      raw = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT api_key FROM output_servers WHERE id = ?", server.id ])
+      )
+      expect(raw).not_to eq("sk-test-key-12345")
+    end
+
+    it "encrypts password at rest" do
+      server = create(:output_server, :with_credentials)
+      raw = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT password FROM output_servers WHERE id = ?", server.id ])
+      )
+      expect(raw).not_to eq("password")
+    end
+
+    it "decrypts access_token transparently" do
+      server = create(:output_server, access_token: "my_token_value")
+      server.reload
+      expect(server.access_token).to eq("my_token_value")
+    end
+
+    it "decrypts api_key transparently" do
+      server = create(:output_server, api_key: "my_api_key_value")
+      server.reload
+      expect(server.api_key).to eq("my_api_key_value")
+    end
+
+    it "decrypts password transparently" do
+      server = create(:output_server, password: "my_password_value")
+      server.reload
+      expect(server.password).to eq("my_password_value")
+    end
+
+    it "handles nil credential fields" do
+      server = create(:output_server, access_token: nil, api_key: nil, password: nil)
+      server.reload
+      expect(server.access_token).to be_nil
+      expect(server.api_key).to be_nil
+      expect(server.password).to be_nil
+    end
+  end
+
+  describe "OutputServer per-tenant key isolation" do
+    let(:company_a) { create(:company) }
+    let(:company_b) { create(:company) }
+
+    it "produces different ciphertext for different tenants" do
+      server_a = ActsAsTenant.with_tenant(company_a) { create(:output_server, access_token: "same_token") }
+      server_b = ActsAsTenant.with_tenant(company_b) { create(:output_server, access_token: "same_token") }
+
+      raw_a = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT access_token FROM output_servers WHERE id = ?", server_a.id ])
+      )
+      raw_b = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT access_token FROM output_servers WHERE id = ?", server_b.id ])
+      )
+
+      expect(raw_a).not_to eq(raw_b)
+    end
+
+    it "decrypts correctly with the right tenant context" do
+      server = ActsAsTenant.with_tenant(company_a) { create(:output_server, api_key: "tenant_a_key") }
+
+      decrypted = ActsAsTenant.with_tenant(company_a) do
+        OutputServer.find(server.id).api_key
+      end
+
+      expect(decrypted).to eq("tenant_a_key")
+    end
+  end
+
+  describe "OutputServer migration re-encryption with encrypt method" do
+    it "re-encrypts output server secrets when using encrypt instead of save!" do
+      server = create(:output_server, :with_credentials)
+      original_token = server.access_token
+      raw_before = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT access_token FROM output_servers WHERE id = ?", server.id ])
+      )
+
+      ActsAsTenant.with_tenant(server.company) do
+        server.encrypt
+      end
+
+      raw_after = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT access_token FROM output_servers WHERE id = ?", server.id ])
+      )
+
+      expect(raw_after).not_to eq(raw_before)
+
+      decrypted = ActsAsTenant.with_tenant(server.company) do
+        OutputServer.find(server.id).access_token
+      end
+      expect(decrypted).to eq(original_token)
+    end
+
+    it "save! is a no-op for already-encrypted records (proving the migration bug)" do
+      server = create(:output_server, :with_credentials)
+      raw_before = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT access_token FROM output_servers WHERE id = ?", server.id ])
+      )
+
+      ActsAsTenant.with_tenant(server.company) do
+        server.save!
+      end
+
+      raw_after = OutputServer.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ "SELECT access_token FROM output_servers WHERE id = ?", server.id ])
+      )
+
+      expect(raw_after).to eq(raw_before)
+    end
+  end
+
+  describe "OutputServer authentication works with encrypted credentials" do
+    it "authentication_method returns :token with encrypted access_token" do
+      server = create(:output_server, access_token: "encrypted_token")
+      server.reload
+      expect(server.authentication_method).to eq(:token)
+    end
+
+    it "authentication_method returns :api_key with encrypted api_key" do
+      server = create(:output_server, api_key: "encrypted_api_key")
+      server.reload
+      expect(server.authentication_method).to eq(:api_key)
+    end
+
+    it "authentication_method returns :basic with encrypted username and password" do
+      server = create(:output_server, username: "user", password: "pass")
+      server.reload
+      expect(server.authentication_method).to eq(:basic)
+    end
+  end
 end

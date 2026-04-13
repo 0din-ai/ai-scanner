@@ -47,7 +47,7 @@ module ReportsHelper
 
     if probe_result.nil?
       "bg-zinc-800 text-zinc-500" # Gray - not run
-    elsif probe_result.passed > 0
+    elsif probe_result.any_detector_passed
       "bg-red-950 text-red-400" # Red - ran and detected (attack passed)
     else
       "bg-purple-950 text-purple-400" # Purple - ran but not detected (attack failed/blocked)

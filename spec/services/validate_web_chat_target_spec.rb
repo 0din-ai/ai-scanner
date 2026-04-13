@@ -168,12 +168,14 @@ RSpec.describe ValidateWebChatTarget do
 
   describe "#valid_url?" do
     it "returns true for valid HTTPS URLs" do
+      allow(UrlSafetyValidator).to receive(:resolve_addresses).and_return([ "93.184.216.34" ])
       expect(service.send(:valid_url?, "https://example.com")).to be true
       expect(service.send(:valid_url?, "https://example.com/chat")).to be true
       expect(service.send(:valid_url?, "https://subdomain.example.com")).to be true
     end
 
     it "returns true for valid HTTP URLs" do
+      allow(UrlSafetyValidator).to receive(:resolve_addresses).and_return([ "93.184.216.34" ])
       expect(service.send(:valid_url?, "http://example.com")).to be true
       expect(service.send(:valid_url?, "http://localhost:3000")).to be true
     end
@@ -186,7 +188,21 @@ RSpec.describe ValidateWebChatTarget do
     end
 
     it "returns false for nil" do
-      expect { service.send(:valid_url?, nil) }.not_to raise_error
+      expect(service.send(:valid_url?, nil)).to be false
+    end
+
+    context "SSRF protection" do
+      it "rejects internal IP addresses" do
+        allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+          UrlSafetyValidator::Result.new("safe?": false, error: "blocked")
+        )
+        expect(service.send(:valid_url?, "http://127.0.0.1")).to be false
+      end
+
+      it "delegates to UrlSafetyValidator" do
+        expect(UrlSafetyValidator).to receive(:safe_url?).with("https://example.com", allow_localhost: true).and_call_original
+        service.send(:valid_url?, "https://example.com")
+      end
     end
   end
 end

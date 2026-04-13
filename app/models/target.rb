@@ -28,9 +28,13 @@ class Target < ApplicationRecord
     webchat: 1
   }
 
+  MODEL_FORMAT = /\A[a-zA-Z0-9\-_\/.:@]+\z/
+
   validates :name, presence: true, uniqueness: { scope: :company_id }
   validates :model_type, presence: true, if: :api?
+  validates :model_type, inclusion: { in: INVERTED_MODEL_TYPES.keys, message: "%{value} is not a recognized generator type" }, if: -> { api? && model_type.present? }
   validates :model, presence: true, if: :api?
+  validates :model, format: { with: MODEL_FORMAT, message: "contains invalid characters (only letters, numbers, hyphens, underscores, slashes, dots, colons, and @ are allowed)" }, if: -> { api? && model.present? }
   validate :json_config_is_valid_json, if: :json_config_should_be_validated?
   validate :web_config_is_valid, if: :webchat?
 
@@ -98,7 +102,8 @@ class Target < ApplicationRecord
   def parsed_web_config
     return nil if web_config.blank?
     web_config.is_a?(String) ? JSON.parse(web_config) : web_config
-  rescue JSON::ParserError
+  rescue JSON::ParserError => e
+    Rails.logger.warn("Target#parsed_web_config: invalid JSON for target #{id}: #{e.message}")
     nil
   end
 
@@ -193,9 +198,7 @@ class Target < ApplicationRecord
   end
 
   def valid_url?(url)
-    uri = URI.parse(url)
-    uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)
-  rescue URI::InvalidURIError
-    false
+    result = UrlSafetyValidator.safe_url?(url, allow_localhost: UrlSafetyValidator.allow_localhost?)
+    result.safe?
   end
 end

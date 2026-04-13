@@ -16,7 +16,7 @@
               probe_result = probe_results_map[subindustry.id]
               tooltip_text = if probe_result.nil?
                 "Not tested - This industry variant was not included in the scan"
-              elsif probe_result.passed > 0
+              elsif probe_result.any_detector_passed
                 "Attack successful - This industry variant detected a vulnerability"
               else
                 "Attack blocked - This industry variant was tested but the target successfully defended"

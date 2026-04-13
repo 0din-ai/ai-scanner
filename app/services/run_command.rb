@@ -1,38 +1,61 @@
 class RunCommand
-  # Brief sleep to detect immediate process failures after launch.
-  # 0.5 seconds balances two goals:
-  # - Long enough to catch most immediate startup failures
-  # - Short enough to avoid noticeable delays in normal operation
-  PROCESS_START_DETECTION_DELAY = 0.5
+  class ImmediateExitError < StandardError
+    attr_reader :exit_status
 
-  attr_reader :command
-
-  def initialize(command)
-    @command = command
+    def initialize(exit_status, command_desc)
+      @exit_status = exit_status
+      super("Process exited immediately with status #{exit_status}: #{command_desc}")
+    end
   end
 
-  def call
-    stdout, stderr, status = Open3.capture3(command)
+  # Brief sleep to detect immediate process failures after launch.
+  PROCESS_START_DETECTION_DELAY = 0.5
+  REDACTED = "[REDACTED]"
+  SENSITIVE_FLAG_NAME = /\b(api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|credential|authorization|bearer)\b/i
+  SENSITIVE_OUTPUT_PATTERN = /((?:api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|credential|bearer|authorization|database[_-]?url|redis[_-]?url|secret[_-]?key[_-]?base)["']?\s*[=:]\s*["']?(?:(?:bearer|basic|splunk|negotiate|digest|token|bot)\s+)?)[^\s"',}\]&;]+/i
 
-    raise "Command failed with error: #{stderr}" unless status.success?
+  attr_reader :command, :env
+
+  def initialize(command, env: {})
+    @command = command
+    @env = env
+  end
+
+  def call(log_file: nil)
+    stdout, stderr, status = Open3.capture3(env, *command)
+
+    if log_file
+      FileUtils.mkdir_p(File.dirname(log_file))
+      File.open(log_file, "a") do |f|
+        f.write(sanitize_output(stdout, truncate: false))
+        f.write(sanitize_output(stderr, truncate: false))
+      end
+    end
+
+    raise "Command failed with error: #{sanitize_output(stderr)}" unless status.success?
 
     stdout
   end
 
-  def call_async
-    # Run through bash shell to handle env vars, pipes, and redirections
-    # Command string already includes env vars as prefix (e.g., "VAR=value command")
-    Rails.logger.info("RunCommand.call_async executing: #{sanitize_command_for_logging(command)}")
+  def call_async(log_file: nil)
+    Rails.logger.info("RunCommand.call_async executing: #{sanitize_for_logging}")
 
-    stdin, stdout, stderr, wait_thr = Open3.popen3("/bin/bash", "-c", command)
+    stdin, stdout, stderr, wait_thr = Open3.popen3(env, *command)
     stdin.close
 
-    # Spawn a thread to monitor stdout and log to Rails logger
-    # This makes process output visible in docker compose logs
-    Thread.new do
+    log_io = if log_file
+      FileUtils.mkdir_p(File.dirname(log_file))
+      File.open(log_file, "a")
+    end
+
+    stdout_thread = Thread.new do
       begin
         stdout.each_line do |line|
-          Rails.logger.info("Process: #{line.chomp}")
+          Rails.logger.info("Process: #{sanitize_output(line.chomp)}")
+          if log_io
+            log_io.write(sanitize_output(line, truncate: false))
+            log_io.flush
+          end
         end
       rescue => e
         Rails.logger.error("Error reading stdout: #{e.message}")
@@ -41,11 +64,14 @@ class RunCommand
       end
     end
 
-    # Spawn a thread to monitor stderr and log any errors
-    Thread.new do
+    stderr_thread = Thread.new do
       begin
         stderr.each_line do |line|
-          Rails.logger.error("Process stderr: #{line.chomp}")
+          Rails.logger.error("Process stderr: #{sanitize_output(line.chomp)}")
+          if log_io
+            log_io.write(sanitize_output(line, truncate: false))
+            log_io.flush
+          end
         end
       rescue => e
         Rails.logger.error("Error reading stderr: #{e.message}")
@@ -54,11 +80,24 @@ class RunCommand
       end
     end
 
-    # Brief sleep to detect immediate failures
+    if log_io
+      Thread.new do
+        stdout_thread.join
+        stderr_thread.join
+        log_io.close
+      end
+    end
+
     sleep PROCESS_START_DETECTION_DELAY
     if wait_thr.status == false || wait_thr.status.nil?
-      Rails.logger.error("Process exited immediately with status: #{wait_thr.value.exitstatus}")
-      Rails.logger.error("Command was: #{command}")
+      exit_status = wait_thr.value.exitstatus
+      if exit_status != 0
+        Rails.logger.error("Process exited immediately with status: #{exit_status}")
+        Rails.logger.error("Command was: #{sanitize_for_logging}")
+        stdout_thread.join(2)
+        stderr_thread.join(2)
+        raise ImmediateExitError.new(exit_status, sanitize_for_logging)
+      end
     else
       Rails.logger.info("Process started successfully with PID: #{wait_thr.pid}")
     end
@@ -68,26 +107,45 @@ class RunCommand
 
   private
 
-  def sanitize_command_for_logging(cmd)
-    # Mask sensitive environment variables (API keys, tokens, secrets)
-    sanitized = cmd.dup
+  def sanitize_for_logging
+    sanitized = redact_sensitive_args(command)
+    cmd_str = sanitized.join(" ")
+    cmd_str.length > 300 ? "#{cmd_str[0..297]}..." : cmd_str
+  end
 
-    # List of env var patterns to sanitize
-    sensitive_patterns = [
-      /([A-Z_]*API[_A-Z]*KEY=)[^\s]+/i,
-      /([A-Z_]*TOKEN[_A-Z]*=)[^\s]+/i,
-      /([A-Z_]*SECRET[_A-Z]*=)[^\s]+/i,
-      /([A-Z_]*PASSWORD[_A-Z]*=)[^\s]+/i,
-      /(OPENAI_API_KEY=)[^\s]+/,
-      /(HF_INFERENCE_TOKEN=)[^\s]+/,
-      /(OPENROUTER_API_KEY=)[^\s]+/
-    ]
+  def sanitize_output(text, truncate: true)
+    return "" if text.nil? || text.empty?
+    sanitized = text.gsub(SENSITIVE_OUTPUT_PATTERN, "\\1#{REDACTED}")
+    return sanitized unless truncate
+    sanitized.length > 500 ? "#{sanitized[0..497]}..." : sanitized
+  end
 
-    sensitive_patterns.each do |pattern|
-      sanitized.gsub!(pattern, '\1***REDACTED***')
+  def redact_sensitive_args(args)
+    result = []
+    redact_next = false
+    args.each do |arg|
+      if redact_next
+        result << REDACTED
+        redact_next = false
+      elsif (m = arg.match(/\A(--[\w-]+)=(.+)\z/))
+        flag_name = m[1].sub(/\A--/, "")
+        if SENSITIVE_FLAG_NAME.match?(flag_name)
+          result << "#{m[1]}=#{REDACTED}"
+        else
+          result << arg
+        end
+      elsif sensitive_flag?(arg)
+        result << arg
+        redact_next = true
+      else
+        result << arg
+      end
     end
+    result
+  end
 
-    # Truncate to avoid logging extremely long commands
-    sanitized.length > 300 ? "#{sanitized[0..297]}..." : sanitized
+  def sensitive_flag?(arg)
+    name = arg.sub(/\A-{1,2}/, "")
+    SENSITIVE_FLAG_NAME.match?(name)
   end
 end

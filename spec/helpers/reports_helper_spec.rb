@@ -144,8 +144,8 @@ RSpec.describe ReportsHelper, type: :helper do
   end
 
   describe '#variant_pill_classes' do
-    let(:probe_result_passed) { instance_double('ProbeResult', passed: 1) }
-    let(:probe_result_blocked) { instance_double('ProbeResult', passed: 0) }
+    let(:probe_result_passed) { instance_double('ProbeResult', any_detector_passed: true) }
+    let(:probe_result_blocked) { instance_double('ProbeResult', any_detector_passed: false) }
 
     context 'when subindustry was not tested' do
       it 'returns grey background' do

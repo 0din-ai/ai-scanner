@@ -10,7 +10,7 @@ RSpec.describe RunGarakScan, type: :service do
   end
 
   describe '#call' do
-    let(:target) { create(:target, model_type: 'openai', model: 'gpt-4') }
+    let(:target) { create(:target, :good, model_type: 'OpenAIGenerator', model: 'gpt-4') }
     let(:scan) { create(:complete_scan) }
     let(:report) { create(:report, target: target, scan: scan) }
 
@@ -19,37 +19,23 @@ RSpec.describe RunGarakScan, type: :service do
     end
 
     it 'updates the report status to starting' do
-      expect(report).to receive(:update).with(status: :starting)
-
       service = described_class.new(report)
-      allow(service).to receive(:command).and_return("mock command")
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:execute_scan)
 
-      run_command_double = double("RunCommand")
-      allow(run_command_double).to receive(:call_async)
-      allow(RunCommand).to receive(:new).and_return(run_command_double)
+      expect(report).to receive(:update).with(status: :starting)
 
       service.call
     end
 
-    it 'processes the report and prevents actual command execution' do
-      original_run_command_new = RunCommand.method(:new)
-      fake_run_command = double("FakeRunCommand", call_async: nil)
+    it 'calls execute_scan for valid targets' do
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
 
-      begin
-        RunCommand.singleton_class.define_method(:new) do |*args|
-          fake_run_command
-        end
+      expect(service).to receive(:execute_scan)
+      expect(report).to receive(:update).with(status: :starting)
 
-        service = described_class.new(report)
-
-        expect(report).to receive(:update).with(status: :starting)
-        service.call
-
-        expect(true).to be true
-      ensure
-        RunCommand.singleton_class.send(:remove_method, :new)
-        RunCommand.define_singleton_method(:new, original_run_command_new)
-      end
+      service.call
     end
 
     it 'fails the report if target has bad status' do
@@ -98,12 +84,10 @@ RSpec.describe RunGarakScan, type: :service do
 
       service = described_class.new(good_report)
 
-      expect(good_report).to receive(:update).with(status: :starting)
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:execute_scan)
 
-      run_command_double = double("RunCommand")
-      allow(run_command_double).to receive(:call_async)
-      allow(RunCommand).to receive(:new).and_return(run_command_double)
-      allow(service).to receive(:command).and_return("mock command")
+      expect(good_report).to receive(:update).with(status: :starting)
 
       service.call
     end
@@ -150,9 +134,9 @@ RSpec.describe RunGarakScan, type: :service do
     end
   end
 
-  describe 'tenant context for command construction' do
+  describe 'argv-based command construction' do
     let(:json_config) { '{"temperature": 0.7}' }
-    let(:target) { create(:target, :good, model_type: 'openai', model: 'gpt-4', json_config: json_config) }
+    let(:target) { create(:target, :good, model_type: 'OpenAIGenerator', model: 'gpt-4', json_config: json_config) }
     let(:scan) { create(:complete_scan, company: target.company) }
     let(:report) { create(:report, target: target, scan: scan, company: target.company) }
 
@@ -162,22 +146,66 @@ RSpec.describe RunGarakScan, type: :service do
       allow(Dir).to receive(:exist?).and_return(true)
     end
 
-    it 'builds the command string within tenant context' do
-      service = described_class.new(report)
+    describe '#build_argv' do
+      it 'returns an array with python, script path, uuid, followed by individual params' do
+        service = described_class.new(report)
+        argv = service.send(:build_argv)
 
-      allow(service).to receive(:env_vars_string).and_return("HOME=/home/rails")
-      allow(service).to receive(:log_file).and_return(" 2>&1 | tee /dev/null ")
+        expect(argv).to be_an(Array)
+        expect(argv[0]).to eq("/opt/venv/bin/python3")
+        expect(argv[1]).to include("run_garak.py")
+        expect(argv[2]).to eq(report.uuid)
+        expect(argv.length).to be > 3
+        expect(argv.all? { |e| e.is_a?(String) }).to be true
+      end
 
-      # command method wraps in ActsAsTenant.with_tenant(report.company) internally
-      command = service.send(:command)
-      expect(command).to be_a(String)
-      expect(command).not_to be_empty
+      it 'passes each flag and value as separate argv elements' do
+        service = described_class.new(report)
+        argv = service.send(:build_argv)
+
+        expect(argv).to include("--skip_unknown")
+        expect(argv).to include("--target_type")
+        expect(argv).to include("--target_name")
+      end
+
+      it 'does not contain shell metacharacters in the argv structure' do
+        service = described_class.new(report)
+        argv = service.send(:build_argv)
+
+        expect(argv[0]).not_to include("|")
+        expect(argv[0]).not_to include(";")
+        expect(argv[0]).not_to include("&&")
+      end
+    end
+
+    describe '#build_env' do
+      it 'returns a hash of environment variables' do
+        service = described_class.new(report)
+
+        ActsAsTenant.with_tenant(report.company) do
+          env = service.send(:build_env)
+
+          expect(env).to be_a(Hash)
+          expect(env["HOME"]).to eq("/home/rails")
+          expect(env["REPORT_UUID"]).to eq(report.uuid)
+          expect(env["SCAN_ID"]).to eq(report.scan.id.to_s)
+          expect(env["TARGET_ID"]).to eq(target.id.to_s)
+        end
+      end
+
+      it 'includes DATABASE_URL' do
+        service = described_class.new(report)
+
+        ActsAsTenant.with_tenant(report.company) do
+          env = service.send(:build_env)
+          expect(env["DATABASE_URL"]).to be_present
+        end
+      end
     end
 
     it 'decrypts json_config within tenant context for generator options' do
       service = described_class.new(report)
 
-      # The command method wraps in with_tenant, so json_config should be accessible
       allow(RunCommand).to receive(:new).and_return(double(call_async: nil))
 
       expect {
@@ -185,6 +213,41 @@ RSpec.describe RunGarakScan, type: :service do
           service.send(:generator_options)
         end
       }.not_to raise_error
+    end
+  end
+
+  describe 'injection prevention' do
+    let(:target) { create(:target, :good, model_type: 'OpenAIGenerator', model: 'gpt-4') }
+    let(:scan) { create(:complete_scan) }
+    let(:report) { create(:report, target: target, scan: scan) }
+
+    before do
+      allow(FileUtils).to receive(:mkdir_p)
+      allow(File).to receive(:write)
+      allow(Dir).to receive(:exist?).and_return(true)
+    end
+
+    it 'constructs argv array that does not pass through shell' do
+      service = described_class.new(report)
+      argv = service.send(:build_argv)
+
+      expect(argv).to be_an(Array)
+      expect(argv.length).to be > 3
+      expect(argv.all? { |e| e.is_a?(String) }).to be true
+    end
+
+    it 'passes env vars as a hash, not as shell-prefixed strings' do
+      service = described_class.new(report)
+
+      ActsAsTenant.with_tenant(report.company) do
+        env = service.send(:build_env)
+
+        expect(env).to be_a(Hash)
+        env.each do |key, value|
+          expect(key).to be_a(String)
+          expect(value).to be_a(String)
+        end
+      end
     end
   end
 
@@ -228,7 +291,7 @@ RSpec.describe RunGarakScan, type: :service do
       end
 
       it 'calls api_params for API targets' do
-        api_target = create(:target, target_type: :api, model_type: 'openai', model: 'gpt-4')
+        api_target = create(:target, target_type: :api, model_type: 'OpenAIGenerator', model: 'gpt-4')
         api_report = create(:report, target: api_target, scan: scan)
         api_service = described_class.new(api_report)
 
@@ -240,36 +303,42 @@ RSpec.describe RunGarakScan, type: :service do
     describe '#web_chat_params' do
       it 'includes web_chatbot target type' do
         params = service.send(:web_chat_params)
-        expect(params).to include('--target_type web_chatbot.WebChatbotGenerator')
+        expect(params).to include('--target_type', 'web_chatbot.WebChatbotGenerator')
       end
 
       it 'includes web_chatbot target name' do
         params = service.send(:web_chat_params)
-        expect(params).to include('--target_name web_chatbot')
+        expect(params).to include('--target_name', 'web_chatbot')
       end
 
       it 'includes generator options file' do
         allow(service).to receive(:temp_web_config_file_path).and_return('/tmp/test_web.json')
         params = service.send(:web_chat_params)
-        expect(params).to include('--generator_option_file /tmp/test_web.json')
+        expect(params).to include('--generator_option_file', '/tmp/test_web.json')
       end
 
       it 'includes skip_unknown flag' do
         params = service.send(:web_chat_params)
         expect(params).to include('--skip_unknown')
       end
+
+      it 'returns a flat array of strings' do
+        params = service.send(:web_chat_params)
+        expect(params).to be_an(Array)
+        expect(params.all? { |e| e.is_a?(String) }).to be true
+      end
     end
 
     describe '#web_chat_target_name' do
-      it 'returns web_chatbot target name' do
-        expect(service.send(:web_chat_target_name)).to eq('--target_name web_chatbot')
+      it 'returns web_chatbot target name as array' do
+        expect(service.send(:web_chat_target_name)).to eq([ '--target_name', 'web_chatbot' ])
       end
     end
 
     describe '#web_chat_generator_options' do
-      it 'returns generator option file path when web_config is present' do
+      it 'returns generator option file path as array when web_config is present' do
         allow(service).to receive(:temp_web_config_file_path).and_return('/tmp/test_web.json')
-        expect(service.send(:web_chat_generator_options)).to eq('--generator_option_file /tmp/test_web.json')
+        expect(service.send(:web_chat_generator_options)).to eq([ '--generator_option_file', '/tmp/test_web.json' ])
       end
 
       it 'returns nil when web_config is blank' do
@@ -407,7 +476,7 @@ RSpec.describe RunGarakScan, type: :service do
         service = described_class.new(report)
 
         expect(ProcessReportJob).to receive(:perform_later).with(report.id)
-        expect(service).not_to receive(:command)
+        expect(service).not_to receive(:execute_scan)
 
         service.call
       end
@@ -471,6 +540,60 @@ RSpec.describe RunGarakScan, type: :service do
         remaining = service.send(:remaining_probes)
         expect(remaining).to contain_exactly('test.ProbeA', 'test.ProbeB')
       end
+    end
+  end
+
+  describe 'immediate process death handling' do
+    let(:target) { create(:target, :good, model_type: 'OpenAIGenerator', model: 'gpt-4') }
+    let(:scan) { create(:complete_scan, company: target.company) }
+    let(:report) { create(:report, target: target, scan: scan, company: target.company) }
+
+    before do
+      allow(FileUtils).to receive(:mkdir_p)
+      allow(File).to receive(:write)
+      allow(Dir).to receive(:exist?).and_return(true)
+      allow_any_instance_of(RunGarakScan).to receive(:call).and_call_original
+    end
+
+    it 'marks report as failed when process exits immediately' do
+      service = described_class.new(report)
+
+      run_command = instance_double(RunCommand)
+      allow(RunCommand).to receive(:new).and_return(run_command)
+      allow(run_command).to receive(:call_async).and_raise(
+        RunCommand::ImmediateExitError.new(1, "/opt/venv/bin/python3 script/run_garak.py")
+      )
+      allow(Rails.logger).to receive(:info)
+      allow(Rails.logger).to receive(:error)
+
+      service.call
+
+      report.reload
+      expect(report.status).to eq("failed")
+      expect(report.logs).to include("Scan process failed to start (exit status 1)")
+    end
+
+    it 'includes log tail in failure message when log file exists' do
+      service = described_class.new(report)
+
+      run_command = instance_double(RunCommand)
+      allow(RunCommand).to receive(:new).and_return(run_command)
+      allow(run_command).to receive(:call_async).and_raise(
+        RunCommand::ImmediateExitError.new(127, "/opt/venv/bin/python3 script/run_garak.py")
+      )
+      allow(Rails.logger).to receive(:info)
+      allow(Rails.logger).to receive(:error)
+
+      log_path = LogPathManager.scan_log_file_for_report(report)
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(log_path.to_s).and_return(true)
+      allow(File).to receive(:read).with(log_path.to_s).and_return("python3: command not found\n")
+
+      service.call
+
+      report.reload
+      expect(report.status).to eq("failed")
+      expect(report.logs).to include("Output: python3: command not found")
     end
   end
 end

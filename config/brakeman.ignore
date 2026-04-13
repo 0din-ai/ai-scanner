@@ -3,20 +3,20 @@
     {
       "warning_type": "File Access",
       "warning_code": 16,
-      "fingerprint": "00801ec8c2d369aa7c758f954543a2690a3f3744cc381399cabdc03880521ca0",
+      "fingerprint": "bf6481d9a583704c4e72449022387d49463c496a4b09852f91e87d21bb16c06b",
       "check_name": "SendFile",
       "message": "Model attribute used in file name",
       "file": "app/controllers/report_details_controller.rb",
-      "line": 16,
+      "line": 22,
       "link": "https://brakemanscanner.org/docs/warning_types/file_access/",
-      "code": "send_file(ReportDecorator.new(Report.find(params[:id])).report_pdf.file_path, :filename => pdf_filename, :type => \"application/pdf\", :disposition => \"attachment\")",
+      "code": "send_file(ReportDecorator.new((Report.includes(:target, :scan, :probe_results => ([:probe, :detector])).find(params[:id]) or Report.includes(:target, :scan, :probe_results => ([:probe, :detector])).find(params[:id]))).report_pdf.file_path, :filename => pdf_filename, :type => \"application/pdf\", :disposition => \"attachment\")",
       "render_path": null,
       "location": {
         "type": "method",
         "class": "ReportDetailsController",
         "method": "pdf"
       },
-      "user_input": "Report.find(params[:id])",
+      "user_input": "Report.includes(:target, :scan, :probe_results => ([:probe, :detector])).find(params[:id])",
       "confidence": "Weak",
       "cwe_id": [
         22

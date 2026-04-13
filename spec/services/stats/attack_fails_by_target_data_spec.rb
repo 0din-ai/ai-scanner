@@ -25,8 +25,8 @@ RSpec.describe Stats::AttackFailsByTargetData do
     end
 
     context 'when data exists for multiple targets' do
-      let!(:target1) { create(:target, name: 'Target 1', model_type: 'openai', model: 'gpt-3.5-turbo') }
-      let!(:target2) { create(:target, name: 'Target 2', model_type: 'anthropic', model: 'claude-2') }
+      let!(:target1) { create(:target, name: 'Target 1', model_type: 'OpenAIGenerator', model: 'gpt-3.5-turbo') }
+      let!(:target2) { create(:target, name: 'Target 2', model_type: 'OpenAIGenerator', model: 'claude-2') }
 
       before do
         # Create reports and detector results for Target 1
@@ -60,7 +60,7 @@ RSpec.describe Stats::AttackFailsByTargetData do
 
         # Check target 1 data
         target1_data = result[:targets].find { |t| t[:name] == 'Target 1' }
-        expect(target1_data[:model_info]).to eq('openai - gpt-3.5-turbo')
+        expect(target1_data[:model_info]).to eq('OpenAIGenerator - gpt-3.5-turbo')
         expect(target1_data[:summary][:total_reports]).to eq(2)
         expect(target1_data[:summary][:total_tests]).to eq(30) # 10+10+10
         expect(target1_data[:summary][:total_passed]).to eq(19) # 8+5+6
@@ -69,7 +69,7 @@ RSpec.describe Stats::AttackFailsByTargetData do
 
         # Check target 2 data
         target2_data = result[:targets].find { |t| t[:name] == 'Target 2' }
-        expect(target2_data[:model_info]).to eq('anthropic - claude-2')
+        expect(target2_data[:model_info]).to eq('OpenAIGenerator - claude-2')
         expect(target2_data[:summary][:total_reports]).to eq(1)
         expect(target2_data[:summary][:total_tests]).to eq(20) # 10+10
         expect(target2_data[:summary][:total_passed]).to eq(10) # 3+7

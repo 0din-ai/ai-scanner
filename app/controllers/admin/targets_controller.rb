@@ -161,15 +161,10 @@ module Admin
         return
       end
 
-      # Validate URL format
-      begin
-        uri = URI.parse(url)
-        unless uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)
-          render json: { error: "Invalid URL format. Please provide a valid HTTP/HTTPS URL." }, status: :bad_request
-          return
-        end
-      rescue URI::InvalidURIError
-        render json: { error: "Invalid URL format" }, status: :bad_request
+      # Validate URL format and SSRF safety
+      safety_result = UrlSafetyValidator.safe_url?(url, allow_localhost: UrlSafetyValidator.allow_localhost?)
+      unless safety_result.safe?
+        render json: { error: safety_result.error }, status: :bad_request
         return
       end
 
@@ -229,7 +224,7 @@ module Admin
     end
 
     def target_params
-      params.require(:target).permit(:name, :model_type, :model, :description, :json_config, :status, :target_type, :web_config)
+      params.require(:target).permit(:name, :model_type, :model, :description, :json_config, :target_type, :web_config)
     end
   end
 end

@@ -23,9 +23,8 @@ class ValidateTarget
       if target.webchat?
         ValidateWebChatTarget.new(target).call
       else
-        # Run external validator (command string may include secrets; do not log it verbatim at info level)
         Rails.logger.info("validation.invoking")
-        RunCommand.new(command).call
+        RunCommand.new(build_argv, env: build_env).call(log_file: validation_log_path)
         result = process_validation_result
         dur_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round
         Logging.with(event: "validation.finished", target_id: target.id, validation_uuid: validation_uuid, decision: (target.good? ? "valid" : "invalid"), response_count: result[:response_count], evaluation: result[:evaluation_result], duration_ms: dur_ms) do
@@ -43,22 +42,20 @@ class ValidateTarget
 
   private
 
-  def command
+  def build_argv
     script_path = Rails.root.join("script", "run_garak.py")
-    evs = env_vars
-    c = "#{evs} HOME=/home/rails /opt/venv/bin/python3 #{script_path} '#{validation_uuid}' '#{params}' #{log_file}"
+    [ "/opt/venv/bin/python3", script_path.to_s, validation_uuid ] + params
+  end
 
-    if Rails.configuration.log_level.to_s == "debug"
-      yellow = "\e[33m"
-      reset = "\e[0m"
-      separator = yellow + ("-" * 80) + reset
-      Rails.logger.info(separator)
-      Rails.logger.info(yellow + "TARGET VALIDATION COMMAND:" + reset)
-      Rails.logger.info(yellow + c.sub(evs, "[REDACTED_ENV_VARS]") + reset)
-      Rails.logger.info(separator)
-    end
+  def build_env
+    env = merged_env_vars_hash.dup
+    env["HOME"] = "/home/rails"
+    env
+  end
 
-    c
+  def validation_log_path
+    FileUtils.mkdir_p(LOGS_PATH) unless Dir.exist?(LOGS_PATH)
+    LOGS_PATH.join("#{validation_uuid}.log").to_s
   end
 
   def merged_env_vars_hash
@@ -81,12 +78,6 @@ class ValidateTarget
     end
   end
 
-  def env_vars
-    merged_env_vars_hash
-      .map { |name, value| "#{name}=#{Shellwords.escape(value)}" }
-      .join(" ")
-  end
-
   def params
     [
       target_type_arg,
@@ -94,25 +85,25 @@ class ValidateTarget
       probe,
       report_prefix,
       generator_options
-    ].compact.join(" ")
+    ].compact.flatten
   end
 
   def target_type_arg
-    "--target_type #{Target::INVERTED_MODEL_TYPES[target.model_type]}.#{target.model_type}"
+    [ "--target_type", "#{Target::INVERTED_MODEL_TYPES[target.model_type]}.#{target.model_type}" ]
   end
 
   def target_name_arg
-    "--target_name #{target.model}"
+    [ "--target_name", target.model ]
   end
 
   def probe
-    "--probes \"#{Scanner.configuration.validation_probe}\""
+    [ "--probes", Scanner.configuration.validation_probe ]
   end
 
   def generator_options
     return if target.json_config.blank?
 
-    "--generator_option_file #{temp_json_file_path}"
+    [ "--generator_option_file", temp_json_file_path ]
   end
 
   def temp_json_file_path
@@ -137,17 +128,11 @@ class ValidateTarget
   end
 
   def report_prefix
-    "--report_prefix #{validation_uuid}"
+    [ "--report_prefix", validation_uuid ]
   end
 
   def validation_uuid
     @validation_uuid ||= "validation_#{target.id}_#{SecureRandom.hex(8)}"
-  end
-
-  def log_file
-    Rails.logger.info("Creating validation log file for target: #{target.id}")
-    FileUtils.mkdir_p(LOGS_PATH) unless Dir.exist?(LOGS_PATH)
-    " 2>&1 | tee -a #{LOGS_PATH.join("#{validation_uuid}.log")} "
   end
 
   def process_validation_result

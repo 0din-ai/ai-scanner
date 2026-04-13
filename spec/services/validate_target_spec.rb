@@ -68,8 +68,8 @@ RSpec.describe ValidateTarget, type: :service do
 
     context 'with API target' do
       it 'uses RunCommand for API targets' do
-        expect(RunCommand).to receive(:new).with(kind_of(String)).and_return(mock_run_command)
-        expect(mock_run_command).to receive(:call)
+        expect(RunCommand).to receive(:new).with(kind_of(Array), env: kind_of(Hash)).and_return(mock_run_command)
+        expect(mock_run_command).to receive(:call).with(log_file: kind_of(String))
 
         service.call
       end
@@ -89,9 +89,9 @@ RSpec.describe ValidateTarget, type: :service do
       service.call
     end
 
-    it 'creates and calls RunCommand with the correct command' do
-      expect(RunCommand).to receive(:new).with(kind_of(String)).and_return(mock_run_command)
-      expect(mock_run_command).to receive(:call)
+    it 'creates and calls RunCommand with argv array and env hash' do
+      expect(RunCommand).to receive(:new).with(kind_of(Array), env: kind_of(Hash)).and_return(mock_run_command)
+      expect(mock_run_command).to receive(:call).with(log_file: kind_of(String))
 
       service.call
     end
@@ -141,92 +141,88 @@ RSpec.describe ValidateTarget, type: :service do
       allow(service).to receive(:validation_uuid).and_return(validation_uuid)
     end
 
-    describe '#command' do
-      let(:expected_script_path) { Rails.root.join("script", "run_garak.py") }
+    describe '#build_argv' do
+      it 'returns a flat array with python, script path, uuid, and individual params' do
+        argv = service.send(:build_argv)
 
-      before do
-        allow(service).to receive(:env_vars).and_return('ENV_VAR=value')
-        allow(service).to receive(:params).and_return('--model_type test --model_name gpt-4')
-        allow(service).to receive(:log_file).and_return(' 2>&1 | tee -a /path/to/log ')
-      end
-
-      it 'constructs the correct command' do
-        command = service.send(:command)
-
-        expect(command).to include('ENV_VAR=value')
-        expect(command).to include('HOME=/home/rails')
-        expect(command).to include("python3 #{expected_script_path}")
-        expect(command).to include("'#{validation_uuid}'")
-        expect(command).to include("'--model_type test --model_name gpt-4'")
-        expect(command).to include('2>&1 | tee -a /path/to/log')
+        expect(argv).to be_an(Array)
+        expect(argv[0]).to eq("/opt/venv/bin/python3")
+        expect(argv[1]).to include("run_garak.py")
+        expect(argv[2]).to eq(validation_uuid)
+        expect(argv[3]).to eq("--target_type")
+        expect(argv[4]).to include("OpenAIGenerator")
+        expect(argv[5]).to eq("--target_name")
+        expect(argv[6]).to eq("gpt-4")
       end
     end
 
-    describe '#env_vars' do
+    describe '#build_env' do
       let!(:global_env_var) { create(:environment_variable, target: nil, env_name: 'API_KEY', env_value: 'secret') }
       let!(:excluded_env_var) { create(:environment_variable, target: nil, env_name: 'EVALUATION_THRESHOLD', env_value: '0.5') }
 
+      it 'returns a hash of environment variables' do
+        env = service.send(:build_env)
+
+        expect(env).to be_a(Hash)
+        expect(env["HOME"]).to eq("/home/rails")
+      end
+
       it 'includes global environment variables' do
-        env_vars = service.send(:env_vars)
-        expect(env_vars).to include('API_KEY=secret')
+        env = service.send(:build_env)
+        expect(env["API_KEY"]).to eq("secret")
       end
 
       it 'excludes EVALUATION_THRESHOLD' do
-        env_vars = service.send(:env_vars)
-        expect(env_vars).not_to include('EVALUATION_THRESHOLD=0.5')
+        env = service.send(:build_env)
+        expect(env).not_to have_key("EVALUATION_THRESHOLD")
       end
 
-      it 'escapes values with Shellwords to prevent command injection' do
+      it 'preserves values verbatim without shell escaping' do
         create(:environment_variable, target: nil, env_name: 'INJECTION_TEST', env_value: 'value; rm -rf /')
 
-        env_vars = service.send(:env_vars)
-        expect(env_vars).to include('INJECTION_TEST=value\\;\ rm\ -rf\ /')
-        expect(env_vars).not_to include('INJECTION_TEST=value; rm -rf /')
+        env = service.send(:build_env)
+        expect(env["INJECTION_TEST"]).to eq('value; rm -rf /')
       end
 
-      it 'escapes values containing special shell characters' do
+      it 'preserves values with special shell characters' do
         create(:environment_variable, target: nil, env_name: 'SPECIAL_CHARS', env_value: "val'ue $(whoami)")
 
-        env_vars = service.send(:env_vars)
-        # Shellwords.escape wraps or escapes special characters
-        expect(env_vars).not_to include("$(whoami)")
-        expect(env_vars).to include("SPECIAL_CHARS=")
+        env = service.send(:build_env)
+        expect(env["SPECIAL_CHARS"]).to eq("val'ue $(whoami)")
       end
     end
 
     describe '#params' do
-      before do
-        allow(service).to receive(:target_type_arg).and_return('--target_type openai.gpt-4')
-        allow(service).to receive(:target_name_arg).and_return('--target_name gpt-4')
-        allow(service).to receive(:probe).and_return("--probes \"#{Scanner.configuration.validation_probe}\"")
-        allow(service).to receive(:report_prefix).and_return('--report_prefix validation_123')
-        allow(service).to receive(:generator_options).and_return('--generator_option_file /path/to/config.json')
-      end
+      it 'returns a flat array of individual arguments' do
+        allow(service).to receive(:temp_json_file_path).and_return('/path/to/config.json')
 
-      it 'combines all parameters' do
         params = service.send(:params)
-        expect(params).to eq("--target_type openai.gpt-4 --target_name gpt-4 --probes \"#{Scanner.configuration.validation_probe}\" --report_prefix validation_123 --generator_option_file /path/to/config.json")
+
+        expect(params).to be_an(Array)
+        expect(params).to include("--target_type", "--target_name", "--probes", "--report_prefix", "--generator_option_file")
+        expect(params).not_to include(nil)
+        params.each { |p| expect(p).to be_a(String) }
       end
     end
 
     describe '#target_type_arg' do
-      it 'constructs correct target type parameter' do
+      it 'returns a two-element array with flag and value' do
         target_type = service.send(:target_type_arg)
-        expect(target_type).to eq('--target_type openai.OpenAIGenerator')
+        expect(target_type).to eq([ "--target_type", "openai.OpenAIGenerator" ])
       end
     end
 
     describe '#target_name_arg' do
-      it 'constructs correct target name parameter' do
+      it 'returns a two-element array with flag and value' do
         target_name = service.send(:target_name_arg)
-        expect(target_name).to eq('--target_name gpt-4')
+        expect(target_name).to eq([ "--target_name", "gpt-4" ])
       end
     end
 
     describe '#probe' do
-      it 'returns the configured validation probe parameter' do
+      it 'returns a two-element array with flag and value' do
         probe = service.send(:probe)
-        expect(probe).to eq("--probes \"#{Scanner.configuration.validation_probe}\"")
+        expect(probe).to eq([ "--probes", Scanner.configuration.validation_probe ])
       end
     end
 
@@ -236,9 +232,9 @@ RSpec.describe ValidateTarget, type: :service do
           allow(service).to receive(:temp_json_file_path).and_return('/path/to/config.json')
         end
 
-        it 'returns generator option file parameter' do
+        it 'returns a two-element array with flag and path' do
           generator_options = service.send(:generator_options)
-          expect(generator_options).to eq('--generator_option_file /path/to/config.json')
+          expect(generator_options).to eq([ "--generator_option_file", "/path/to/config.json" ])
         end
       end
 

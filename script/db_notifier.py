@@ -827,7 +827,7 @@ def get_db_connection(database: str = "primary"):
     return psycopg2.connect(url)
 
 
-def _enqueue_broadcast_stats_job(queue_conn) -> int:
+def _enqueue_broadcast_stats_job(company_id: int, queue_conn) -> int:
     """
     Enqueue BroadcastRunningStatsJob in Solid Queue.
 
@@ -836,6 +836,7 @@ def _enqueue_broadcast_stats_job(queue_conn) -> int:
     since that bypasses Rails callbacks.
 
     Args:
+        company_id: Company ID for company-scoped broadcast stats
         queue_conn: Connection to the queue database
 
     Returns:
@@ -852,7 +853,7 @@ def _enqueue_broadcast_stats_job(queue_conn) -> int:
         "provider_job_id": None,
         "queue_name": "default",
         "priority": None,
-        "arguments": [],  # No arguments needed
+        "arguments": [company_id],
         "executions": 0,
         "exception_executions": {},
         "locale": "en",
@@ -861,14 +862,16 @@ def _enqueue_broadcast_stats_job(queue_conn) -> int:
         "scheduled_at": now_str,
     }
 
+    concurrency_key = f"BroadcastRunningStatsJob/broadcast_running_stats:{company_id}"
+
     with queue_conn.cursor() as queue_cur:
         # Insert into solid_queue_jobs
         queue_cur.execute(
             """
             INSERT INTO solid_queue_jobs
                 (class_name, arguments, queue_name, priority, active_job_id,
-                 scheduled_at, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                 concurrency_key, scheduled_at, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -877,6 +880,7 @@ def _enqueue_broadcast_stats_job(queue_conn) -> int:
                 "default",
                 0,  # priority
                 job_uuid,
+                concurrency_key,
                 now,  # scheduled_at
                 now,  # created_at
                 now,  # updated_at
@@ -922,15 +926,18 @@ def notify_report_running(report_uuid: str, pid: int) -> bool:
                     UPDATE reports
                     SET status = %s, pid = %s, heartbeat_at = NOW(), updated_at = NOW()
                     WHERE uuid = %s
+                    RETURNING company_id
                     """,
                     (REPORT_STATUS_RUNNING, pid, report_uuid),
                 )
-                rows_affected = cur.rowcount
+                report_row = cur.fetchone()
             conn.commit()
 
-            if rows_affected == 0:
+            if report_row is None:
                 logger.warning(f"Report not found: {report_uuid}")
                 return False
+
+            company_id = report_row[0]
 
             logger.info(f"Report {report_uuid} marked as running (pid={pid})")
 
@@ -938,7 +945,7 @@ def notify_report_running(report_uuid: str, pid: int) -> bool:
         try:
             with pooled_connection("queue") as queue_conn:
                 queue_conn.autocommit = False
-                _enqueue_broadcast_stats_job(queue_conn)
+                _enqueue_broadcast_stats_job(company_id, queue_conn)
                 queue_conn.commit()
                 logger.debug(f"Broadcast stats job enqueued for {report_uuid}")
         except Exception as broadcast_err:

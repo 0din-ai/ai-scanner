@@ -1,22 +1,7 @@
 # frozen_string_literal: true
 
-# Base policy for resources that are already scoped by ActsAsTenant.
-#
-# IMPORTANT: This policy relies on ActsAsTenant being properly configured:
-# - Models using this policy MUST have `acts_as_tenant :company`
-# - ApplicationController MUST call `set_current_tenant(current_user.company)`
-# - Tenant context MUST be set before any database queries
-#
-# With ActsAsTenant active, all queries are automatically scoped to the current
-# tenant (company), so Pundit permissions can be permissive - users can only
-# access records within their tenant by default.
-#
-# WARNING: If ActsAsTenant is bypassed (e.g., via `ActsAsTenant.without_tenant`),
-# these permissive defaults could expose data across tenants. Only bypass tenant
-# scoping in super_admin contexts with explicit authorization checks.
-#
-# Used by: Target, Scan, Report, EnvironmentVariable, OutputServer, Metadatum
-#
+# All tenant members have equal access to tenant-scoped resources.
+# Cross-tenant isolation is enforced by ActsAsTenant, not this policy.
 class TenantScopedPolicy < ApplicationPolicy
   def index?
     true

@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Scans::StatsSerializer, type: :service do
-  let(:target) { create(:target, :good, name: "Test Target", model_type: "OpenAI", model: "gpt-4") }
+  let(:target) { create(:target, :good, name: "Test Target", model_type: "OpenAIGenerator", model: "gpt-4") }
   let(:default_probe) { create(:probe) }
   let(:scan) { create(:scan, name: "Test Scan", targets: [ target ], probes: [ default_probe ]) }
   let(:serializer) { described_class.new(scan) }
@@ -84,7 +84,7 @@ RSpec.describe Scans::StatsSerializer, type: :service do
       expect(result.first).to include(
         target_id: target.id,
         target_name: "Test Target",
-        model_type: "OpenAI",
+        model_type: "OpenAIGenerator",
         model: "gpt-4"
       )
     end
@@ -102,6 +102,58 @@ RSpec.describe Scans::StatsSerializer, type: :service do
 
         expect(result.length).to eq(2)
         expect(result.map { |t| t[:target_name] }).to contain_exactly("Test Target", "Target 2")
+      end
+    end
+  end
+
+  describe '#attacks_info' do
+    context 'with multiple targets' do
+      let(:target2) { create(:target, :good, name: "Target 2", model: "claude-3") }
+      let(:detector) { create(:detector) }
+      let(:probe) { create(:probe, detector: detector) }
+
+      before do
+        scan.targets << target2
+        scan.probes << probe
+
+        report1 = create(:report, :completed, scan: scan, target: target)
+        report2 = create(:report, :completed, scan: scan, target: target2)
+
+        create(:detector_result, report: report1, detector: detector, passed: 10, total: 50)
+        create(:detector_result, report: report2, detector: detector, passed: 20, total: 80)
+      end
+
+      it 'returns correct per-target totals from a single grouped query' do
+        result = serializer.send(:attacks_info)
+
+        expect(result[:total_passed]).to eq(30)
+        expect(result[:total_tests]).to eq(130)
+
+        by_target = result[:by_target]
+        expect(by_target.length).to eq(2)
+
+        t1 = by_target.find { |t| t[:target_name] == "Test Target" }
+        t2 = by_target.find { |t| t[:target_name] == "Target 2" }
+
+        expect(t1[:passed]).to eq(10)
+        expect(t1[:total]).to eq(50)
+        expect(t1[:asr]).to eq(20.0)
+
+        expect(t2[:passed]).to eq(20)
+        expect(t2[:total]).to eq(80)
+        expect(t2[:asr]).to eq(25.0)
+      end
+
+      it 'includes targets with no completed reports as zero' do
+        target3 = create(:target, :good, name: "Target 3")
+        scan.targets << target3
+
+        result = serializer.send(:attacks_info)
+        t3 = result[:by_target].find { |t| t[:target_name] == "Target 3" }
+
+        expect(t3[:passed]).to eq(0)
+        expect(t3[:total]).to eq(0)
+        expect(t3[:asr]).to eq(0)
       end
     end
   end

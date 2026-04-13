@@ -77,19 +77,23 @@ module Scans
       total_tests = totals&.total_tests.to_i
       overall_asr = total_tests > 0 ? (total_passed.to_f / total_tests * 100).round(2) : 0
 
-      # Per-target breakdown
-      by_target = scan.targets.map do |target|
-        target_totals = completed_reports
-          .where(target_id: target.id)
-          .joins(:detector_results)
-          .select(
-            "SUM(detector_results.passed) as passed",
-            "SUM(detector_results.total) as total"
-          )
-          .take
+      # Per-target breakdown (single grouped query instead of N+1)
+      grouped = completed_reports
+        .joins(:detector_results)
+        .group(:target_id)
+        .pluck(
+          Arel.sql("reports.target_id"),
+          Arel.sql("SUM(detector_results.passed)"),
+          Arel.sql("SUM(detector_results.total)")
+        )
+        .each_with_object({}) do |(tid, passed, total), hash|
+          hash[tid] = { passed: passed.to_i, total: total.to_i }
+        end
 
-        passed = target_totals&.passed.to_i
-        total = target_totals&.total.to_i
+      by_target = scan.targets.map do |target|
+        stats = grouped[target.id] || { passed: 0, total: 0 }
+        passed = stats[:passed]
+        total = stats[:total]
         asr = total > 0 ? (passed.to_f / total * 100).round(2) : 0
 
         {
@@ -218,11 +222,13 @@ module Scans
     def top_vulnerabilities_info
       return [] if completed_reports.empty?
 
-      # Find probes with successful attacks, prioritized by risk level
-      ProbeResult
+      # Find probes with successful attacks, prioritized by risk level.
+      # Uses any_detector_passed so multi-detector probes where any detector
+      # was bypassed count as vulnerable, even if the last detector defended.
+      vulnerable_probes = ProbeResult
         .joins(:probe)
         .where(report_id: completed_reports.select(:id))
-        .where("probe_results.passed > 0")
+        .where(any_detector_passed: true)
         .group("probes.id", "probes.name", "probes.category", "probes.social_impact_score", "probes.disclosure_status")
         .select(
           "probes.id",
@@ -235,21 +241,22 @@ module Scans
         )
         .order("probes.social_impact_score DESC NULLS LAST, total_passed DESC")
         .limit(10)
-        .map do |row|
-          risk_levels = Probe.social_impact_scores.invert
-          disclosure_statuses = Probe.disclosure_statuses.invert
 
-          {
-            probe_id: row.id,
-            probe_name: row.name,
-            category: row.category,
-            risk_level: risk_levels[row.social_impact_score] || "Unknown",
-            disclosure_status: disclosure_statuses[row.disclosure_status] || "Unknown",
-            passed: row.total_passed.to_i,
-            total: row.total_tests.to_i,
-            success_rate: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
-          }
-        end
+      risk_levels = Probe.social_impact_scores.invert
+      disclosure_statuses = Probe.disclosure_statuses.invert
+
+      vulnerable_probes.map do |row|
+        {
+          probe_id: row.id,
+          probe_name: row.name,
+          category: row.category,
+          risk_level: risk_levels[row.social_impact_score] || "Unknown",
+          disclosure_status: disclosure_statuses[row.disclosure_status] || "Unknown",
+          passed: row.total_passed.to_i,
+          total: row.total_tests.to_i,
+          success_rate: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+        }
+      end
     end
 
     # TIER 1: Detector breakdown - per-detector success rates
@@ -430,11 +437,13 @@ module Scans
     def calculate_risk_penalty
       return 0 if completed_reports.empty?
 
-      # Get successful attacks by risk level
+      # Get successful attacks by risk level. Filter by any_detector_passed
+      # for correct multi-detector semantics; sum still uses passed (last
+      # detector's value) which is the best signal we have for magnitude.
       risk_data = ProbeResult
         .joins(:probe)
         .where(report_id: completed_reports.select(:id))
-        .where("probe_results.passed > 0")
+        .where(any_detector_passed: true)
         .group("probes.social_impact_score")
         .sum("probe_results.passed")
 

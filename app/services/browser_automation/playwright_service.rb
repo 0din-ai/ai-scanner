@@ -18,18 +18,26 @@ module BrowserAutomation
       @temp_script = nil
     end
 
-    # Execute a block with a new page context
     def with_page(url = nil, options = {})
-      script = build_page_script(url, options)
-      execute_playwright_script(script)
+      validate_url_safety!(url) if url
+      script, data = build_page_script(url, options)
+      execute_playwright_script(script, data: data)
     end
 
-    # Take a screenshot of a URL
     def screenshot(url, output_path = nil, options = {})
+      validate_url_safety!(url)
       output_path ||= generate_screenshot_path
+
+      data = {
+        url: url,
+        output_path: output_path.to_s,
+        wait_until: options[:wait_until] || "networkidle",
+        type: options[:type] || "png"
+      }
 
       script = <<~JS
         const { chromium } = require('playwright');
+        const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
 
         (async () => {
           const browser = await chromium.launch({
@@ -39,22 +47,22 @@ module BrowserAutomation
 
           try {
             const context = await browser.newContext({
-              viewport: { width: #{options[:width] || 1920}, height: #{options[:height] || 1080} }
+              viewport: { width: #{(options[:width] || 1920).to_i}, height: #{(options[:height] || 1080).to_i} }
             });
             const page = await context.newPage();
 
-            await page.goto('#{url}', {
-              waitUntil: '#{options[:wait_until] || 'networkidle'}',
-              timeout: #{options[:timeout] || 30000}
+            await page.goto(__data.url, {
+              waitUntil: __data.wait_until,
+              timeout: #{(options[:timeout] || 30000).to_i}
             });
 
             await page.screenshot({
-              path: '#{output_path}',
-              fullPage: #{options[:full_page] || false},
-              type: '#{options[:type] || 'png'}'
+              path: __data.output_path,
+              fullPage: #{options[:full_page] == true},
+              type: __data.type
             });
 
-            console.log(JSON.stringify({ success: true, path: '#{output_path}' }));
+            console.log(JSON.stringify({ success: true, path: __data.output_path }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
             process.exitCode = 1;
@@ -64,7 +72,7 @@ module BrowserAutomation
         })();
       JS
 
-      result = execute_playwright_script(script)
+      result = execute_playwright_script(script, data: data)
 
       if result["success"]
         output_path
@@ -73,16 +81,20 @@ module BrowserAutomation
       end
     end
 
-    # Generate a PDF from a URL
-    # Note: PDF generation requires Chromium (not available in Firefox)
     def generate_pdf(url, output_path = nil, options = {})
+      validate_url_safety!(url, allow_localhost: options[:allow_localhost])
       output_path ||= generate_pdf_path
 
-      # Escape single quotes in URL for JavaScript string
-      escaped_url = url.gsub("'", "\\\\'")
+      data = {
+        url: url,
+        output_path: output_path.to_s,
+        wait_until: options[:wait_until] || "load",
+        format: options[:format] || "A4"
+      }
 
       script = <<~JS
         const { chromium } = require('playwright');
+        const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
 
         (async () => {
           const browser = await chromium.launch({
@@ -97,23 +109,23 @@ module BrowserAutomation
 
           try {
             const context = await browser.newContext({
-              viewport: { width: #{options[:width] || 1200}, height: #{options[:height] || 1600} }
+              viewport: { width: #{(options[:width] || 1200).to_i}, height: #{(options[:height] || 1600).to_i} }
             });
             const page = await context.newPage();
 
-            await page.goto('#{escaped_url}', {
-              waitUntil: '#{options[:wait_until] || 'load'}',
-              timeout: #{options[:timeout] || 30000}
+            await page.goto(__data.url, {
+              waitUntil: __data.wait_until,
+              timeout: #{(options[:timeout] || 30000).to_i}
             });
 
             await page.pdf({
-              path: '#{output_path}',
-              format: '#{options[:format] || 'A4'}',
-              printBackground: #{options[:print_background] || true},
-              preferCSSPageSize: #{options[:prefer_css_page_size] || true}
+              path: __data.output_path,
+              format: __data.format,
+              printBackground: #{options.fetch(:print_background, true) == true},
+              preferCSSPageSize: #{options.fetch(:prefer_css_page_size, true) == true}
             });
 
-            console.log(JSON.stringify({ success: true, path: '#{output_path}' }));
+            console.log(JSON.stringify({ success: true, path: __data.output_path }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
             process.exitCode = 1;
@@ -123,7 +135,7 @@ module BrowserAutomation
         })();
       JS
 
-      result = execute_playwright_script(script)
+      result = execute_playwright_script(script, data: data)
 
       if result["success"]
         output_path
@@ -132,8 +144,8 @@ module BrowserAutomation
       end
     end
 
-    # Validate webchat config by testing it with a real message
     def validate_webchat_config(url, config)
+      validate_url_safety!(url)
       selectors = config[:selectors] || config["selectors"]
       wait_times = config[:wait_times] || config["wait_times"] || {}
 
@@ -142,9 +154,20 @@ module BrowserAutomation
       container_selector = selectors[:response_container] || selectors["response_container"]
 
       test_message = "Hello"
+      page_load_timeout = (wait_times[:page_load] || wait_times["page_load"] || 30000).to_i
+      response_timeout = (wait_times[:response] || wait_times["response"] || 5000).to_i
+
+      data = {
+        url: url,
+        input_selector: input_selector,
+        container_selector: container_selector,
+        send_selector: (send_selector.present? && send_selector != "null") ? send_selector : nil,
+        test_message: test_message
+      }
 
       script = <<~JS
         const { chromium } = require('playwright');
+        const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
 
         (async () => {
           const browser = await chromium.launch({
@@ -158,72 +181,62 @@ module BrowserAutomation
             });
             const page = await context.newPage();
 
-            // Navigate to page
-            await page.goto('#{url}', {
+            await page.goto(__data.url, {
               waitUntil: 'domcontentloaded',
-              timeout: #{wait_times[:page_load] || 30000}
+              timeout: #{page_load_timeout}
             });
 
-            // PHASE 2: Smart Wait Strategy - Use network idle with fallback
             try {
               await page.waitForLoadState('networkidle', { timeout: 15000 });
             } catch (error) {
-              // Network idle timeout - SPA may have continuous network activity
-              // Fall back to fixed wait
               await page.waitForTimeout(3000);
             }
 
             const errors = [];
 
-            // PHASE 2: Element-based wait for input field (visible + enabled)
             try {
-              await page.waitForSelector('#{input_selector.gsub("'", "\\\\'")}', {
+              await page.waitForSelector(__data.input_selector, {
                 state: 'visible',
                 timeout: 15000
               });
 
-              // Wait for input to be enabled (not disabled)
               await page.waitForFunction(
                 (selector) => {
                   const el = document.querySelector(selector);
                   return el && !el.disabled && !el.readOnly;
                 },
-                '#{input_selector.gsub("'", "\\\\'")}',
+                __data.input_selector,
                 { timeout: 5000 }
               );
             } catch (error) {
-              errors.push('Input field not ready: #{input_selector} - ' + error.message);
+              errors.push('Input field not ready: ' + __data.input_selector + ' - ' + error.message);
             }
 
-            // Check if input field exists and is visible
-            const inputField = page.locator('#{input_selector.gsub("'", "\\\\'")}');
+            const inputField = page.locator(__data.input_selector);
             const inputCount = await inputField.count();
 
             if (inputCount === 0) {
-              errors.push('Input field not found: #{input_selector}');
+              errors.push('Input field not found: ' + __data.input_selector);
             } else if (!await inputField.first().isVisible()) {
-              errors.push('Input field not visible: #{input_selector}');
+              errors.push('Input field not visible: ' + __data.input_selector);
             }
 
-            // PHASE 2: Element-based wait for response container
             try {
-              await page.waitForSelector('#{container_selector.gsub("'", "\\\\'")}', {
+              await page.waitForSelector(__data.container_selector, {
                 state: 'attached',
                 timeout: 15000
               });
             } catch (error) {
-              errors.push('Response container not ready: #{container_selector} - ' + error.message);
+              errors.push('Response container not ready: ' + __data.container_selector + ' - ' + error.message);
             }
 
-            // Check if response container exists
-            const responseContainer = page.locator('#{container_selector.gsub("'", "\\\\'")}');
+            const responseContainer = page.locator(__data.container_selector);
             const containerCount = await responseContainer.count();
 
             if (containerCount === 0) {
-              errors.push('Response container not found: #{container_selector}');
+              errors.push('Response container not found: ' + __data.container_selector);
             }
 
-            // If we have errors already, bail early
             if (errors.length > 0) {
               console.log(JSON.stringify({
                 success: false,
@@ -234,26 +247,22 @@ module BrowserAutomation
               return;
             }
 
-            // Get baseline chat history
             const baselineHistory = await responseContainer.first().textContent();
 
-            // PHASE 2: Retry logic with exponential backoff for message sending
             let retryDelay = 1000;
             let messageSent = false;
             let lastError = null;
 
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
-                // Fill input field
-                await inputField.first().fill('#{test_message}');
+                await inputField.first().fill(__data.test_message);
                 await page.waitForTimeout(500);
 
-                // Send message
-                #{if send_selector.present? && send_selector != "null"
-                    "await page.click('#{send_selector.gsub("'", "\\\\'")}');"
-                  else
-                    "await inputField.first().press('Enter');"
-                  end}
+                if (__data.send_selector) {
+                  await page.click(__data.send_selector);
+                } else {
+                  await inputField.first().press('Enter');
+                }
 
                 messageSent = true;
                 break;
@@ -261,7 +270,7 @@ module BrowserAutomation
                 lastError = error;
                 if (attempt < 2) {
                   await page.waitForTimeout(retryDelay);
-                  retryDelay *= 2; // 1s, 2s, 4s
+                  retryDelay *= 2;
                 }
               }
             }
@@ -277,13 +286,11 @@ module BrowserAutomation
               return;
             }
 
-            // Wait for response
-            await page.waitForTimeout(#{wait_times[:response] || 5000});
+            await page.waitForTimeout(#{response_timeout});
 
-            // Check if content changed
             const newHistory = await responseContainer.first().textContent();
             const contentChanged = newHistory !== baselineHistory;
-            const testMessagePresent = newHistory.includes('#{test_message}');
+            const testMessagePresent = newHistory.includes(__data.test_message);
 
             console.log(JSON.stringify({
               success: true,
@@ -306,7 +313,7 @@ module BrowserAutomation
         })();
       JS
 
-      result = execute_playwright_script(script)
+      result = execute_playwright_script(script, data: data)
 
       if result && result["success"]
         {
@@ -326,10 +333,16 @@ module BrowserAutomation
       end
     end
 
-    # Extract DOM structure for LLM analysis
     def extract_page_structure(url, options = {})
+      validate_url_safety!(url)
+      data = {
+        url: url,
+        user_agent: options[:user_agent] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      }
+
       script = <<~JS
         const { chromium } = require('playwright');
+        const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
 
         (async () => {
           const browser = await chromium.launch({
@@ -339,26 +352,22 @@ module BrowserAutomation
 
           try {
             const context = await browser.newContext({
-              viewport: { width: #{options[:width] || 1920}, height: #{options[:height] || 1080} },
-              userAgent: '#{options[:user_agent] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}'
+              viewport: { width: #{(options[:width] || 1920).to_i}, height: #{(options[:height] || 1080).to_i} },
+              userAgent: __data.user_agent
             });
             const page = await context.newPage();
 
-            await page.goto('#{url}', {
+            await page.goto(__data.url, {
               waitUntil: 'domcontentloaded',
-              timeout: #{options[:timeout] || 15000}
+              timeout: #{(options[:timeout] || 15000).to_i}
             });
 
-            // PHASE 2: Smart Wait Strategy - Use network idle with fallback
             try {
               await page.waitForLoadState('networkidle', { timeout: 15000 });
             } catch (error) {
-              // Network idle timeout - SPA may have continuous network activity
-              // Fall back to fixed wait
               await page.waitForTimeout(8000);
             }
 
-            // Extract DOM elements with semantic attributes
             const domElements = await page.evaluate(() => {
               const elements = {
                 inputs: [],
@@ -367,37 +376,31 @@ module BrowserAutomation
                 iframes: []
               };
 
-              // Simple visibility check
               function isVisible(el) {
                 const rect = el.getBoundingClientRect();
                 return rect.width > 0 && rect.height > 0;
               }
 
-              // Filter out framework-generated dynamic classes that change on each page load
               function isStableClass(className) {
                 if (!className) return false;
 
-                // Patterns for unstable framework-generated classes
                 const unstablePatterns = [
-                  /^ng-/,           // Angular (.ng-tns-*, .ng-star-inserted, .ng-trigger)
-                  /_[a-z0-9]{5,}/,  // CSS modules (_a3k2f, _3kf2a)
-                  /^jsx-/,          // Styled-jsx (.jsx-1234567)
-                  /^css-/,          // Emotion/styled-components (.css-abc123)
-                  /^sc-/,           // Styled-components (.sc-hash)
-                  /-c\d{8,}-/,      // Angular component IDs (-c3371048223-)
-                  /^MuiBox-root-/,  // Material-UI dynamic classes
-                  /^makeStyles-/    // Material-UI makeStyles
+                  /^ng-/,
+                  /_[a-z0-9]{5,}/,
+                  /^jsx-/,
+                  /^css-/,
+                  /^sc-/,
+                  /-c\d{8,}-/,
+                  /^MuiBox-root-/,
+                  /^makeStyles-/
                 ];
 
                 return !unstablePatterns.some(pattern => pattern.test(className));
               }
 
-              // Enhanced selector generation with semantic attributes and stable class filtering
               function getSelector(el) {
-                // Priority 1: Unique ID (but only if stable)
                 if (el.id && isStableClass(el.id)) return '#' + el.id;
 
-                // Priority 2: Semantic attributes (role, data-testid)
                 if (el.getAttribute('role')) {
                   return '[role="' + el.getAttribute('role') + '"]';
                 }
@@ -405,7 +408,6 @@ module BrowserAutomation
                   return '[data-testid="' + el.getAttribute('data-testid') + '"]';
                 }
 
-                // Priority 3: STABLE classes only (filter out framework-generated dynamic classes)
                 if (el.className && typeof el.className === 'string') {
                   const stableClasses = el.className.trim()
                     .split(/\s+/)
@@ -416,17 +418,14 @@ module BrowserAutomation
                   }
                 }
 
-                // Priority 4: aria-label
                 if (el.getAttribute('aria-label')) {
                   const label = el.getAttribute('aria-label').substring(0, 30);
                   return el.tagName.toLowerCase() + '[aria-label="' + label + '"]';
                 }
 
-                // Fallback: tag name
                 return el.tagName.toLowerCase();
               }
 
-              // Extract semantic attributes
               function getSemanticAttributes(el) {
                 return {
                   role: el.getAttribute('role') || '',
@@ -436,7 +435,6 @@ module BrowserAutomation
                 };
               }
 
-              // Find inputs with semantic attributes
               const inputSelectors = 'input[type="text"], textarea, [contenteditable="true"], [role="textbox"]';
               document.querySelectorAll(inputSelectors).forEach(el => {
                 if (isVisible(el)) {
@@ -454,7 +452,6 @@ module BrowserAutomation
                 }
               });
 
-              // Find buttons with semantic attributes
               const buttonSelectors = 'button, input[type="submit"], [role="button"]';
               document.querySelectorAll(buttonSelectors).forEach(el => {
                 if (isVisible(el)) {
@@ -462,7 +459,7 @@ module BrowserAutomation
                   const text = el.innerText || el.value || '';
                   elements.buttons.push({
                     selector: getSelector(el),
-                    text: text, // Full text, not truncated
+                    text: text,
                     id: el.id || '',
                     classes: el.className || '',
                     role: attrs.role,
@@ -472,7 +469,6 @@ module BrowserAutomation
                 }
               });
 
-              // Find containers with semantic attributes
               const containerSelectors = 'div, main, section, [role="main"], [role="region"], [role="log"]';
               document.querySelectorAll(containerSelectors).forEach(el => {
                 const rect = el.getBoundingClientRect();
@@ -489,7 +485,6 @@ module BrowserAutomation
                 }
               });
 
-              // Find iframes
               document.querySelectorAll('iframe').forEach(el => {
                 elements.iframes.push({
                   selector: getSelector(el),
@@ -507,7 +502,6 @@ module BrowserAutomation
               };
             });
 
-            // Capture screenshot as Base64
             const screenshotBuffer = await page.screenshot({
               type: 'png',
               fullPage: false
@@ -533,7 +527,7 @@ module BrowserAutomation
         })();
       JS
 
-      result = execute_playwright_script(script)
+      result = execute_playwright_script(script, data: data)
 
       if result && result["success"]
         result["data"]
@@ -544,12 +538,19 @@ module BrowserAutomation
       end
     end
 
-    # Stop any running browser processes
     def stop_browser
       @mutex.synchronize do
         if @browser_process
-          Process.kill("TERM", @browser_process) rescue nil
-          Process.wait(@browser_process) rescue nil
+          begin
+            Process.kill("TERM", @browser_process)
+          rescue Errno::ESRCH, Errno::ECHILD => e
+            Rails.logger.warn "PlaywrightService: failed to kill process #{@browser_process}: #{e.message}"
+          end
+          begin
+            Process.wait(@browser_process)
+          rescue Errno::ESRCH, Errno::ECHILD => e
+            Rails.logger.warn "PlaywrightService: failed to wait on process #{@browser_process}: #{e.message}"
+          end
           @browser_process = nil
           @browser_ready = false
         end
@@ -560,21 +561,33 @@ module BrowserAutomation
 
     private
 
-    def execute_playwright_script(script)
+    def validate_url_safety!(url, allow_localhost: nil)
+      allow = allow_localhost.nil? ? UrlSafetyValidator.allow_localhost? : allow_localhost
+      result = UrlSafetyValidator.safe_url?(url, allow_localhost: allow)
+      raise ArgumentError, "SSRF protection: #{result.error}" unless result.safe?
+    end
+
+    def execute_playwright_script(script, data: nil)
       @mutex.synchronize do
+        data_file = nil
         begin
-          # Create temporary script file
+          if data
+            data_file = Tempfile.new([ "playwright_data", ".json" ], Rails.root.join("tmp"))
+            data_file.write(JSON.generate(data))
+            data_file.close
+          end
+
           temp_file = Tempfile.new([ "playwright_script", ".cjs" ], Rails.root.join("tmp"))
           temp_file.write(script)
           temp_file.close
 
-          # Execute script with Node.js, setting NODE_PATH to find modules
           env = {
             "NODE_PATH" => Rails.root.join("node_modules").to_s
           }
+          env["PLAYWRIGHT_DATA_PATH"] = data_file.path if data_file
+
           output, error, status = Open3.capture3(env, "node", temp_file.path)
 
-          # Helper to pull a JSON object from text by scanning lines
           extract_json = lambda do |text|
             next nil unless text && !text.empty?
             line = text.lines.reverse.find { |l| (s = l.strip).start_with?("{") && s.end_with?("}") }
@@ -584,7 +597,6 @@ module BrowserAutomation
           end
 
           if status.success?
-            # Prefer stdout JSON; do not fail silently—include stderr/stdout if missing
             result = extract_json.call(output)
             if result
               result
@@ -594,7 +606,6 @@ module BrowserAutomation
               { "error" => "No JSON found in output (stdout/stderr attached)", "stdout" => output.to_s[0, 4000], "stderr" => error.to_s[0, 4000] }
             end
           else
-            # On non-zero exit, try to parse structured error emitted via console.error(JSON.stringify(...))
             result = extract_json.call(error)
             if result
               result
@@ -606,31 +617,36 @@ module BrowserAutomation
           end
         ensure
           temp_file&.unlink
+          data_file&.unlink
         end
       end
     end
 
     def build_page_script(url, options)
-      <<~JS
+      data = {
+        url: url,
+        wait_until: options[:wait_until] || "networkidle"
+      }
+
+      script = <<~JS
         const { chromium } = require('playwright');
+        const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
 
         (async () => {
           const browser = await chromium.launch({
-            headless: #{options[:headless] != false},
-            firefoxUserPrefs: {
-              'security.sandbox.content.level': 0
-            }
+            headless: #{options[:headless] != false}
           });
 
           try {
             const context = await browser.newContext({
-              viewport: { width: #{options[:width] || 1920}, height: #{options[:height] || 1080} }
+              viewport: { width: #{(options[:width] || 1920).to_i}, height: #{(options[:height] || 1080).to_i} }
             });
             const page = await context.newPage();
 
-            #{url ? "await page.goto('#{url}', { waitUntil: '#{options[:wait_until] || 'networkidle'}' });" : '// No URL provided'}
+            if (__data.url) {
+              await page.goto(__data.url, { waitUntil: __data.wait_until });
+            }
 
-            // Custom code execution would go here
             console.log(JSON.stringify({ success: true }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
@@ -640,6 +656,8 @@ module BrowserAutomation
           }
         })();
       JS
+
+      [ script, data ]
     end
 
     def generate_screenshot_path
@@ -657,8 +675,10 @@ module BrowserAutomation
     end
 
     def cleanup_temp_files
-      # Clean up any temporary files if needed
-      @temp_script&.unlink rescue nil
+      @temp_script&.unlink
+    rescue Errno::ENOENT, Errno::EACCES => e
+      Rails.logger.warn "PlaywrightService: failed to unlink temp script: #{e.message}"
+    ensure
       @temp_script = nil
     end
   end

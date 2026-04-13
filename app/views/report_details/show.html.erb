@@ -1,7 +1,9 @@
 <% pdf_mode = params[:pdf] == 'true' %>
 
 <% unless pdf_mode %>
-  <%= turbo_stream_from "pdf_notifications:company_#{current_user.current_company_id}" %>
+  <% if current_user %>
+    <%= turbo_stream_from "pdf_notifications:company_#{current_user.current_company_id}" %>
+  <% end %>
   <div id="pdf-status-<%= @report.id %>" style="display: none;"></div>
 <% end %>
 
@@ -107,7 +109,7 @@
             </div>
             <div class="<%= pdf_mode ? 'flex items-center gap-1.5 ml-3 mt-0.5' : 'flex items-center gap-2 ml-4' %>">
               <div class="flex items-center gap-1">
-                <span class="<%= pdf_mode ? 'font-medium' : 'font-semibold' %> <%= result.passed > 0 ? 'text-red-600' : 'text-emerald-600' %>">
+                <span class="<%= pdf_mode ? 'font-medium' : 'font-semibold' %> <%= result.passed.to_i > 0 ? 'text-red-600' : 'text-emerald-600' %>">
                   <%= result.passed %>
                 </span>
                 <span class="text-gray-500">/</span>
@@ -235,7 +237,7 @@
         detector_name = result.detector&.name || "Unknown"
         short_name = detector_name != "Unknown" ? detector_name.split(".").last : "Unknown"
         translated_name = I18n.t("detectors.names.#{short_name}", default: short_name)
-        is_vulnerable = result.passed > 0
+        is_vulnerable = result.any_detector_passed
         card_border_class = is_vulnerable ?
           (pdf_mode ? 'border-red-200/80' : 'border-red-200/80 hover:border-red-300/60') :
           (pdf_mode ? 'border-gray-200/80' : 'border-gray-200/80 hover:border-gray-300/60')
@@ -246,7 +248,7 @@
         indicator_animation = is_vulnerable && !pdf_mode ? 'animate-pulse' : ''
       %>
 
-      <details id="probe-<%= probe.id %>" class="group" data-report-target="details" <%= 'open' if pdf_mode && result.passed > 0 %>>
+      <details id="probe-<%= probe.id %>" class="group" data-report-target="details" <%= 'open' if pdf_mode && result.any_detector_passed %>>
         <summary class="<%= pdf_mode ? 'bg-white/90 backdrop-blur-sm rounded-lg border p-4 cursor-pointer list-none' : 'bg-white/90 backdrop-blur-sm rounded-xl border p-5 cursor-pointer list-none transition-all duration-300' %> <%= card_border_class %> <%= card_shadow_class %>">
           <div class="<%= pdf_mode ? 'flex items-start justify-between gap-4' : 'flex items-start justify-between gap-6' %>">
             <div class="flex-1 min-w-0">

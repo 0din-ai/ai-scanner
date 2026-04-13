@@ -16,6 +16,89 @@ RSpec.describe Target, type: :model do
     it { is_expected.to validate_presence_of(:model) }
   end
 
+  describe "model format validation" do
+    context "for API targets" do
+      it "accepts valid model identifiers" do
+        valid_models = [ "gpt-4", "gpt-3.5-turbo", "claude-2", "meta-llama/Llama-2-7b", "openai:gpt-4", "model_v2" ]
+        valid_models.each do |model_name|
+          target = build(:target, target_type: :api, model: model_name)
+          target.valid?
+          expect(target.errors[:model]).to be_empty, "Expected '#{model_name}' to be valid but got: #{target.errors[:model]}"
+        end
+      end
+
+      it "rejects models with shell injection characters" do
+        dangerous_models = [
+          "'; rm -rf /; echo '",
+          "gpt-4; whoami",
+          "model$(id)",
+          "model`id`",
+          "model | cat /etc/passwd",
+          "model && echo pwned",
+          "model > /tmp/evil"
+        ]
+        dangerous_models.each do |model_name|
+          target = build(:target, target_type: :api, model: model_name)
+          expect(target).not_to be_valid, "Expected '#{model_name}' to be rejected"
+          expect(target.errors[:model].first).to include("contains invalid characters")
+        end
+      end
+
+      it "allows blank model (handled by presence validation)" do
+        target = build(:target, target_type: :api, model: nil)
+        target.valid?
+        expect(target.errors[:model]).to include("can't be blank")
+        expect(target.errors[:model]).not_to include(/contains invalid characters/)
+      end
+    end
+
+    context "for webchat targets" do
+      it "does not validate model format" do
+        target = build(:target, target_type: :webchat, model: "WebChatbotGenerator",
+                      web_config: {
+                        "url" => "https://example.com/chat",
+                        "selectors" => { "input_field" => "#input", "response_container" => "#response" }
+                      })
+        expect(target).to be_valid
+      end
+    end
+  end
+
+  describe "model_type validation" do
+    context "for API targets" do
+      it "accepts known generator types from INVERTED_MODEL_TYPES" do
+        valid_types = [ "OpenAIGenerator", "AzureOpenAIGenerator", "LiteLLMGenerator", "OllamaGenerator" ]
+        valid_types.each do |type|
+          target = build(:target, target_type: :api, model_type: type)
+          target.valid?
+          expect(target.errors[:model_type]).to be_empty, "Expected '#{type}' to be valid but got: #{target.errors[:model_type]}"
+        end
+      end
+
+      it "rejects unrecognized generator types" do
+        target = build(:target, target_type: :api, model_type: "FakeGenerator")
+        expect(target).not_to be_valid
+        expect(target.errors[:model_type].first).to include("is not a recognized generator type")
+      end
+
+      it "rejects model_type with injection characters" do
+        target = build(:target, target_type: :api, model_type: "openai; rm -rf /")
+        expect(target).not_to be_valid
+      end
+    end
+
+    context "for webchat targets" do
+      it "does not validate model_type against the allowlist" do
+        target = build(:target, target_type: :webchat, model_type: "web_chatbot",
+                      web_config: {
+                        "url" => "https://example.com/chat",
+                        "selectors" => { "input_field" => "#input", "response_container" => "#response" }
+                      })
+        expect(target).to be_valid
+      end
+    end
+  end
+
   describe "json_config validation" do
     context "for API targets" do
       it "accepts valid JSON when json_config is present" do
@@ -227,6 +310,7 @@ RSpec.describe Target, type: :model do
     end
 
     it "triggers validation when web_config changes" do
+      allow(UrlSafetyValidator).to receive(:resolve_addresses).and_return([ "93.184.216.34" ])
       target = create(:target, :good, target_type: :webchat,
                       web_config: {
                         "url" => "https://old.example.com/chat",
@@ -387,6 +471,12 @@ RSpec.describe Target, type: :model do
         target = build(:target, web_config: "{invalid json}")
         expect(target.parsed_web_config).to be_nil
       end
+
+      it "logs a warning for invalid JSON" do
+        target = build(:target, web_config: "{invalid json}")
+        expect(Rails.logger).to receive(:warn).with(/Target#parsed_web_config: invalid JSON/)
+        target.parsed_web_config
+      end
     end
 
     describe "#display_model_info" do
@@ -448,6 +538,7 @@ RSpec.describe Target, type: :model do
       end
 
       it "accepts config with HTTPS URL" do
+        allow(UrlSafetyValidator).to receive(:resolve_addresses).and_return([ "93.184.216.34" ])
         target = build(:target, target_type: :webchat, web_config: {
           "url" => "https://secure.example.com/chat",
           "selectors" => { "input_field" => "#input", "response_container" => "#response" }
@@ -554,6 +645,47 @@ RSpec.describe Target, type: :model do
 
         expect(target).not_to be_valid
         expect(target.errors[:web_config]).to include(/response_container/)
+      end
+    end
+
+    context "with SSRF protection" do
+      it "rejects URLs pointing to localhost" do
+        target = build(:target, target_type: :webchat, web_config: {
+          "url" => "http://127.0.0.1/chat",
+          "selectors" => { "input_field" => "#input", "response_container" => "#response" }
+        })
+        allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+          UrlSafetyValidator::Result.new("safe?": false, error: "blocked")
+        )
+
+        expect(target).not_to be_valid
+        expect(target.errors[:web_config]).to include("must include a valid URL")
+      end
+
+      it "rejects URLs pointing to cloud metadata endpoint" do
+        target = build(:target, target_type: :webchat, web_config: {
+          "url" => "http://169.254.169.254/latest/meta-data",
+          "selectors" => { "input_field" => "#input", "response_container" => "#response" }
+        })
+        allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+          UrlSafetyValidator::Result.new("safe?": false, error: "blocked")
+        )
+
+        expect(target).not_to be_valid
+      end
+
+      it "rejects URLs pointing to private networks" do
+        %w[http://10.0.0.1 http://172.16.0.1 http://192.168.1.1].each do |url|
+          target = build(:target, target_type: :webchat, web_config: {
+            "url" => url,
+            "selectors" => { "input_field" => "#input", "response_container" => "#response" }
+          })
+          allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+            UrlSafetyValidator::Result.new("safe?": false, error: "blocked")
+          )
+
+          expect(target).not_to be_valid, "Expected #{url} to be rejected"
+        end
       end
     end
 

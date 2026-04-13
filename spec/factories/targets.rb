@@ -2,7 +2,7 @@ FactoryBot.define do
   factory :target do
     association :company
     sequence(:name) { |n| "Target #{Faker::Internet.domain_name}-#{n}" }
-    model_type { 'text-generation' }
+    model_type { 'OpenAIGenerator' }
     model { 'gpt-3.5-turbo' }
     description { Faker::Lorem.paragraph }
 

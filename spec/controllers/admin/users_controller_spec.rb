@@ -213,13 +213,11 @@ RSpec.describe Admin::UsersController, type: :controller do
         ActsAsTenant.current_tenant = company_a
       end
 
-      it "can delete same-company user" do
+      it "cannot delete same-company user (only super_admins can delete users)" do
         expect {
           delete :destroy, params: { id: same_company_user.id }
-        }.to change(User, :count).by(-1)
+        }.not_to change(User, :count)
       end
-
-      # Note: Super admin protection is tested in policy specs
     end
 
     context "as OAuth user" do
@@ -232,10 +230,10 @@ RSpec.describe Admin::UsersController, type: :controller do
         ActsAsTenant.current_tenant = company_a
       end
 
-      it "can delete same-company user (no OAuth restriction in OSS)" do
+      it "cannot delete same-company user (only super_admins can delete users)" do
         expect {
           delete :destroy, params: { id: same_company_target.id }
-        }.to change(User, :count).by(-1)
+        }.not_to change(User, :count)
       end
     end
   end
