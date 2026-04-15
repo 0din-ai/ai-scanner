@@ -78,4 +78,36 @@ RSpec.describe "ReportDetails", type: :request do
       end
     end
   end
+
+  describe "GET /report_details/:id with nil probe_result attempts" do
+    let!(:probe_result) do
+      create(:probe_result, report: report, passed: 3, total: 10)
+    end
+
+    let(:pdf_token) do
+      Rails.application.message_verifier("pdf").generate(
+        report.id,
+        expires_in: 5.minutes,
+        purpose: :pdf_render
+      )
+    end
+
+    before do
+      ActiveRecord::Base.connection.execute("ALTER TABLE probe_results ALTER COLUMN attempts DROP NOT NULL")
+      probe_result.update_column(:attempts, nil)
+    end
+
+    after do
+      ActiveRecord::Base.connection.execute(
+        "UPDATE probe_results SET attempts = '[]' WHERE attempts IS NULL"
+      )
+      ActiveRecord::Base.connection.execute("ALTER TABLE probe_results ALTER COLUMN attempts SET NOT NULL")
+    end
+
+    it "renders successfully even when probe_result.attempts is NULL in the database" do
+      get report_detail_path(report, pdf: "true", pdf_token: pdf_token)
+
+      expect(response).to have_http_status(:ok)
+    end
+  end
 end

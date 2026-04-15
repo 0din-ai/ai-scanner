@@ -376,7 +376,7 @@
 
         <div class="<%= pdf_mode ? 'px-6 pb-4 page-break-inside-avoid' : 'px-8 pb-6' %>">
           <div class="<%= pdf_mode ? 'pl-4 border-l-2 border-gray-200 space-y-3' : 'pl-6 border-l-2 border-gray-200 space-y-4' %>">
-            <% result.attempts.each do |attempt| %>
+            <% (result.attempts || []).each do |attempt| %>
               <div id="<%= attempt["uuid"] %>" class="<%= pdf_mode ? 'bg-gray-50/50 rounded p-4 border border-gray-100 break-inside-avoid' : 'bg-gray-50/50 rounded-lg p-5 shadow-sm border border-gray-100' %>">
                 <div class="<%= pdf_mode ? 'flex items-center justify-end mb-3' : 'flex items-center justify-end mb-4' %>">
                   <% if attempt.dig('notes', 'score_percentage').present? %>

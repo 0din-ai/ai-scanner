@@ -8,6 +8,8 @@ class ProbeResult < ApplicationRecord
 
   validates :report_id, uniqueness: { scope: [ :probe_id, :threat_variant_id ] }
 
+  before_validation :normalize_attempts
+
   def asr_percentage
     return 0 if total.nil? || total.zero?
 
@@ -21,6 +23,10 @@ class ProbeResult < ApplicationRecord
   after_destroy_commit :decrement_probe_stats
 
   private
+
+  def normalize_attempts
+    self.attempts = [] if attempts.nil?
+  end
 
   # Thread-safe atomic increment using SQL expressions
   def increment_probe_stats

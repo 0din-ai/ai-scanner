@@ -9,6 +9,32 @@ RSpec.describe ProbeResult, type: :model do
   describe 'validations' do
   end
 
+  describe 'attempts normalization' do
+    it 'normalizes nil attempts to empty array before validation' do
+      result = build(:probe_result, :nil_attempts)
+      result.valid?
+      expect(result.attempts).to eq([])
+    end
+
+    it 'preserves existing attempts array' do
+      result = build(:probe_result, attempts: [ { "prompt" => "hello" } ])
+      result.valid?
+      expect(result.attempts).to eq([ { "prompt" => "hello" } ])
+    end
+
+    it 'saves with empty array when attempts is nil' do
+      result = create(:probe_result, :nil_attempts)
+      expect(result.reload.attempts).to eq([])
+    end
+
+    it 'normalizes nil attempts on update' do
+      result = create(:probe_result)
+      result.attempts = nil
+      result.save!
+      expect(result.reload.attempts).to eq([])
+    end
+  end
+
   describe 'factory' do
     it 'has a valid structure' do
       expect(build_stubbed(:probe_result)).to be_valid

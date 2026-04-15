@@ -21,5 +21,9 @@ FactoryBot.define do
       passed { 0 }
       total { 10 }
     end
+
+    trait :nil_attempts do
+      attempts { nil }
+    end
   end
 end
