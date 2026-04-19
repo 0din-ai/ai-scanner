@@ -107,7 +107,7 @@ Rails.application.routes.draw do
   resources :report_details, only: [ :show ] do
     member do
       get :pdf
-      get :pdf_status
+      post :pdf_retry
     end
   end
 

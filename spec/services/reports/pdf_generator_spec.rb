@@ -24,6 +24,20 @@ RSpec.describe Reports::PdfGenerator do
     allow(url_helpers).to receive(:report_detail_url).and_return(url)
   end
 
+  describe 'render token constants' do
+    it 'exposes a :report_pdf verifier key' do
+      expect(described_class::RENDER_TOKEN_VERIFIER_KEY).to eq(:report_pdf)
+    end
+
+    it 'exposes the :pdf_render purpose' do
+      expect(described_class::RENDER_TOKEN_PURPOSE).to eq(:pdf_render)
+    end
+
+    it 'exposes a short-lived TTL' do
+      expect(described_class::RENDER_TOKEN_TTL).to eq(5.minutes)
+    end
+  end
+
   describe '#initialize' do
     it 'sets the report attribute' do
       expect(generator.report).to eq(report)
@@ -71,6 +85,23 @@ RSpec.describe Reports::PdfGenerator do
 
       expect(File).to have_received(:delete).with(temp_pdf_path)
       expect(Rails.logger).to have_received(:info).with("Cleaned up temporary PDF file for report 123")
+    end
+
+    it 'signs the render token with the :report_pdf verifier and :pdf_render purpose' do
+      captured_token = nil
+      url_helpers = Rails.application.routes.url_helpers
+      allow(url_helpers).to receive(:report_detail_url) do |_report, **opts|
+        captured_token = opts.dig(:params, :pdf_token)
+        url
+      end
+
+      generator.generate
+
+      expect(captured_token).to be_present
+      verifier = Rails.application.message_verifier(described_class::RENDER_TOKEN_VERIFIER_KEY)
+      expect(
+        verifier.verify(captured_token, purpose: described_class::RENDER_TOKEN_PURPOSE)
+      ).to eq(report.id)
     end
 
     context 'when PDF generation fails' do

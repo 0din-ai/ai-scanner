@@ -3,27 +3,50 @@
     {
       "warning_type": "File Access",
       "warning_code": 16,
-      "fingerprint": "bf6481d9a583704c4e72449022387d49463c496a4b09852f91e87d21bb16c06b",
+      "fingerprint": "f3162d97301023ea7d2fd095ad35e699e3e4387c1de2495089b0c78cb2165449",
       "check_name": "SendFile",
       "message": "Model attribute used in file name",
       "file": "app/controllers/report_details_controller.rb",
-      "line": 22,
+      "line": 61,
       "link": "https://brakemanscanner.org/docs/warning_types/file_access/",
-      "code": "send_file(ReportDecorator.new((Report.includes(:target, :scan, :probe_results => ([:probe, :detector])).find(params[:id]) or Report.includes(:target, :scan, :probe_results => ([:probe, :detector])).find(params[:id]))).report_pdf.file_path, :filename => pdf_filename, :type => \"application/pdf\", :disposition => \"attachment\")",
+      "code": "send_file(Reports::PdfStorage.safe_path(ReportDecorator.new((Report.includes(:target, :scan, :probe_results => ([:probe, :detector])).find(params[:id]) or Report.includes(:target, :scan, :probe_results => ([:probe, :detector])).find(params[:id]))).report_pdf.file_path), :filename => pdf_filename, :type => \"application/pdf\", :disposition => \"attachment\")",
       "render_path": null,
       "location": {
         "type": "method",
         "class": "ReportDetailsController",
-        "method": "pdf"
+        "method": "serve_downloadable_pdf"
       },
       "user_input": "Report.includes(:target, :scan, :probe_results => ([:probe, :detector])).find(params[:id])",
       "confidence": "Weak",
       "cwe_id": [
         22
       ],
-      "note": "file_path is set by GeneratePdfJob, not user input. The path format is storage/pdfs/report_{report.id}.pdf and cannot be manipulated by users."
+      "note": "file_path is set by GeneratePdfJob to storage/pdfs/report_{id}.pdf. Reports::PdfStorage.safe_path validates that the expanded path is inside Rails.root/storage/pdfs before serving; paths outside the sandbox return 404. The download is token-gated via Reports::PdfDownloadToken bound to the specific ReportPdf.id."
+    },
+    {
+      "warning_type": "File Access",
+      "warning_code": 16,
+      "fingerprint": "3a0905d2ae8d141c9966f2ceaa9a44edc4b67b0ce86b9688dc1b46da6f62dacb",
+      "check_name": "FileAccess",
+      "message": "Model attribute used in file name",
+      "file": "app/jobs/delete_pdf_job.rb",
+      "line": 14,
+      "link": "https://brakemanscanner.org/docs/warning_types/file_access/",
+      "code": "File.delete(Reports::PdfStorage.safe_path(ReportPdf.find(report_pdf_id).file_path))",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "DeletePdfJob",
+        "method": "perform"
+      },
+      "user_input": "ReportPdf.find(report_pdf_id).file_path",
+      "confidence": "Weak",
+      "cwe_id": [
+        22
+      ],
+      "note": "DeletePdfJob now routes file_path through Reports::PdfStorage.safe_path, which rejects anything outside Rails.root/storage/pdfs (returns nil) so only sandboxed paths reach File.delete. Covered by spec/jobs/delete_pdf_job_spec.rb sandbox rejection test."
     }
   ],
-  "updated": "2026-02-20 19:42:55 +0000",
-  "brakeman_version": "8.0.2"
+  "updated": "2026-04-20 04:16:00 -0500",
+  "brakeman_version": "8.0.4"
 }

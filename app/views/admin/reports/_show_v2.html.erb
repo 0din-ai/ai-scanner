@@ -1,4 +1,6 @@
-<%= turbo_stream_from "pdf_notifications:company_#{current_user.current_company_id}" %>
+<% if current_user %>
+  <%= turbo_stream_from "pdf_notifications:user_#{current_user.id}:report_#{report.id}" %>
+<% end %>
 <div id="pdf-status-<%= report.id %>" style="display: none;"></div>
 
 <div class="min-h-screen" data-controller="report-redesigned pdf-download" data-pdf-download-report-id-value="<%= report.id %>" data-report-redesigned-probes-tab-url-value="<%= probes_tab_report_path(report) %>">

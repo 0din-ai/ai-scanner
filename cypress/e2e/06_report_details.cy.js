@@ -150,64 +150,69 @@ describe('Report Details Page', () => {
     })
   })
   
-  it('verifies PDF download link and response', () => {
+  it('verifies PDF download flow and response', () => {
     cy.visit(`/report_details/${reportId}`)
-    
-    // Get PDF button/link
+
     const pdfTimeout = Number(Cypress.env('PDF_REQUEST_TIMEOUT_MS') || 240000) // default 240s for CI
-    cy.get('button[data-pdf-download-target="button"], a[href*="/pdf"]', { timeout: pdfTimeout })
-      .scrollIntoView()
-      .should('be.visible')
-      .invoke('attr', 'href')
-      .then((pdfUrl) => {
-        // Button might not have href, construct URL if needed
-        const url = pdfUrl || `/report_details/${reportId}/pdf`
-        expect(typeof url).to.eq('string')
-        cy.log(`Fetching PDF: ${url} (timeout ${pdfTimeout} ms)`)
+    const statusUrl = `/report_details/${reportId}/pdf`
 
-        const fetchPdf = (retries = 3) => cy.request({
-          url: url,
-          encoding: 'binary',
-          timeout: pdfTimeout,
-          followRedirect: true,
-          failOnStatusCode: false,
-          headers: {
-            Referer: `${Cypress.config('baseUrl')}/report_details/${reportId}`,
-            Accept: 'application/pdf,application/json'
-          }
-        }).then((resp) => {
-          const ct = (resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || ''
-          const isPdf = (ct || '').toLowerCase().includes('application/pdf')
-          const isJson = (ct || '').toLowerCase().includes('application/json')
-          cy.log(`PDF response: status=${resp.status} content-type=${ct}`)
+    cy.log(`Polling PDF status: ${statusUrl} (timeout ${pdfTimeout} ms)`)
 
-          // Handle async PDF generation (202 status)
-          if (resp.status === 202 && isJson) {
-            cy.log('PDF generation in progress (202), waiting and retrying...')
-            if (retries > 0) {
-              cy.wait(10000) // Wait 10s for generation
-              return fetchPdf(retries - 1)
-            } else {
-              cy.log('PDF generation taking too long, but async flow is working')
-              // Don't fail - async generation is working, just taking time
-              return
-            }
-          }
+    const fetchStatus = (retries = 30) => cy.request({
+      url: statusUrl,
+      timeout: pdfTimeout,
+      followRedirect: true,
+      failOnStatusCode: false,
+      headers: {
+        Referer: `${Cypress.config('baseUrl')}/report_details/${reportId}`,
+        Accept: 'application/json'
+      }
+    }).then((resp) => {
+      const ct = (resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || ''
+      cy.log(`Status response: status=${resp.status} content-type=${ct}`)
 
-          // Handle server errors gracefully
-          if (resp.status === 500) {
-            cy.log('PDF generation returned 500 - server-side issue')
-            return
-          }
+      if (resp.status === 500) {
+        cy.log('PDF generation returned 500 - server-side issue')
+        return
+      }
 
-          // PDF should be ready
-          expect(resp.status).to.eq(200)
-          expect(isPdf).to.eq(true)
-          expect(resp.body && resp.body.length).to.be.greaterThan(1000)
-        })
+      // 202 = generation in progress, body has {status: pending|processing}
+      if (resp.status === 202) {
+        if (retries > 0) {
+          cy.wait(5000)
+          return fetchStatus(retries - 1)
+        }
+        cy.log('PDF generation taking too long, but async flow is working')
+        return
+      }
 
-        fetchPdf()
+      // 200 = ready, body has {status: "ready", download_url: "...pdf_token=..."}
+      expect(resp.status).to.eq(200)
+      const body = typeof resp.body === 'string' ? JSON.parse(resp.body) : resp.body
+      expect(body.status).to.eq('ready')
+      expect(body.download_url).to.be.a('string')
+      expect(body.download_url).to.match(/pdf_token=/)
+
+      // Fetch the signed download URL and verify we get actual PDF bytes.
+      return cy.request({
+        url: body.download_url,
+        encoding: 'binary',
+        timeout: pdfTimeout,
+        followRedirect: true,
+        failOnStatusCode: false,
+        headers: {
+          Referer: `${Cypress.config('baseUrl')}/report_details/${reportId}`,
+          Accept: 'application/pdf'
+        }
+      }).then((fileResp) => {
+        const fct = (fileResp.headers && (fileResp.headers['content-type'] || fileResp.headers['Content-Type'])) || ''
+        expect(fileResp.status).to.eq(200)
+        expect((fct || '').toLowerCase()).to.include('application/pdf')
+        expect(fileResp.body && fileResp.body.length).to.be.greaterThan(1000)
       })
+    })
+
+    fetchStatus()
   })
   
   it('handles navigation correctly', () => {

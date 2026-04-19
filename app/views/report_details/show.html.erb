@@ -2,7 +2,7 @@
 
 <% unless pdf_mode %>
   <% if current_user %>
-    <%= turbo_stream_from "pdf_notifications:company_#{current_user.current_company_id}" %>
+    <%= turbo_stream_from "pdf_notifications:user_#{current_user.id}:report_#{@report.id}" %>
   <% end %>
   <div id="pdf-status-<%= @report.id %>" style="display: none;"></div>
 <% end %>

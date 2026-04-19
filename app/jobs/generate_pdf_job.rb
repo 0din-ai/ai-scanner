@@ -1,95 +1,115 @@
 # frozen_string_literal: true
 
 class GeneratePdfJob < ApplicationJob
+  MAX_ATTEMPTS = 3
+
   queue_as :default
 
-  # Ensure only one PDF generation job per report_id can be enqueued/running at a time
-  limits_concurrency to: 1, key: ->(report_id) { "generate_pdf_#{report_id}" }, on_conflict: :discard
+  limits_concurrency to: 1,
+    key: ->(report_id, _user_id = nil) { "generate_pdf_#{report_id}" },
+    on_conflict: :discard
 
-  # Retry with exponential backoff for transient failures
-  # Wait sequence: 3s, 18s, 83s, 258s, 627s (approximately)
-  retry_on StandardError, wait: :polynomially_longer, attempts: 3
+  # Mid-retry: retry_on re-enqueues without touching the ReportPdf row, so it stays
+  # in :processing across attempts (avoiding a rebuild loop on the client).
+  # Final attempt: the block runs, marking the record :failed and broadcasting.
+  retry_on StandardError, wait: :polynomially_longer, attempts: MAX_ATTEMPTS do |job, error|
+    job.send(:on_attempts_exceeded, error)
+  end
 
-  # Don't retry if report was deleted - it's a permanent failure
   discard_on ActiveRecord::RecordNotFound
 
-  def perform(report_id)
+  def perform(report_id, user_id)
     start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     report = Report.find(report_id)
-
-    # Get the ReportPdf record (created by controller)
     report_pdf = report.report_pdf
 
-    # If already completed and file exists, skip regeneration
-    return if report_pdf&.ready?
+    return if report_pdf.nil?
+    return if report_pdf.ready?
 
-    # Mark as processing
-    report_pdf.update!(status: :processing)
+    report_pdf.update!(status: :processing) unless report_pdf.status_processing?
 
-    begin
-      # Generate PDF using existing service
-      pdf_generator = Reports::PdfGenerator.new(ReportDecorator.new(report))
+    file_path = write_pdf(report)
 
-      # Create storage directory if it doesn't exist
-      storage_dir = Rails.root.join("storage", "pdfs")
-      FileUtils.mkdir_p(storage_dir)
+    duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
 
-      # Simple filename without timestamp
-      filename = "report_#{report.id}.pdf"
-      file_path = storage_dir.join(filename).to_s
+    report_pdf.update!(status: :completed, file_path: file_path, error_message: nil)
 
-      # Generate and save PDF
-      pdf_content = pdf_generator.generate
-      File.binwrite(file_path, pdf_content)
+    Rails.logger.info(
+      "Successfully generated PDF for report #{report_id} at #{file_path} in #{duration_ms}ms"
+    )
 
-      # Calculate generation time
-      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+    collect_metrics(report, duration_ms, File.size(file_path), success: true)
 
-      # Update record with success
-      report_pdf.update!(
-        status: :completed,
-        file_path: file_path,
-        error_message: nil
-      )
-
-      Rails.logger.info("Successfully generated PDF for report #{report_id} at #{file_path} in #{duration_ms}ms")
-
-      # Collect metrics
-      collect_metrics(report, duration_ms, pdf_content.bytesize, success: true)
-
-      # Broadcast completion to company-scoped stream
-      broadcast_pdf_ready(report)
-    rescue => e
-      # Calculate generation time even on failure
-      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
-
-      # Update record with failure
-      report_pdf.update!(
-        status: :failed,
-        error_message: "#{e.class}: #{e.message}"
-      )
-
-      Rails.logger.error("PDF generation failed for report #{report_id}: #{e.message}")
-      Rails.logger.error(e.backtrace.join("\n"))
-
-      # Collect failure metrics
-      collect_metrics(report, duration_ms, 0, success: false, error: e.class.name)
-
-      # Re-raise to trigger retry logic
-      raise
-    end
+    broadcast_pdf_ready(report, report_pdf.reload, user_id)
+  rescue ActiveRecord::RecordNotFound
+    raise
+  rescue => e
+    Rails.logger.error("PDF generation failed for report #{report_id}: #{e.message}")
+    Rails.logger.error(e.backtrace.join("\n"))
+    collect_metrics(report, 0, 0, success: false, error: e.class.name) if defined?(report) && report
+    raise
   end
 
   private
 
-  def broadcast_pdf_ready(report)
-    # Broadcast to company-scoped PDF stream using Turbo
-    # Replace the hidden status div with one that has the ready attributes
+  def on_attempts_exceeded(error)
+    report_id, user_id = arguments
+    report = Report.find_by(id: report_id)
+    return unless report
+
+    report_pdf = report.report_pdf
+    return unless report_pdf
+
+    report_pdf.update!(status: :failed, error_message: "#{error.class}: #{error.message}")
+    broadcast_pdf_failed(report, user_id, error)
+  end
+
+  def write_pdf(report)
+    storage_dir = Rails.root.join("storage", "pdfs")
+    FileUtils.mkdir_p(storage_dir)
+
+    file_path = storage_dir.join("report_#{report.id}.pdf").to_s
+    pdf_content = Reports::PdfGenerator.new(ReportDecorator.new(report)).generate
+    File.binwrite(file_path, pdf_content)
+    file_path
+  end
+
+  def broadcast_pdf_ready(report, report_pdf, user_id)
+    token = Reports::PdfDownloadToken.generate(report_pdf)
+    download_url = Rails.application.routes.url_helpers.pdf_report_detail_path(report, pdf_token: token)
+    escaped_url = ERB::Util.html_escape(download_url)
+
     Turbo::StreamsChannel.broadcast_replace_to(
-      "pdf_notifications:company_#{report.company_id}",
+      stream_name_for(report, user_id),
       target: "pdf-status-#{report.id}",
-      html: "<div id='pdf-status-#{report.id}' style='display: none;' data-pdf-status='ready' data-download-url='#{Rails.application.routes.url_helpers.pdf_report_detail_path(report)}'></div>"
+      html: <<~HTML.squish
+        <div id='pdf-status-#{report.id}' style='display: none;'
+             data-pdf-status='ready'
+             data-download-url='#{escaped_url}'></div>
+      HTML
     )
+  end
+
+  def broadcast_pdf_failed(report, user_id, error)
+    escaped_error = ERB::Util.html_escape("#{error.class}: #{error.message}")
+    retry_url = Rails.application.routes.url_helpers.pdf_retry_report_detail_path(report)
+    escaped_retry_url = ERB::Util.html_escape(retry_url)
+
+    Turbo::StreamsChannel.broadcast_replace_to(
+      stream_name_for(report, user_id),
+      target: "pdf-status-#{report.id}",
+      html: <<~HTML.squish
+        <div id='pdf-status-#{report.id}' style='display: none;'
+             data-pdf-status='failed'
+             data-pdf-error='#{escaped_error}'
+             data-pdf-retryable='true'
+             data-retry-url='#{escaped_retry_url}'></div>
+      HTML
+    )
+  end
+
+  def stream_name_for(report, user_id)
+    "pdf_notifications:user_#{user_id}:report_#{report.id}"
   end
 
   def collect_metrics(report, duration_ms, pdf_size_bytes, success:, error: nil)
@@ -109,6 +129,9 @@ class GeneratePdfJob < ApplicationJob
 
     MonitoringService.set_labels(labels)
 
-    Rails.logger.info("[Metrics] PDF generation: report=#{report.id} duration=#{duration_ms}ms size=#{pdf_size_bytes}bytes success=#{success}")
+    Rails.logger.info(
+      "[Metrics] PDF generation: report=#{report.id} duration=#{duration_ms}ms " \
+      "size=#{pdf_size_bytes}bytes success=#{success}"
+    )
   end
 end

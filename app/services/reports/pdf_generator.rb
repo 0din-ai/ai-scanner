@@ -1,5 +1,9 @@
 module Reports
   class PdfGenerator
+    RENDER_TOKEN_VERIFIER_KEY = :report_pdf
+    RENDER_TOKEN_PURPOSE = :pdf_render
+    RENDER_TOKEN_TTL = 5.minutes
+
     attr_reader :report
 
     def initialize(report)
@@ -12,12 +16,12 @@ module Reports
         # Prefer ENV_PORT (entrypoint invariant) over PORT (which some servers mutate)
         port = ENV["ENV_PORT"].presence || ENV["PORT"].presence || "3000"
 
-        # Generate a short-lived signed token so the headless browser can access
-        # the report without a Devise session.
-        token = Rails.application.message_verifier("pdf").generate(
+        # Short-lived signed token so the headless browser can render the report
+        # without a Devise session.
+        token = Rails.application.message_verifier(RENDER_TOKEN_VERIFIER_KEY).generate(
           report.id,
-          expires_in: 5.minutes,
-          purpose: :pdf_render
+          expires_in: RENDER_TOKEN_TTL,
+          purpose: RENDER_TOKEN_PURPOSE
         )
 
         url = Rails.application.routes.url_helpers.report_detail_url(

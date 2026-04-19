@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_15_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_18_193602) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -250,13 +250,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_120000) do
 
   create_table "report_pdfs", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.datetime "downloaded_at"
     t.text "error_message"
     t.string "file_path"
     t.bigint "report_id", null: false
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.index ["downloaded_at"], name: "index_report_pdfs_on_downloaded_at"
     t.index ["report_id", "created_at"], name: "index_report_pdfs_on_report_id_and_created_at"
-    t.index ["report_id"], name: "index_report_pdfs_on_report_id"
+    t.index ["report_id"], name: "index_report_pdfs_on_report_id", unique: true
     t.index ["status"], name: "index_report_pdfs_on_status"
   end
 
