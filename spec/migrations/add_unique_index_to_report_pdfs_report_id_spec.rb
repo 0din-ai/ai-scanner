@@ -54,7 +54,7 @@ RSpec.describe AddUniqueIndexToReportPdfsReportId do
       migration.up
 
       remaining = ReportPdf.where(report_id: report.id)
-      expect(remaining.pluck(:id)).to eq([good_id])
+      expect(remaining.pluck(:id)).to eq([ good_id ])
 
       expect(conn.index_exists?(:report_pdfs, :report_id,
                                 name: "index_report_pdfs_on_report_id", unique: true)).to be true
@@ -86,7 +86,7 @@ RSpec.describe AddUniqueIndexToReportPdfsReportId do
 
       migration.send(:cleanup_duplicate_report_pdfs)
 
-      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([completed_id])
+      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([ completed_id ])
     end
 
     it "prefers a row with a file_path over rows without one when none is completed" do
@@ -97,7 +97,7 @@ RSpec.describe AddUniqueIndexToReportPdfsReportId do
 
       migration.send(:cleanup_duplicate_report_pdfs)
 
-      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([with_file_id])
+      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([ with_file_id ])
     end
 
     it "prefers a completed row without file_path over other non-file rows" do
@@ -109,7 +109,7 @@ RSpec.describe AddUniqueIndexToReportPdfsReportId do
 
       migration.send(:cleanup_duplicate_report_pdfs)
 
-      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([completed_id])
+      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([ completed_id ])
     end
 
     it "falls back to the newest id when no row has file_path or completed status" do
@@ -121,7 +121,7 @@ RSpec.describe AddUniqueIndexToReportPdfsReportId do
 
       migration.send(:cleanup_duplicate_report_pdfs)
 
-      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([newest_id])
+      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([ newest_id ])
     end
 
     it "treats an empty-string file_path as no file" do
@@ -132,7 +132,7 @@ RSpec.describe AddUniqueIndexToReportPdfsReportId do
 
       migration.send(:cleanup_duplicate_report_pdfs)
 
-      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([completed_no_file_id])
+      expect(ReportPdf.where(report_id: report.id).pluck(:id)).to eq([ completed_no_file_id ])
     end
 
     it "does not remove non-duplicate report_pdfs" do
