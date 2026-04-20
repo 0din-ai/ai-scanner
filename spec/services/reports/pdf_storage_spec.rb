@@ -104,6 +104,13 @@ RSpec.describe Reports::PdfStorage do
 
         expect(described_class.safe_path(future_file)).to eq(future_file)
       end
+
+      it "accepts in-sandbox paths even when storage/pdfs does not exist yet" do
+        FileUtils.rm_rf(@tmp_root.join("storage"))
+        future_file = @tmp_root.join("storage", "pdfs", "future.pdf").to_s
+
+        expect(described_class.safe_path(future_file)).to eq(future_file)
+      end
     end
   end
 end
