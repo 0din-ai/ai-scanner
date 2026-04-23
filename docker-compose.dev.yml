@@ -8,7 +8,7 @@ services:
       POSTGRES_DB: postgres
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8 --data-checksums"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
