@@ -2,14 +2,14 @@
   # Main system status wrapper - contains company stats and optionally global stats
   cid = local_assigns[:company_id]
 
-  # Read company-scoped stats
-  company_stats = cid ? Rails.cache.read("running_scans_stats:#{cid}") : nil
-  company_stats ||= { scans: 0, variants: 0, total: 0 }
+  # Calculate from the DB so the sidebar stays correct after cache eviction,
+  # deploys, or missed broadcasts.
+  company_stats = cid ? Reports::RunningStats.company(cid) : { scans: 0, variants: 0, total: 0 }
 %>
 <div id="system-status" class="mt-auto border-t border-borderPrimary pt-4" role="status" aria-live="polite">
   <%= render 'application/system_status_company', stats: company_stats %>
 
   <% if local_assigns[:is_super_admin] %>
-    <%= render 'application/system_status_global', stats: Rails.cache.read("running_scans_stats:global") || { scans: 0, variants: 0, priority: 0, total: 0 } %>
+    <%= render 'application/system_status_global', stats: Reports::RunningStats.global %>
   <% end %>
 </div>
