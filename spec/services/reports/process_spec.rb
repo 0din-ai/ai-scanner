@@ -20,7 +20,7 @@ RSpec.describe Reports::Process, type: :service do
       [
         { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
         { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
-        { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+        { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json,
         { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
       ].join("\n")
     end
@@ -155,7 +155,7 @@ RSpec.describe Reports::Process, type: :service do
           'entry_{\"entry_type\":',  # Malformed line like in the error
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
           '',  # Empty line
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -186,7 +186,7 @@ RSpec.describe Reports::Process, type: :service do
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
           { entry_type: 'evil_method', payload: 'should be ignored' }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -209,7 +209,7 @@ RSpec.describe Reports::Process, type: :service do
         [
           { entry_type: 'init', start_time: 'not-a-date' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -230,7 +230,7 @@ RSpec.describe Reports::Process, type: :service do
         [
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: 'garbage-time' }.to_json
         ].join("\n")
       end
@@ -252,9 +252,9 @@ RSpec.describe Reports::Process, type: :service do
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 85 } }.to_json,
           # First detector eval - has attempts and max_score in report_data
-          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 1, total: 4 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 1, total_evaluated: 4 }.to_json,
           # Second detector eval - report_data already consumed by first eval
-          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 3, total: 4 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 3, total_evaluated: 4 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -330,9 +330,9 @@ RSpec.describe Reports::Process, type: :service do
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: { score_percentage: 90 } }.to_json,
           # First detector: 0 defenses out of 4 → inverted passed=4 (fully bypassed)
-          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 0, total: 4 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 0, total_evaluated: 4 }.to_json,
           # Second detector: 4 defenses out of 4 → inverted passed=0 (fully defended)
-          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 4, total: 4 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 4, total_evaluated: 4 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -356,8 +356,8 @@ RSpec.describe Reports::Process, type: :service do
         [
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: {} }.to_json,
-          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 2, total: 4 }.to_json,
-          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 2, total: 4 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 2, total_evaluated: 4 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 2, total_evaluated: 4 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -382,9 +382,9 @@ RSpec.describe Reports::Process, type: :service do
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: {} }.to_json,
           # Winning detector: 1 defense out of 5 → inverted passed=4, total=5
-          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 1, total: 5 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.CrystalMethScore', probe: '0din.TestProbe', passed: 1, total_evaluated: 5 }.to_json,
           # Later detector: 2 defenses out of 3 → inverted passed=1, total=3 (must not bleed total=3 in)
-          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 2, total: 3 }.to_json,
+          { entry_type: 'eval', detector: 'detector.0din.MitigationBypass', probe: '0din.TestProbe', passed: 2, total_evaluated: 3 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -422,7 +422,7 @@ RSpec.describe Reports::Process, type: :service do
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: {} }.to_json,
           # Lower passed than the persisted max: 7 defenses out of 10 → inverted passed=3
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 7, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 7, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -445,7 +445,7 @@ RSpec.describe Reports::Process, type: :service do
         [
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: 'dan.DAN_Jailbreak', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: { score_percentage: 50 } }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: 'dan.DAN_Jailbreak', passed: 2, total: 5 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: 'dan.DAN_Jailbreak', passed: 2, total_evaluated: 5 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -462,7 +462,7 @@ RSpec.describe Reports::Process, type: :service do
         [
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.NonExistentProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: {} }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.NonExistentProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.NonExistentProbe', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -484,14 +484,14 @@ RSpec.describe Reports::Process, type: :service do
       end
     end
 
-    context 'when processing garak 0.14.0 format with total_evaluated' do
-      let(:logs_content) { 'Garak 0.14.0 log content' }
+    context 'when processing garak 0.14.1 format with total_evaluated' do
+      let(:logs_content) { 'Garak 0.14.1 log content' }
       let!(:probe) { create(:probe, name: 'dan.DAN_Jailbreak') }
       let(:garak_014_jsonl) do
         [
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: 'dan.DAN_Jailbreak', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: {} }.to_json,
-          # Garak 0.14.0 uses total_evaluated instead of total
+          # Garak 0.14.1 uses total_evaluated for eval row counts.
           { entry_type: 'eval', detector: 'detector.dan.DANJailbreak', probe: 'dan.DAN_Jailbreak', passed: 5, total_evaluated: 5 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
@@ -512,6 +512,24 @@ RSpec.describe Reports::Process, type: :service do
         detector_result = DetectorResult.last
         expect(detector_result.total).to eq(5)
         expect(detector_result.passed).to eq(0)
+      end
+    end
+
+    context 'when processing a legacy eval row with total only' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:legacy_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: {} }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: legacy_jsonl, logs_data: nil) }
+
+      it 'rejects the old garak total field and fails the report' do
+        expect { service.call }.not_to change { ProbeResult.count }
+        expect(report.status).to eq('failed')
       end
     end
 
@@ -536,7 +554,7 @@ RSpec.describe Reports::Process, type: :service do
         [
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din_variants.Variant_TEST_001', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_TEST_001', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_TEST_001', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -567,7 +585,7 @@ RSpec.describe Reports::Process, type: :service do
         bad_content = [
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din_variants.Variant_NONEXISTENT', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Test' ], notes: { score_percentage: 70 } }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_NONEXISTENT', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din_variants.Variant_NONEXISTENT', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
 
@@ -610,7 +628,7 @@ RSpec.describe Reports::Process, type: :service do
         [
           { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test', outputs: [ 'Out' ], notes: { score_percentage: 70 } }.to_json,
-          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
         ].join("\n")
       end
@@ -670,13 +688,13 @@ RSpec.describe Reports::Process, type: :service do
             # Prefix from first run
             { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
             { entry_type: 'attempt', probe_classname: '0din.ProbeA', uuid: 'a1', prompt: 'p', outputs: [ 'o' ], notes: {} }.to_json,
-            { entry_type: 'eval', detector: 'detector.d1', probe: '0din.ProbeA', passed: 2, total: 5 }.to_json,
+            { entry_type: 'eval', detector: 'detector.d1', probe: '0din.ProbeA', passed: 2, total_evaluated: 5 }.to_json,
             { entry_type: 'attempt', probe_classname: '0din.ProbeB', uuid: 'b1-old', prompt: 'p', outputs: [ 'o' ], notes: { score_percentage: 50 } }.to_json,
             # Second run (garak restarted, re-runs ProbeB)
             { entry_type: 'init', start_time: '2023-06-01T12:00:00Z' }.to_json,
             { entry_type: 'attempt', probe_classname: '0din.ProbeB', uuid: 'b1-new', prompt: 'p', outputs: [ 'o' ], notes: { score_percentage: 80 } }.to_json,
             { entry_type: 'attempt', probe_classname: '0din.ProbeB', uuid: 'b2-new', prompt: 'p', outputs: [ 'o' ], notes: { score_percentage: 90 } }.to_json,
-            { entry_type: 'eval', detector: 'detector.d1', probe: '0din.ProbeB', passed: 1, total: 5 }.to_json,
+            { entry_type: 'eval', detector: 'detector.d1', probe: '0din.ProbeB', passed: 1, total_evaluated: 5 }.to_json,
             { entry_type: 'completion', end_time: '2023-06-01T13:00:00Z' }.to_json
           ].join("\n")
         end

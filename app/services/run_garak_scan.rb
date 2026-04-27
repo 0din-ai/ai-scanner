@@ -393,9 +393,9 @@ class RunGarakScan
           next if line.empty?
           begin
             entry = JSON.parse(line)
-            if entry["entry_type"] == "eval"
+            if GarakEvalRowValidator.valid?(entry, require_probe_detector: true)
               probe_name = entry["probe"]
-              completed.add(probe_name) if probe_name.present?
+              completed.add(probe_name)
             end
           rescue JSON::ParserError
             next

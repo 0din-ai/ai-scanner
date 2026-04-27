@@ -426,7 +426,7 @@ RSpec.describe RunGarakScan, type: :service do
         [
           { entry_type: 'init', start_time: '2024-01-01T00:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: 'test.ProbeA', uuid: 'a1', prompt: 'test', outputs: [ 'out' ] }.to_json,
-          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total: 10 }.to_json
+          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total_evaluated: 10 }.to_json
         ].join("\n")
       end
 
@@ -447,14 +447,33 @@ RSpec.describe RunGarakScan, type: :service do
       end
     end
 
+    context 'when partial JSONL data contains only legacy total eval rows' do
+      let(:legacy_jsonl) do
+        [
+          { entry_type: 'init', start_time: '2024-01-01T00:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: 'test.ProbeA', uuid: 'a1', prompt: 'test', outputs: [ 'out' ] }.to_json,
+          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total: 10 }.to_json
+        ].join("\n")
+      end
+
+      before do
+        create(:raw_report_data, report: report, jsonl_data: legacy_jsonl)
+      end
+
+      it 'does not mark the probe completed' do
+        service = described_class.new(report)
+        expect(service.send(:remaining_probes)).to contain_exactly('test.ProbeA', 'test.ProbeB')
+      end
+    end
+
     context 'when all probes already completed' do
       let(:full_jsonl) do
         [
           { entry_type: 'init', start_time: '2024-01-01T00:00:00Z' }.to_json,
           { entry_type: 'attempt', probe_classname: 'test.ProbeA', uuid: 'a1', prompt: 'test', outputs: [ 'out' ] }.to_json,
-          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total_evaluated: 10 }.to_json,
           { entry_type: 'attempt', probe_classname: 'test.ProbeB', uuid: 'a2', prompt: 'test', outputs: [ 'out' ] }.to_json,
-          { entry_type: 'eval', probe: 'test.ProbeB', detector: 'detector.test', passed: 5, total: 10 }.to_json,
+          { entry_type: 'eval', probe: 'test.ProbeB', detector: 'detector.test', passed: 5, total_evaluated: 10 }.to_json,
           { entry_type: 'completion', end_time: '2024-01-01T01:00:00Z' }.to_json
         ].join("\n")
       end
@@ -487,9 +506,9 @@ RSpec.describe RunGarakScan, type: :service do
         [
           { entry_type: 'init', start_time: '2024-01-01T00:00:00Z' }.to_json,
           'this is not valid json {{{',
-          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total: 10 }.to_json,
+          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total_evaluated: 10 }.to_json,
           '{"entry_type": "eval", "probe": ',
-          { entry_type: 'eval', probe: 'test.ProbeB', detector: 'detector.test', passed: 5, total: 10 }.to_json
+          { entry_type: 'eval', probe: 'test.ProbeB', detector: 'detector.test', passed: 5, total_evaluated: 10 }.to_json
         ].join("\n")
       end
 
@@ -507,7 +526,7 @@ RSpec.describe RunGarakScan, type: :service do
     context 'when completed_probes_from_raw_data is called multiple times' do
       let(:partial_jsonl) do
         [
-          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total: 10 }.to_json
+          { entry_type: 'eval', probe: 'test.ProbeA', detector: 'detector.test', passed: 3, total_evaluated: 10 }.to_json
         ].join("\n")
       end
 

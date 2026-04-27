@@ -12,12 +12,14 @@ class GarakCommunityProbeSource
       return false
     end
 
-    DataSyncVersion.needs_sync?(SYNC_KEY, FILE_PATH)
+    DataSyncVersion.needs_sync?(SYNC_KEY, FILE_PATH) ||
+      inactive_enabled_probes_need_sync?(source: CATEGORY, data: load_probes_json)
   end
 
   def sync(sync_start_time)
     Rails.logger.info "Syncing Garak community probes..."
     @valid_probe_names = []
+    @enabled_probe_names = []
 
     garak_data = load_probes_json
     if !garak_data.is_a?(Hash) || !garak_data["probes"].is_a?(Hash)
@@ -35,7 +37,11 @@ class GarakCommunityProbeSource
 
     disable_result = { disabled_count: 0, enabled_count: 0 }
     unless has_errors
-      disable_result = disable_outdated_probes(source: CATEGORY, valid_names: @valid_probe_names)
+      disable_result = disable_outdated_probes(
+        source: CATEGORY,
+        valid_names: @valid_probe_names,
+        enabled_names: @enabled_probe_names
+      )
     end
 
     record_sync_version(sync_start_time, disable_result, has_errors ? garak_data["errors"].size : 0)
@@ -46,6 +52,7 @@ class GarakCommunityProbeSource
 
   def process_probe(name, probe_json)
     @valid_probe_names << name
+    @enabled_probe_names << name if probe_active?(probe_json)
     probe = Probe.find_or_create_by!(name: name, category: CATEGORY)
 
     update_probe_attributes(probe, probe_json,

@@ -1,6 +1,6 @@
 """0Din.ai Variant Probes for AI Safety Assessment
 
-Requires garak 0.13+ (uses Conversation/Turn/Message API).
+Requires garak 0.14+ (uses Conversation/Turn/Message API).
 """
 
 
@@ -9,12 +9,12 @@ from garak.attempt import Attempt, ATTEMPT_NEW, Message, Conversation, Turn
 
 
 def _generate(generator, prompt_text: str, lang: str = "en"):
-    """Generate response using garak 0.13+ Conversation API.
+    """Generate response using garak 0.14+ Conversation API.
 
     Args:
         generator: The garak generator instance
         prompt_text: The prompt string to send
-        lang: BCP47 language code (default: "en")
+        lang: language code (default: "en")
 
     Returns:
         List[Message | None] from the generator
@@ -61,7 +61,7 @@ class SingleShotVariant(Probe):
     industry = None
     subindustry = None
     active = False
-    bcp47 = "en"
+    lang = "en"
     primary_detector = "0din.MitigationBypass"
     goal = "To explore the affect of a validated jailbreak tactic against an industry specific subject matter."
     sis = 2
@@ -72,12 +72,13 @@ class SingleShotVariant(Probe):
     def probe(self, generator) -> list:
         self.generator = generator
         prompt_text = self._generate_prompt()
+        lang = self.lang or "en"
         attempt = Attempt(
-            prompt=Message(prompt_text),
+            prompt=Message(text=prompt_text, lang=lang),
             probe_classname="0din_variants." + self.__class__.__name__,
             status=ATTEMPT_NEW
         )
-        raw_response = _generate(generator, prompt_text, getattr(self, "bcp47", "en"))
+        raw_response = _generate(generator, prompt_text, lang)
         normalized = _extract_text(raw_response)
         attempt.outputs = [normalized]
         return [attempt]
@@ -87,7 +88,7 @@ class MultiShotVariant(Probe):
     industry = None
     subindustry = None
     active = False
-    bcp47 = "en"
+    lang = "en"
     primary_detector = "0din.MitigationBypass"
     goal = "To explore the affect of a validated jailbreak tactic against an industry specific subject matter."
     sis = 2
@@ -104,16 +105,17 @@ class MultiShotVariant(Probe):
         attempts = []
         responses = []
         prompts = self._generate_prompts()
+        lang = self.lang or "en"
 
         initial_prompt_text = "\n\n--\n\n".join(prompts)
         attempt = Attempt(
-            prompt=Message(initial_prompt_text),
+            prompt=Message(text=initial_prompt_text, lang=lang),
             probe_classname="0din_variants." + self.__class__.__name__,
             status=ATTEMPT_NEW
         )
 
         for prompt_text in prompts:
-            raw_response = _generate(generator, prompt_text, getattr(self, "bcp47", "en"))
+            raw_response = _generate(generator, prompt_text, lang)
             normalized = _extract_text(raw_response)
             responses.append(normalized)
 

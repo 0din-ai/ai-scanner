@@ -14,52 +14,6 @@ permissions:
   contents: read
 
 jobs:
-  validate_garak_lock:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Validate platform-specific Garak lock files exist
-        run: |
-          MISSING_FILES=0
-          for arch in amd64 arm64; do
-            if [ ! -f "garak-requirements-lock-${arch}.txt" ]; then
-              echo "❌ Error: garak-requirements-lock-${arch}.txt not found"
-              MISSING_FILES=$((MISSING_FILES + 1))
-            else
-              echo "✅ Found garak-requirements-lock-${arch}.txt with $(wc -l < garak-requirements-lock-${arch}.txt) dependencies"
-            fi
-          done
-
-          if [ $MISSING_FILES -gt 0 ]; then
-            echo "Run update-garak-lock.sh on each platform to generate lock files"
-            exit 1
-          fi
-
-      - name: Check AMD64 lock file contains required packages
-        run: |
-          echo "Checking AMD64 lock file..."
-          for pkg in garak torch transformers litellm; do
-            if ! grep -q "^${pkg}==" garak-requirements-lock-amd64.txt; then
-              echo "❌ Required package $pkg not found in AMD64 lock file"
-              exit 1
-            fi
-            echo "✅ Found: $(grep "^${pkg}==" garak-requirements-lock-amd64.txt)"
-          done
-
-      - name: Check ARM64 lock file contains required packages
-        run: |
-          echo "Checking ARM64 lock file..."
-          for pkg in garak torch transformers litellm; do
-            if ! grep -q "^${pkg}==" garak-requirements-lock-arm64.txt; then
-              echo "❌ Required package $pkg not found in ARM64 lock file"
-              exit 1
-            fi
-            echo "✅ Found: $(grep "^${pkg}==" garak-requirements-lock-arm64.txt)"
-          done
-
   scan_ruby:
     runs-on: ubuntu-latest
 

@@ -152,27 +152,37 @@ class ValidateTarget
     evaluation_result = nil
     total_output_tokens = 0
 
-    File.open(jsonl_file_path, "r").each do |line|
+    File.open(jsonl_file_path, "r").each_with_index do |line, index|
+      line = line.strip
+      next if line.empty?
+
       data = JSON.parse(line)
+      next unless data.is_a?(Hash)
 
       if data["entry_type"] == "attempt"
-        if data["outputs"].present? && data["outputs"].any? { |output| extract_output_text(output).present? }
+        output_texts = normalized_outputs(data["outputs"]).filter_map do |output|
+          TokenEstimator.extract_output_text(output).presence
+        end
+
+        if output_texts.any?
           has_responses = true
           response_count += 1
           # Store only the first response as a sample
-          sample_response ||= extract_output_text(data["outputs"].first).to_s.truncate(150)
+          sample_response ||= output_texts.first.to_s.truncate(150)
           # Count output tokens for performance measurement
-          data["outputs"].each do |output|
-            text = extract_output_text(output)
-            total_output_tokens += TokenEstimator.estimate_tokens(text) if text.present?
+          output_texts.each do |text|
+            total_output_tokens += TokenEstimator.estimate_tokens(text)
           end
         end
       elsif data["entry_type"] == "eval"
-        evaluation_result = "#{data['passed']}/#{data['total']} attempts passed"
+        validation = GarakEvalRowValidator.call(data)
+        evaluation_result = "#{validation.passed}/#{validation.total_evaluated} attempts passed" if validation.valid?
       end
+    rescue JSON::ParserError => e
+      Rails.logger.warn("Validation report JSON parse error on line #{index + 1}: #{e.message}")
     end
 
-    if has_responses
+    if has_responses && evaluation_result.present?
       validation_text = "Target validated successfully - received #{response_count} response(s). "
       validation_text += "Sample response: #{sample_response}. " if sample_response
       validation_text += "Evaluation: #{evaluation_result}." if evaluation_result
@@ -191,7 +201,11 @@ class ValidateTarget
       end
       decision = "valid"
     else
-      validation_text = "Target validation failed: No responses received."
+      validation_text = if has_responses
+        "Target validation failed: No valid evaluation results received."
+      else
+        "Target validation failed: No responses received."
+      end
       validation_text += " Evaluation: #{evaluation_result}." if evaluation_result
 
       target.update(
@@ -208,13 +222,15 @@ class ValidateTarget
     { decision: decision, response_count: response_count, evaluation_result: evaluation_result }
   end
 
-  # Extract text from output, handling both garak 0.13+ Message objects (hashes with "text" key)
-  # and legacy plain string outputs for backward compatibility
-  def extract_output_text(output)
-    return output if output.is_a?(String)
-    return output["text"] if output.is_a?(Hash) && output.key?("text")
-
-    output.to_s
+  def normalized_outputs(outputs)
+    case outputs
+    when Array
+      outputs
+    when Hash, String
+      [ outputs ]
+    else
+      []
+    end
   end
 
   # Calculate tokens per second from validation timing

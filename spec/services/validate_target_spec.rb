@@ -1,9 +1,15 @@
 require 'rails_helper'
 require 'logging'
+require 'stringio'
 
 RSpec.describe ValidateTarget, type: :service do
   let(:target) { create(:target, model_type: 'OpenAIGenerator', model: 'gpt-4', json_config: '{"test": "config"}') }
   let(:service) { described_class.new(target) }
+
+  def stub_validation_report(jsonl_file_path, lines)
+    allow(File).to receive(:exist?).with(jsonl_file_path).and_return(true)
+    allow(File).to receive(:open).with(jsonl_file_path, "r").and_return(StringIO.new(lines.join("\n")))
+  end
 
   describe '#initialize' do
     it 'sets the target attribute' do
@@ -319,19 +325,12 @@ RSpec.describe ValidateTarget, type: :service do
         [
           '{"entry_type": "attempt", "outputs": ["Response 1", "Response 2"]}',
           '{"entry_type": "attempt", "outputs": ["Another response"]}',
-          '{"entry_type": "eval", "passed": 2, "total": 3}'
+          '{"entry_type": "eval", "passed": 2, "total_evaluated": 3}'
         ]
       end
 
       before do
-        content_lines = jsonl_content
-        file_mock = instance_double(File)
-
-        allow(file_mock).to receive(:each).and_yield(content_lines[0]).and_yield(content_lines[1])
-                                          .and_yield(content_lines[2])
-
-        allow(File).to receive(:exist?).with(jsonl_file_path).and_return(true)
-        allow(File).to receive(:open).with(jsonl_file_path, 'r').and_return(file_mock)
+        stub_validation_report(jsonl_file_path, jsonl_content)
       end
 
       it 'updates target status to good with success message' do
@@ -356,19 +355,12 @@ RSpec.describe ValidateTarget, type: :service do
         [
           '{"entry_type": "attempt", "outputs": []}',
           '{"entry_type": "attempt", "outputs": ["", "  "]}',
-          '{"entry_type": "eval", "passed": 0, "total": 2}'
+          '{"entry_type": "eval", "passed": 0, "total_evaluated": 2}'
         ]
       end
 
       before do
-        content_lines = jsonl_content
-        file_mock = instance_double(File)
-
-        allow(file_mock).to receive(:each).and_yield(content_lines[0]).and_yield(content_lines[1])
-                                          .and_yield(content_lines[2])
-
-        allow(File).to receive(:exist?).with(jsonl_file_path).and_return(true)
-        allow(File).to receive(:open).with(jsonl_file_path, 'r').and_return(file_mock)
+        stub_validation_report(jsonl_file_path, jsonl_content)
         allow(Rails.logger).to receive(:warn)
       end
 
@@ -385,6 +377,50 @@ RSpec.describe ValidateTarget, type: :service do
         expect(logger).to receive(:warn).with("validation.result.invalid")
 
         service.send(:process_validation_result)
+      end
+    end
+
+    context 'when report file has responses but only legacy eval rows' do
+      let(:jsonl_content) do
+        [
+          '{"entry_type": "attempt", "outputs": ["Response 1"]}',
+          '{"entry_type": "eval", "passed": 1, "total": 1}'
+        ]
+      end
+
+      before do
+        stub_validation_report(jsonl_file_path, jsonl_content)
+      end
+
+      it 'does not validate the target' do
+        service.send(:process_validation_result)
+
+        target.reload
+        expect(target.status).to eq('bad')
+        expect(target.validation_text).to include('No valid evaluation results received')
+      end
+    end
+
+    context 'when report file has structured and string output shapes' do
+      let(:jsonl_content) do
+        [
+          '{"entry_type": "attempt", "outputs": {"text": "Hash response"}}',
+          '{"entry_type": "attempt", "outputs": "String response"}',
+          '{"entry_type": "eval", "passed": 1, "total_evaluated": 1}'
+        ]
+      end
+
+      before do
+        stub_validation_report(jsonl_file_path, jsonl_content)
+      end
+
+      it 'normalizes supported output shapes' do
+        service.send(:process_validation_result)
+
+        target.reload
+        expect(target.status).to eq('good')
+        expect(target.validation_text).to include('received 2 response(s)')
+        expect(target.validation_text).to include('Sample response: Hash response')
       end
     end
   end
@@ -498,20 +534,12 @@ RSpec.describe ValidateTarget, type: :service do
           [
             '{"entry_type": "attempt", "outputs": ["Hello, how can I help you today?", "I am an AI assistant."]}',
             '{"entry_type": "attempt", "outputs": ["Sure, I can help with that question."]}',
-            '{"entry_type": "eval", "passed": 3, "total": 3}'
+            '{"entry_type": "eval", "passed": 3, "total_evaluated": 3}'
           ]
         end
 
         before do
-          content_lines = jsonl_content
-          file_mock = instance_double(File)
-          allow(file_mock).to receive(:each)
-            .and_yield(content_lines[0])
-            .and_yield(content_lines[1])
-            .and_yield(content_lines[2])
-
-          allow(File).to receive(:exist?).with(jsonl_file_path).and_return(true)
-          allow(File).to receive(:open).with(jsonl_file_path, 'r').and_return(file_mock)
+          stub_validation_report(jsonl_file_path, jsonl_content)
 
           # Mock validation timing
           service.instance_variable_set(:@validation_start_time, Process.clock_gettime(Process::CLOCK_MONOTONIC) - 5.0)
@@ -541,19 +569,12 @@ RSpec.describe ValidateTarget, type: :service do
         let(:jsonl_content) do
           [
             '{"entry_type": "attempt", "outputs": []}',
-            '{"entry_type": "eval", "passed": 0, "total": 3}'
+            '{"entry_type": "eval", "passed": 0, "total_evaluated": 3}'
           ]
         end
 
         before do
-          content_lines = jsonl_content
-          file_mock = instance_double(File)
-          allow(file_mock).to receive(:each)
-            .and_yield(content_lines[0])
-            .and_yield(content_lines[1])
-
-          allow(File).to receive(:exist?).with(jsonl_file_path).and_return(true)
-          allow(File).to receive(:open).with(jsonl_file_path, 'r').and_return(file_mock)
+          stub_validation_report(jsonl_file_path, jsonl_content)
           allow(Rails.logger).to receive(:warn)
 
           service.instance_variable_set(:@validation_start_time, Process.clock_gettime(Process::CLOCK_MONOTONIC) - 5.0)

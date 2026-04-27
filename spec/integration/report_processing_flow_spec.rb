@@ -12,7 +12,7 @@ RSpec.describe "Report Processing Flow", type: :integration do
       { entry_type: "attempt", probe_classname: "test.TestProbe", uuid: "attempt-1",
         prompt: "Test prompt", outputs: [ "Output" ], notes: { score_percentage: 50 } }.to_json,
       { entry_type: "eval", detector: "detector.test_detector", probe: "test.TestProbe",
-        passed: 5, total: 10 }.to_json,
+        passed: 5, total_evaluated: 10 }.to_json,
       { entry_type: "completion", end_time: "2023-06-01T11:00:00Z" }.to_json
     ].join("\n")
   end

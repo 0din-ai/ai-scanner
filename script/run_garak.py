@@ -23,7 +23,7 @@ Usage:
     python3 run_garak.py <report_uuid> <garak_params>
 
 Example:
-    python3 run_garak.py "12345678-1234-1234-1234-123456789012" "--model_type openai.chat --model_name gpt-3.5-turbo --probes probe1,probe2"
+    python3 run_garak.py "12345678-1234-1234-1234-123456789012" "--target_type openai.OpenAIGenerator --target_name gpt-4 --probes probe1,probe2"
 """
 
 import os

@@ -98,6 +98,39 @@ RSpec.describe OdinProbeSource do
       expect(probe.attribution).to eq("0DIN by Mozilla - https://0din.ai")
       expect(probe.prompts).to eq([ "Test prompt for placeholder injection" ])
       expect(probe.input_tokens).to be > 0
+      expect(probe.enabled).to be true
+    end
+
+    it 'keeps probes enabled when active metadata is absent' do
+      source.sync(sync_start_time)
+
+      expect(Probe.find_by(name: "PlaceholderInjectionHP").enabled).to be true
+    end
+
+    it 'disables probes explicitly marked inactive' do
+      inactive_probe_data = {
+        "probes" => {
+          "InactiveOdinProbe" => {
+            "guid" => "inactive-odin-guid",
+            "summary" => "inactive test probe",
+            "description" => "inactive test probe",
+            "release_date" => "2025-01-01",
+            "modified_date" => "2025-01-01",
+            "techniques" => [],
+            "social_impact_score" => 3,
+            "disclosure_status" => "0-day",
+            "detector" => "0din.MitigationBypass",
+            "prompts" => [ "Test inactive prompt" ],
+            "active" => false
+          }
+        }
+      }
+      allow(File).to receive(:read).with(Rails.root.join(described_class::FILE_PATH))
+                                   .and_return(inactive_probe_data.to_json)
+
+      source.sync(sync_start_time)
+
+      expect(Probe.find_by(name: "InactiveOdinProbe").enabled).to be false
     end
 
     it 'returns success hash' do

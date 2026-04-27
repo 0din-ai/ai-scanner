@@ -19,7 +19,7 @@ module ProbeSyncHelpers
       scores: scores,
       prompts: prompts,
       input_tokens: input_tokens,
-      enabled: true,
+      enabled: probe_active?(probe_json),
       source: source,
       attribution: attribution,
       taxonomy_categories: taxonomy_categories&.compact&.uniq.to_a,
@@ -34,7 +34,7 @@ module ProbeSyncHelpers
     probe.update!(attrs)
   end
 
-  def disable_outdated_probes(source:, valid_names:)
+  def disable_outdated_probes(source:, valid_names:, enabled_names: valid_names)
     disabled_count = 0
     enabled_count = 0
 
@@ -49,7 +49,7 @@ module ProbeSyncHelpers
 
     Rails.logger.info "Disabled #{disabled_count} outdated #{source} probes"
 
-    previously_disabled = Probe.where(source: source, name: valid_names, enabled: false)
+    previously_disabled = Probe.where(source: source, name: enabled_names, enabled: false)
     if previously_disabled.any?
       enabled_count = previously_disabled.count
       previously_disabled.update_all(enabled: true)
@@ -85,5 +85,20 @@ module ProbeSyncHelpers
 
   def sanitize_log_message(message)
     message.to_s.gsub(/[\r\n\t]/, " ")
+  end
+
+  def probe_active?(probe_json)
+    probe_json["active"] != false
+  end
+
+  def inactive_enabled_probes_need_sync?(source:, data:)
+    return false unless data.is_a?(Hash) && data["probes"].is_a?(Hash)
+
+    inactive_names = data["probes"].filter_map do |name, probe_json|
+      name unless probe_active?(probe_json)
+    end
+    return false if inactive_names.empty?
+
+    Probe.where(source: source, name: inactive_names, enabled: true).exists?
   end
 end

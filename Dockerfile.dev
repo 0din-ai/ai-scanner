@@ -47,20 +47,18 @@ WORKDIR /rails
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy platform-specific garak requirements lock file
-# TARGETARCH is automatically set by Docker buildx to either "amd64" or "arm64"
-ARG TARGETARCH
-COPY garak-requirements-lock-${TARGETARCH}.txt /tmp/garak-requirements-lock.txt
+# Copy Python requirements
+COPY garak-requirements.txt /tmp/garak-requirements.txt
 COPY playwright-requirements-lock.txt /tmp/playwright-requirements-lock.txt
 COPY scanner-requirements.txt /tmp/scanner-requirements.txt
 
 
-# Install Garak, Playwright, scanner deps, and plugin packages for development from lock files
+# Install Garak, Playwright, scanner deps, and plugin packages for development
 RUN /opt/venv/bin/python -m pip install --upgrade pip wheel setuptools && \
-    /opt/venv/bin/python -m pip install --no-cache-dir -r /tmp/garak-requirements-lock.txt && \
+    /opt/venv/bin/python -m pip install --no-cache-dir -r /tmp/garak-requirements.txt && \
     /opt/venv/bin/python -m pip install --no-cache-dir --prefer-binary -r /tmp/playwright-requirements-lock.txt && \
     /opt/venv/bin/python -m pip install --no-cache-dir -r /tmp/scanner-requirements.txt && \
-    rm -f /tmp/garak-requirements-lock.txt /tmp/playwright-requirements-lock.txt /tmp/scanner-requirements.txt
+    rm -f /tmp/garak-requirements.txt /tmp/playwright-requirements-lock.txt /tmp/scanner-requirements.txt
 
 COPY Gemfile ./
 COPY Gemfile.lock* ./

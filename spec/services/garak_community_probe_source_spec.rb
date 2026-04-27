@@ -63,6 +63,35 @@ RSpec.describe GarakCommunityProbeSource do
       expect(source.needs_sync?).to be true
     end
 
+    it 'needs sync when an inactive garak probe is still enabled despite unchanged JSON' do
+      inactive_probe = Probe.create!(
+        name: "fileformats.HF_Files",
+        category: "garak",
+        source: "garak",
+        enabled: true
+      )
+      inactive_probe_data = {
+        "probes" => {
+          inactive_probe.name => {
+            "guid" => "garak-guid-hf-files",
+            "summary" => "Get a manifest of files associated with a Hugging Face generator",
+            "description" => "Community probe from NVIDIA Garak.",
+            "release_date" => "2024-01-01",
+            "modified_date" => "2024-01-01",
+            "techniques" => [ "Supply Chain Vulnerabilities" ],
+            "detector" => "fileformats.FileIsPickled",
+            "active" => false
+          }
+        }
+      }
+      allow(File).to receive(:exist?).with(Rails.root.join(described_class::FILE_PATH)).and_return(true)
+      allow(File).to receive(:read).with(Rails.root.join(described_class::FILE_PATH))
+                                   .and_return(inactive_probe_data.to_json)
+      allow(DataSyncVersion).to receive(:needs_sync?).with("garak_probes", described_class::FILE_PATH).and_return(false)
+
+      expect(source.needs_sync?).to be true
+    end
+
     it 'returns false and logs when file is missing' do
       allow(File).to receive(:exist?).with(Rails.root.join(described_class::FILE_PATH)).and_return(false)
       allow(Rails.logger).to receive(:info)
@@ -94,6 +123,59 @@ RSpec.describe GarakCommunityProbeSource do
       expect(probe.source).to eq("garak")
       expect(probe.category).to eq("garak")
       expect(probe.attribution).to eq("NVIDIA Garak - https://github.com/NVIDIA/garak")
+      expect(probe.enabled).to be true
+    end
+
+    it 'disables probes explicitly marked inactive by garak metadata' do
+      inactive_probe_data = {
+        "probes" => {
+          "fileformats.HF_Files" => {
+            "guid" => "garak-guid-hf-files",
+            "summary" => "Get a manifest of files associated with a Hugging Face generator",
+            "description" => "Community probe from NVIDIA Garak.",
+            "release_date" => "2024-01-01",
+            "modified_date" => "2024-01-01",
+            "techniques" => [ "Supply Chain Vulnerabilities" ],
+            "detector" => "fileformats.FileIsPickled",
+            "active" => false
+          }
+        }
+      }
+      allow(File).to receive(:read).with(Rails.root.join(described_class::FILE_PATH))
+                                   .and_return(inactive_probe_data.to_json)
+
+      source.sync(sync_start_time)
+
+      expect(Probe.find_by(name: "fileformats.HF_Files").enabled).to be false
+    end
+
+    it 'does not re-enable valid probes that remain explicitly inactive' do
+      inactive_probe = Probe.create!(
+        name: "fileformats.HF_Files",
+        category: "garak",
+        source: "garak",
+        enabled: true
+      )
+      inactive_probe_data = {
+        "probes" => {
+          "fileformats.HF_Files" => {
+            "guid" => "garak-guid-hf-files",
+            "summary" => "Get a manifest of files associated with a Hugging Face generator",
+            "description" => "Community probe from NVIDIA Garak.",
+            "release_date" => "2024-01-01",
+            "modified_date" => "2024-01-01",
+            "techniques" => [ "Supply Chain Vulnerabilities" ],
+            "detector" => "fileformats.FileIsPickled",
+            "active" => false
+          }
+        }
+      }
+      allow(File).to receive(:read).with(Rails.root.join(described_class::FILE_PATH))
+                                   .and_return(inactive_probe_data.to_json)
+
+      source.sync(sync_start_time)
+
+      expect(inactive_probe.reload.enabled).to be false
     end
 
     it 'returns success hash' do

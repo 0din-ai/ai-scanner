@@ -70,19 +70,17 @@ RUN --mount=type=cache,target=/usr/local/bundle/cache \
     rm -rf "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
     rm -rf /tmp/* /var/tmp/* ~/.cache /root/.gem
 
-# Copy platform-specific garak requirements lock file
-# TARGETARCH is automatically set by Docker buildx to either "amd64" or "arm64"
-ARG TARGETARCH
-COPY garak-requirements-lock-${TARGETARCH}.txt /tmp/garak-requirements-lock.txt
+# Copy Python requirements
+COPY garak-requirements.txt /tmp/garak-requirements.txt
 COPY playwright-requirements-lock.txt /tmp/playwright-requirements-lock.txt
 COPY scanner-requirements.txt /tmp/scanner-requirements.txt
 
-# Install garak with all its dependencies from lock file, plus Playwright and scanner deps
+# Install garak with all its dependencies, plus Playwright and scanner deps
 # No mount cache here, as Docker's cache mounts can interfere with Rust compilation subprocess execution.
 # Specifically, when Python packages with Rust extensions are installed, Cargo (Rust's build system) may be invoked as a subprocess.
 # Using a cache mount for pip or Cargo directories can cause permission errors or file locking issues, leading to build failures or inconsistent results.
 RUN /opt/venv/bin/python -m pip install --upgrade pip wheel setuptools && \
-    /opt/venv/bin/python -m pip install --no-cache-dir -r /tmp/garak-requirements-lock.txt && \
+    /opt/venv/bin/python -m pip install --no-cache-dir -r /tmp/garak-requirements.txt && \
     /opt/venv/bin/python -m pip install --no-cache-dir --prefer-binary -r /tmp/playwright-requirements-lock.txt && \
     /opt/venv/bin/python -m pip install --no-cache-dir -r /tmp/scanner-requirements.txt && \
     # Selective cleanup to reduce Python venv size without breaking dependencies
@@ -93,7 +91,7 @@ RUN /opt/venv/bin/python -m pip install --upgrade pip wheel setuptools && \
     find /opt/venv -path "*/test/*" -type f -delete 2>/dev/null || true && \
     find /opt/venv -name "examples" -type d -path "*/site-packages/*/examples" -exec rm -rf {} + 2>/dev/null || true && \
     find /opt/venv -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    rm -f /tmp/garak-requirements-lock.txt /tmp/playwright-requirements-lock.txt /tmp/scanner-requirements.txt
+    rm -f /tmp/garak-requirements.txt /tmp/playwright-requirements-lock.txt /tmp/scanner-requirements.txt
 
 # Copy package files and install Node dependencies (Playwright library only)
 # Note: Browsers are installed separately below using shared PLAYWRIGHT_BROWSERS_PATH

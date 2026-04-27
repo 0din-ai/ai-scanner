@@ -19,12 +19,14 @@ class OdinProbeSource
       return false
     end
 
-    DataSyncVersion.needs_sync?(SYNC_KEY, file_path)
+    DataSyncVersion.needs_sync?(SYNC_KEY, file_path) ||
+      inactive_enabled_probes_need_sync?(source: SOURCE, data: load_probes_json)
   end
 
   def sync(sync_start_time)
     Rails.logger.info "Syncing 0DIN probes from #{file_path}..."
     @valid_probe_names = []
+    @enabled_probe_names = []
 
     data = load_probes_json
     if !data.is_a?(Hash) || !data["probes"].is_a?(Hash)
@@ -35,7 +37,11 @@ class OdinProbeSource
     data["probes"].each { |name, probe_json| process_probe(name, probe_json) }
     variant_stats = sync_variants(data)
 
-    disable_result = disable_outdated_probes(source: SOURCE, valid_names: @valid_probe_names)
+    disable_result = disable_outdated_probes(
+      source: SOURCE,
+      valid_names: @valid_probe_names,
+      enabled_names: @enabled_probe_names
+    )
     record_sync_version(sync_start_time, disable_result, variant_stats)
     { success: true }
   end
@@ -53,6 +59,7 @@ class OdinProbeSource
 
   def process_probe(name, probe_json)
     @valid_probe_names << name
+    @enabled_probe_names << name if probe_active?(probe_json)
     probe = Probe.find_or_create_by!(name: name, category: CATEGORY)
 
     prompts = probe_json["prompts"] || []

@@ -1,7 +1,7 @@
 module Reports
   class Process
     ATTEMPT_KEYS = %w[uuid prompt outputs notes messages].freeze
-    EVAL_KEYS = %w[detector passed total].freeze
+    EVAL_KEYS = %w[detector passed total_evaluated probe].freeze
 
     attr_reader :report, :id, :report_data, :detector_stats, :raw_data
 
@@ -72,8 +72,7 @@ module Reports
             process_attempt(data)
             attempts_processed = true
           when "eval"
-            process_eval(data)
-            evals_processed = true
+            evals_processed = true if process_eval(data)
           when "completion"
             process_completion(data)
           else
@@ -144,23 +143,26 @@ module Reports
     end
 
     def process_eval(data)
+      validation = GarakEvalRowValidator.call(data, require_probe_detector: true)
+      unless validation.valid?
+        Rails.logger.warn("Report #{report.id}: Invalid garak eval row skipped: #{validation.errors.join(', ')}")
+        return false
+      end
+
       detector_name = data["detector"].delete_prefix("detector.")
       probe_classname = data["probe"]
-
-      # Garak 0.14.0 changed "total" to "total_evaluated"
-      # Support both for backwards compatibility
-      total = (data["total"] || data["total_evaluated"]).to_i
+      total = validation.total_evaluated
 
       # "passed" in garak means tests the model defended against (not attacks that succeeded)
       # We invert this to get "attacks that succeeded" for our ASR calculation
-      passed = total - data["passed"].to_i
+      passed = total - validation.passed
       max_score = report_data.dig(probe_classname, "stats", "max_score")
 
       # Resolve the probe from the classname (cached to avoid repeated queries)
       resolved = resolve_probe(probe_classname)
       if resolved[:skip]
         report_data.delete(probe_classname)
-        return
+        return false
       end
 
       # Use find_or_initialize_by to handle resumed scans where
@@ -199,6 +201,8 @@ module Reports
       if max_score && (detector_stats[detector_name][:max_score].nil? || max_score > detector_stats[detector_name][:max_score])
         detector_stats[detector_name][:max_score] = max_score
       end
+
+      true
     end
 
     # Resolves a probe classname to a probe_id and optional variant.
