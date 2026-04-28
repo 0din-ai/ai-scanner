@@ -133,6 +133,8 @@ docker compose exec scanner rails db:migrate
 docker compose logs scanner | grep -i "interrupt\|retry"
 ```
 
+For per-report execution details, open the report while it is pending, starting, running, or processing. Activity Stream appears automatically for authenticated users; select **View activity** to expand timeline entries, the raw JSONL tail, and execution logs. Running scans show a bounded live log tail from the database, including offset, truncation, and last-updated metadata. For terminal reports, `?debug=true` remains an optional troubleshooting fallback for final execution logs.
+
 ---
 
 ## SIEM Integration Issues

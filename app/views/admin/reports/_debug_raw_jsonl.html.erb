@@ -1,0 +1,27 @@
+<% if raw_tail.blank? %>
+  <p class="text-contentSecondary font-sans text-sm py-4">No raw data available.</p>
+<% else %>
+  <% raw_lines = raw_tail.to_s.lines %>
+  <div class="bg-zinc-950 p-4 overflow-auto max-h-[60vh] rounded-lg">
+    <div class="font-mono text-xs text-green-300 break-all"
+         data-debug-stream-filter-target="group">
+      <% raw_lines.each_with_index do |line, index| %>
+        <div class="debug-stream-row raw-jsonl-line py-0.5 px-1 flex items-start hover:bg-zinc-800/50 rounded relative group min-w-0"
+             data-debug-stream-filter-target="row"
+             data-debug-stream-filter-match="true">
+          <span class="text-zinc-500 w-8 inline-block text-right mr-2 select-none opacity-50 group-hover:opacity-100 shrink-0"><%= index + 1 %></span>
+          <span class="flex-1 whitespace-pre-wrap min-w-0 break-all overflow-hidden"><%= line %></span>
+        </div>
+      <% end %>
+
+      <p class="text-contentSecondary font-sans text-sm py-4 text-center"
+         data-debug-stream-filter-target="emptyState"
+         hidden>
+        No matching activity.
+      </p>
+    </div>
+  </div>
+  <div class="px-4 py-2 text-xs text-zinc-500 font-sans">
+    Showing last <%= Reports::DebugStreamPayload::RAW_TAIL_LINES %> lines
+  </div>
+<% end %>

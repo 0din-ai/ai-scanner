@@ -1,0 +1,59 @@
+<% payload = local_assigns[:payload] || Reports::DebugStreamPayload.new(report).call %>
+
+<div id="report-debug-panel" class="bg-zinc-900 overflow-hidden">
+  <div class="px-4 py-3 border-b border-zinc-700">
+    <div class="flex items-center gap-2">
+      <span class="icon icon-sm icon-signal text-yellow-400"></span>
+      <div class="min-w-0">
+        <h2 class="text-lg font-sans font-semibold text-primary tracking-wide">Activity Stream</h2>
+        <p class="text-xs font-sans text-contentSecondary">Debug Stream · Timeline, JSONL, Logs</p>
+      </div>
+    </div>
+  </div>
+
+  <div data-controller="debug-tabs debug-stream-filter"
+       data-debug-tabs-storage-key-value="report-debug-tab-<%= report.id %>"
+       data-action="log-viewer:filter-change->debug-stream-filter#updateEmptyStates log-viewer:reset->debug-stream-filter#clearQuery">
+    <div class="px-4 pt-3">
+      <label for="debug-stream-filter-<%= report.id %>" class="sr-only">Filter activity</label>
+      <div class="relative">
+        <span class="icon icon-xs icon-search absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"></span>
+        <input id="debug-stream-filter-<%= report.id %>"
+               type="search"
+               placeholder="Filter probes, prompts, detectors…"
+               autocomplete="off"
+               class="w-full rounded-lg border border-zinc-700 bg-zinc-950 py-2 pl-8 pr-3 text-sm font-sans text-primary placeholder:text-contentTertiary focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+               data-debug-stream-filter-target="query"
+               data-action="input->debug-stream-filter#filter">
+      </div>
+    </div>
+
+    <nav class="flex gap-1 px-4 pt-3" aria-label="Debug tabs">
+      <button type="button"
+              class="px-3 py-1.5 text-xs font-sans font-medium rounded-t transition-colors bg-zinc-800 text-white"
+              data-action="click->debug-tabs#switch"
+              data-debug-tabs-target="tab"
+              data-tab="timeline">
+        <span class="icon icon-xs icon-clock mr-1"></span>Timeline
+      </button>
+      <button type="button"
+              class="px-3 py-1.5 text-xs font-sans font-medium rounded-t transition-colors text-zinc-400 hover:text-zinc-200"
+              data-action="click->debug-tabs#switch"
+              data-debug-tabs-target="tab"
+              data-tab="raw">
+        <span class="icon icon-xs icon-code mr-1"></span>Raw JSONL
+      </button>
+      <button type="button"
+              class="px-3 py-1.5 text-xs font-sans font-medium rounded-t transition-colors text-zinc-400 hover:text-zinc-200"
+              data-action="click->debug-tabs#switch"
+              data-debug-tabs-target="tab"
+              data-tab="logs">
+        <span class="icon icon-xs icon-document mr-1"></span>Execution Logs
+      </button>
+    </nav>
+
+    <div class="px-4 pb-4">
+      <%= render partial: "admin/reports/debug_panel_stream", locals: { report: report, payload: payload } %>
+    </div>
+  </div>
+</div>

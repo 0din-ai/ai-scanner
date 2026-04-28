@@ -15,6 +15,7 @@
   },
   "scripts": {
     "build:css": "npx @tailwindcss/cli -i ./app/assets/stylesheets/application.css -o ./app/assets/builds/application.css --minify",
+    "test:js": "node script/tests/javascript_controller_tests.mjs",
     "playwright:install": "npx playwright install chromium",
     "playwright:install-deps": "npx playwright install-deps chromium",
     "playwright:test": "npx playwright test",

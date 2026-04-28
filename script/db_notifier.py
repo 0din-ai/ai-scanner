@@ -18,9 +18,11 @@ Environment Variables:
     DATABASE_URL: PostgreSQL connection string (required)
         Format: postgresql://user:password@host:port/database
     DATABASE_QUEUE_URL: Queue database connection (optional, falls back to DATABASE_URL + _queue suffix)
+    DEBUG_LOG_TAIL_BYTES: Maximum bytes of live execution logs to sync per report (default: 131072)
 """
 
 import atexit
+import hashlib
 import json
 import logging
 import os
@@ -66,6 +68,46 @@ STATUS_PROCESSING = 1
 
 # Report status enum values (matching Rails Report model)
 REPORT_STATUS_RUNNING = 1
+
+# Live execution log tail sync configuration
+DEFAULT_DEBUG_LOG_TAIL_BYTES = 131072
+
+
+def _parse_debug_log_tail_bytes(value: Optional[str]) -> int:
+    if value is None:
+        return DEFAULT_DEBUG_LOG_TAIL_BYTES
+
+    raw_value = value.strip()
+    if not raw_value:
+        logger.warning(
+            "Invalid DEBUG_LOG_TAIL_BYTES=%r; using default %s",
+            value,
+            DEFAULT_DEBUG_LOG_TAIL_BYTES,
+        )
+        return DEFAULT_DEBUG_LOG_TAIL_BYTES
+
+    try:
+        parsed_value = int(raw_value)
+    except ValueError:
+        logger.warning(
+            "Invalid DEBUG_LOG_TAIL_BYTES=%r; using default %s",
+            value,
+            DEFAULT_DEBUG_LOG_TAIL_BYTES,
+        )
+        return DEFAULT_DEBUG_LOG_TAIL_BYTES
+
+    if parsed_value < 0:
+        logger.warning(
+            "Invalid DEBUG_LOG_TAIL_BYTES=%r; using default %s",
+            value,
+            DEFAULT_DEBUG_LOG_TAIL_BYTES,
+        )
+        return DEFAULT_DEBUG_LOG_TAIL_BYTES
+
+    return parsed_value
+
+
+DEBUG_LOG_TAIL_BYTES = _parse_debug_log_tail_bytes(os.environ.get("DEBUG_LOG_TAIL_BYTES"))
 
 
 def is_debug_mode() -> bool:
@@ -313,8 +355,8 @@ class HeartbeatThread:
 
 class JournalSyncThread:
     """
-    Background daemon thread that periodically syncs the JSONL report file
-    from disk to the raw_report_data table.
+    Background daemon thread that periodically syncs scan progress from disk
+    to shared database tables.
 
     This ensures partial scan progress is persisted to the database even if
     the garak process is killed unexpectedly (deployment, OOM, pod eviction).
@@ -322,6 +364,9 @@ class JournalSyncThread:
     The thread reads the full JSONL file each cycle and upserts it to the
     database. For resumed scans, a prefix containing previously saved JSONL
     data is prepended to the current file content.
+
+    If a log path is provided, the thread also syncs a bounded execution-log
+    tail to report_debug_logs for live debug streaming.
 
     Usage:
         journal = JournalSyncThread(report_uuid, jsonl_path)
@@ -338,6 +383,7 @@ class JournalSyncThread:
         report_uuid: str,
         jsonl_path: Path,
         prefix: str = "",
+        log_path: Optional[Path] = None,
         interval: int = None,
     ):
         """
@@ -347,11 +393,13 @@ class JournalSyncThread:
             report_uuid: UUID of the report
             jsonl_path: Path to garak's JSONL output file
             prefix: Previously saved JSONL from an interrupted scan (for resumption)
+            log_path: Optional path to the scan execution log file for live tail sync
             interval: Seconds between sync cycles (default: 10)
         """
         self.report_uuid = report_uuid
         self.jsonl_path = jsonl_path
         self.prefix = prefix
+        self.log_path = Path(log_path) if log_path else None
         self.interval = interval if interval is not None else self.DEFAULT_INTERVAL
         self._running = False
         self._final_synced = False
@@ -360,6 +408,7 @@ class JournalSyncThread:
         self._stop_event = threading.Event()
         self._sync_lock = threading.Lock()
         self._last_synced_content: Optional[str] = None
+        self._last_synced_tail_digest: Optional[str] = None
         self._report_id: Optional[int] = None  # Cached after first lookup
         self._consecutive_failures: int = 0
 
@@ -445,22 +494,76 @@ class JournalSyncThread:
                             f"sync failures for {self.report_uuid} — data loss risk"
                         )
 
+    def _read_debug_log_tail(self) -> Optional[dict]:
+        """Read a bounded tail from the scan log file for live debug streaming."""
+        if DEBUG_LOG_TAIL_BYTES == 0:
+            return None
+
+        if not self.log_path or not self.log_path.exists():
+            return None
+
+        try:
+            file_size = self.log_path.stat().st_size
+            tail_limit = max(DEBUG_LOG_TAIL_BYTES, 0)
+            offset = max(file_size - tail_limit, 0) if tail_limit else file_size
+            truncated = offset > 0
+
+            with self.log_path.open("rb") as log_file:
+                log_file.seek(offset)
+                raw_tail = log_file.read(tail_limit) if tail_limit else b""
+
+            tail = raw_tail.decode("utf-8", errors="replace").replace("\x00", "")
+            digest_source = f"{offset}:{int(truncated)}:".encode("utf-8") + tail.encode("utf-8")
+            digest = hashlib.sha256(digest_source).hexdigest()
+
+            return {
+                "tail": tail,
+                "offset": offset,
+                "digest": digest,
+                "synced_at": datetime.now(timezone.utc),
+                "truncated": truncated,
+            }
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            logger.warning(f"JournalSync: failed to read log tail for {self.report_uuid}: {e}")
+            return None
+
     def _sync(self) -> bool:
-        """Read JSONL file from disk and upsert to raw_report_data."""
+        """Read JSONL/log files from disk and upsert changed database state."""
         try:
             # Read current file content (may not exist yet if garak hasn't started)
             file_content = ""
             if self.jsonl_path.exists():
                 file_content = self.jsonl_path.read_text(encoding="utf-8")
+                original_size = len(file_content)
+                file_content = file_content.replace("\x00", "")
+                if len(file_content) < original_size:
+                    nul_count = original_size - len(file_content)
+                    logger.warning(
+                        f"Stripped {nul_count} NUL bytes from JSONL file {self.jsonl_path}. "
+                        f"This is a known garak issue with parallel execution creating sparse files."
+                    )
 
             # Build full content: prefix (old data from previous run) + new file content
             full_content = self.prefix + file_content if self.prefix else file_content
 
-            # Skip if nothing to sync or content unchanged
-            if not full_content or not full_content.strip():
+            jsonl_changed = (
+                bool(full_content and full_content.strip())
+                and full_content != self._last_synced_content
+            )
+
+            tail_payload = self._read_debug_log_tail()
+            tail_changed = (
+                tail_payload is not None
+                and tail_payload["digest"] != self._last_synced_tail_digest
+            )
+
+            # Skip if neither JSONL nor execution log tail changed.
+            if not jsonl_changed and not tail_changed:
                 return True
-            if full_content == self._last_synced_content:
-                return True
+
+            tail_sync_failed = False
 
             with self._sync_lock:
                 if self._cancelled:
@@ -469,26 +572,68 @@ class JournalSyncThread:
                     )
                     return False
 
-                with pooled_connection("primary") as conn:
-                    # Disable autocommit so INSERT runs inside an explicit
-                    # transaction that we can rollback if cancelled.
-                    conn.autocommit = False
-                    with conn.cursor() as cur:
-                        if self._report_id is None:
-                            cur.execute(
-                                "SELECT id FROM reports WHERE uuid = %s",
-                                (self.report_uuid,),
-                            )
-                            result = cur.fetchone()
-                            if not result:
-                                logger.warning(
-                                    f"JournalSync: report not found: "
-                                    f"{self.report_uuid}"
-                                )
-                                return False
-                            self._report_id = result[0]
+                report_id = self._load_report_id()
+                if report_id is None:
+                    return False
 
-                        report_id = self._report_id
+                if jsonl_changed:
+                    if not self._sync_jsonl(report_id, full_content):
+                        return False
+                    self._last_synced_content = full_content
+                    logger.debug(
+                        f"JournalSync: synced {len(full_content)} bytes for {self.report_uuid}"
+                    )
+
+                if tail_changed and not self._cancelled:
+                    tail_synced = self._sync_debug_log_tail(report_id, tail_payload)
+                    if tail_synced:
+                        self._last_synced_tail_digest = tail_payload["digest"]
+                        logger.debug(
+                            f"JournalSync: synced log tail for {self.report_uuid} "
+                            f"({len(tail_payload['tail'])} chars, offset={tail_payload['offset']})"
+                        )
+                    else:
+                        tail_sync_failed = True
+                elif tail_changed:
+                    tail_sync_failed = True
+                    logger.debug(
+                        f"JournalSync: skipped log tail sync for {self.report_uuid} "
+                        "because sync was cancelled"
+                    )
+
+            return jsonl_changed or not tail_sync_failed
+
+        except Exception as e:
+            logger.error(f"JournalSync error for {self.report_uuid}: {e}")
+            return False
+
+    def _load_report_id(self) -> Optional[int]:
+        """Resolve and memoize the database report id."""
+        if self._report_id is not None:
+            return self._report_id
+
+        with pooled_connection("primary") as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM reports WHERE uuid = %s",
+                    (self.report_uuid,),
+                )
+                result = cur.fetchone()
+                if not result:
+                    logger.warning(
+                        f"JournalSync: report not found: {self.report_uuid}"
+                    )
+                    return None
+                self._report_id = result[0]
+                return self._report_id
+
+    def _sync_jsonl(self, report_id: int, full_content: str) -> bool:
+        """Persist core JSONL data in its own required transaction."""
+        try:
+            with pooled_connection("primary") as conn:
+                conn.autocommit = False
+                try:
+                    with conn.cursor() as cur:
                         now = datetime.now(timezone.utc)
                         cur.execute(
                             """
@@ -502,26 +647,79 @@ class JournalSyncThread:
                             """,
                             (report_id, full_content, STATUS_PENDING, now, now),
                         )
-                    # Re-check cancellation before committing to prevent
-                    # stale writes when stop() set _cancelled while we were
-                    # executing the INSERT (lock-acquire-timeout race).
+
+                    # Re-check cancellation before committing to prevent stale
+                    # writes when stop() set _cancelled while we were executing the
+                    # INSERT (lock-acquire-timeout race).
                     if self._cancelled:
                         conn.rollback()
                         logger.debug(
-                            f"JournalSync: sync cancelled before commit "
+                            f"JournalSync: sync cancelled before JSONL commit "
                             f"for {self.report_uuid}"
                         )
                         return False
                     conn.commit()
-
-            self._last_synced_content = full_content
-            logger.debug(
-                f"JournalSync: synced {len(full_content)} bytes for {self.report_uuid}"
-            )
-            return True
+                    return True
+                except Exception:
+                    conn.rollback()
+                    raise
 
         except Exception as e:
-            logger.error(f"JournalSync error for {self.report_uuid}: {e}")
+            logger.error(f"JournalSync JSONL error for {self.report_uuid}: {e}")
+            return False
+
+    def _sync_debug_log_tail(self, report_id: int, tail_payload: dict) -> bool:
+        """Persist the optional live execution-log tail best-effort."""
+        try:
+            with pooled_connection("primary") as conn:
+                conn.autocommit = False
+                try:
+                    with conn.cursor() as cur:
+                        now = datetime.now(timezone.utc)
+                        cur.execute(
+                            """
+                            INSERT INTO report_debug_logs
+                                (report_id, tail, tail_offset, tail_digest,
+                                 tail_synced_at, tail_truncated,
+                                 created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (report_id) DO UPDATE SET
+                                tail = EXCLUDED.tail,
+                                tail_offset = EXCLUDED.tail_offset,
+                                tail_digest = EXCLUDED.tail_digest,
+                                tail_synced_at = EXCLUDED.tail_synced_at,
+                                tail_truncated = EXCLUDED.tail_truncated,
+                                updated_at = EXCLUDED.updated_at
+                            """,
+                            (
+                                report_id,
+                                tail_payload["tail"],
+                                tail_payload["offset"],
+                                tail_payload["digest"],
+                                tail_payload["synced_at"],
+                                tail_payload["truncated"],
+                                now,
+                                now,
+                            ),
+                        )
+
+                    if self._cancelled:
+                        conn.rollback()
+                        logger.debug(
+                            f"JournalSync: sync cancelled before tail commit "
+                            f"for {self.report_uuid}"
+                        )
+                        return False
+                    conn.commit()
+                    return True
+                except Exception:
+                    conn.rollback()
+                    raise
+
+        except Exception as e:
+            logger.warning(
+                f"JournalSync: failed to sync log tail for {self.report_uuid}: {e}"
+            )
             return False
 
 
@@ -926,18 +1124,33 @@ def notify_report_running(report_uuid: str, pid: int) -> bool:
                     UPDATE reports
                     SET status = %s, pid = %s, heartbeat_at = NOW(), updated_at = NOW()
                     WHERE uuid = %s
-                    RETURNING company_id
+                    RETURNING id, company_id
                     """,
                     (REPORT_STATUS_RUNNING, pid, report_uuid),
                 )
                 report_row = cur.fetchone()
+
+                if report_row is not None:
+                    cur.execute(
+                        """
+                        UPDATE report_debug_logs
+                        SET tail = NULL,
+                            tail_offset = 0,
+                            tail_digest = NULL,
+                            tail_synced_at = NULL,
+                            tail_truncated = FALSE,
+                            updated_at = NOW()
+                        WHERE report_id = %s
+                        """,
+                        (report_row[0],),
+                    )
             conn.commit()
 
             if report_row is None:
                 logger.warning(f"Report not found: {report_uuid}")
                 return False
 
-            company_id = report_row[0]
+            company_id = report_row[1]
 
             logger.info(f"Report {report_uuid} marked as running (pid={pid})")
 
@@ -1128,14 +1341,30 @@ def notify_report_ready(report_uuid: str, prefix: str = "") -> bool:
     try:
         if jsonl_path.exists():
             jsonl_data = jsonl_path.read_text(encoding="utf-8")
-            logger.debug(f"Read JSONL file: {jsonl_path} ({len(jsonl_data)} bytes)")
+            original_size = len(jsonl_data)
+            jsonl_data = jsonl_data.replace("\x00", "")
+            if len(jsonl_data) < original_size:
+                nul_count = original_size - len(jsonl_data)
+                logger.warning(
+                    f"Stripped {nul_count} NUL bytes from JSONL file {jsonl_path}. "
+                    f"This is a known garak issue with parallel execution creating sparse files."
+                )
+            logger.debug(
+                f"Read JSONL file: {jsonl_path} ({len(jsonl_data)} bytes after sanitization)"
+            )
         else:
             logger.error(f"JSONL file not found: {jsonl_path}")
             return False
 
         if logs_path.exists():
             logs_data = logs_path.read_text(encoding="utf-8")
-            logger.debug(f"Read logs file: {logs_path} ({len(logs_data)} bytes)")
+            original_size = len(logs_data)
+            logs_data = logs_data.replace("\x00", "")
+            if len(logs_data) < original_size:
+                logger.warning(f"Stripped {original_size - len(logs_data)} NUL bytes from logs file")
+            logger.debug(
+                f"Read logs file: {logs_path} ({len(logs_data)} bytes after sanitization)"
+            )
         else:
             logger.debug(f"Logs file not found (optional): {logs_path}")
 
@@ -1268,7 +1497,13 @@ def notify_report_ready_from_synced(report_uuid: str) -> bool:
     if logs_path.exists():
         try:
             logs_data = logs_path.read_text(encoding="utf-8")
-            logger.debug(f"Read logs file: {logs_path} ({len(logs_data)} bytes)")
+            original_size = len(logs_data)
+            logs_data = logs_data.replace("\x00", "")
+            if len(logs_data) < original_size:
+                logger.warning(f"Stripped {original_size - len(logs_data)} NUL bytes from logs file")
+            logger.debug(
+                f"Read logs file: {logs_path} ({len(logs_data)} bytes after sanitization)"
+            )
         except Exception as e:
             logger.warning(f"Failed to read log file: {e}")
 
@@ -1307,17 +1542,17 @@ def notify_report_ready_from_synced(report_uuid: str) -> bool:
                     )
                     return False
 
-                # Update logs_data on existing raw_report_data record
-                if logs_data:
-                    now = datetime.now(timezone.utc)
-                    cur.execute(
-                        """
-                        UPDATE raw_report_data
-                        SET logs_data = %s, updated_at = %s
-                        WHERE report_id = %s
-                        """,
-                        (logs_data, now, report_id),
-                    )
+                # Update logs_data even when the log file is missing or empty so
+                # stale logs from an earlier attempt cannot survive completion.
+                now = datetime.now(timezone.utc)
+                cur.execute(
+                    """
+                    UPDATE raw_report_data
+                    SET logs_data = %s, updated_at = %s
+                    WHERE report_id = %s
+                    """,
+                    (logs_data, now, report_id),
+                )
 
                 job_id = _enqueue_process_report_job(report_id, queue_conn)
                 logger.debug(f"Enqueued job_id={job_id} for report_id={report_id}")

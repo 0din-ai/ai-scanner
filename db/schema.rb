@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_18_193602) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_27_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -248,6 +248,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_193602) do
     t.index ["report_id"], name: "index_raw_report_data_on_report_id", unique: true
   end
 
+  create_table "report_debug_logs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "logs"
+    t.bigint "report_id", null: false
+    t.text "tail"
+    t.string "tail_digest"
+    t.bigint "tail_offset", default: 0, null: false
+    t.datetime "tail_synced_at"
+    t.boolean "tail_truncated", default: false, null: false
+    t.datetime "updated_at", null: false
+    t.index ["report_id"], name: "index_report_debug_logs_on_report_id", unique: true
+  end
+
   create_table "report_pdfs", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "downloaded_at"
@@ -277,7 +290,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_193602) do
     t.datetime "end_time"
     t.datetime "heartbeat_at"
     t.datetime "last_retry_at"
-    t.text "logs"
     t.string "name", null: false
     t.integer "parent_report_id"
     t.integer "pid"
@@ -464,6 +476,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_18_193602) do
   add_foreign_key "probes_techniques", "probes"
   add_foreign_key "probes_techniques", "techniques"
   add_foreign_key "raw_report_data", "reports", on_delete: :cascade
+  add_foreign_key "report_debug_logs", "reports", on_delete: :cascade
   add_foreign_key "report_pdfs", "reports"
   add_foreign_key "reports", "companies"
   add_foreign_key "reports", "reports", column: "parent_report_id"

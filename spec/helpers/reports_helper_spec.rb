@@ -275,4 +275,77 @@ RSpec.describe ReportsHelper, type: :helper do
       end
     end
   end
+
+  describe '#activity_stream_active_status_for_report?' do
+    it 'returns true for pending and debug broadcast active statuses' do
+      statuses = (Report::DEBUG_BROADCAST_ACTIVE_STATUSES + %w[pending]).uniq
+
+      statuses.each do |status|
+        report = build_stubbed(:report, status: status)
+
+        expect(helper.activity_stream_active_status_for_report?(report)).to be(true)
+      end
+    end
+
+    it 'returns false for terminal statuses' do
+      statuses = Report.statuses.keys - (Report::DEBUG_BROADCAST_ACTIVE_STATUSES + %w[pending]).uniq
+
+      statuses.each do |status|
+        report = build_stubbed(:report, status: status)
+
+        expect(helper.activity_stream_active_status_for_report?(report)).to be(false)
+      end
+    end
+
+    it 'returns false without a report' do
+      expect(helper.activity_stream_active_status_for_report?(nil)).to be(false)
+    end
+  end
+
+  describe '#show_activity_stream_for_report?' do
+    let(:user) { build_stubbed(:user) }
+    let(:params) { ActionController::Parameters.new }
+
+    it 'returns true for active reports without a debug query' do
+      report = build_stubbed(:report, :running)
+
+      expect(helper.show_activity_stream_for_report?(report, params: params, user: user)).to be(true)
+    end
+
+    it 'returns true for pending reports without a debug query' do
+      report = build_stubbed(:report, status: :pending)
+
+      expect(helper.show_activity_stream_for_report?(report, params: params, user: user)).to be(true)
+    end
+
+    it 'returns false for terminal reports by default' do
+      report = build_stubbed(:report, :completed)
+
+      expect(helper.show_activity_stream_for_report?(report, params: params, user: user)).to be(false)
+    end
+
+    it 'keeps the optional debug query fallback for terminal reports' do
+      report = build_stubbed(:report, :completed)
+      debug_params = ActionController::Parameters.new(debug: 'true')
+
+      expect(helper.show_activity_stream_for_report?(report, params: debug_params, user: user)).to be(true)
+    end
+
+    it 'returns false without an authenticated user' do
+      report = build_stubbed(:report, :running)
+
+      expect(helper.show_activity_stream_for_report?(report, params: params, user: nil)).to be(false)
+    end
+
+    it 'returns false in PDF mode even when debug fallback is requested' do
+      report = build_stubbed(:report, :running)
+      debug_params = ActionController::Parameters.new(debug: 'true')
+
+      expect(helper.show_activity_stream_for_report?(report, params: debug_params, user: user, pdf_mode: true)).to be(false)
+    end
+
+    it 'returns false without a report' do
+      expect(helper.show_activity_stream_for_report?(nil, params: params, user: user)).to be(false)
+    end
+  end
 end

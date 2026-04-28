@@ -50,6 +50,7 @@ Rails.application.routes.draw do
         get :top_probes
         get :probes_tab
         get :attempt_content
+        post :refresh_debug_lease
       end
       collection do
         post :batch
@@ -108,6 +109,7 @@ Rails.application.routes.draw do
     member do
       get :pdf
       post :pdf_retry
+      post :refresh_debug_lease
     end
   end
 

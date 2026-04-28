@@ -5,9 +5,16 @@ class ReportDetailsController < ApplicationController
   skip_before_action :set_tenant, only: [ :show ]
   before_action :authenticate_show, only: [ :show ]
   before_action :set_show_tenant, only: [ :show ]
-  before_action :set_report
+  before_action :set_report, except: [ :refresh_debug_lease ]
+  before_action :set_debug_lease_report, only: [ :refresh_debug_lease ]
 
   def show
+    # Activity Stream leases are refreshed by the mounted lease controller.
+  end
+
+  def refresh_debug_lease
+    Reports::DebugWatcher.refresh_and_enqueue(@report)
+    head :ok
   end
 
   def pdf
@@ -132,6 +139,10 @@ class ReportDetailsController < ApplicationController
   def set_report
     report = @_unscoped_report || Report.includes(*SHOW_INCLUDES).find(params[:id])
     @report = ReportDecorator.new(report)
+  end
+
+  def set_debug_lease_report
+    @report = Report.select(:id, :status, :company_id).find(params[:id])
   end
 
   def pdf_filename

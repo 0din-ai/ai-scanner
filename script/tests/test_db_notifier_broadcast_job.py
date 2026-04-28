@@ -49,7 +49,7 @@ class TestNotifyReportRunningBroadcastJob(unittest.TestCase):
     def test_notify_report_running_enqueues_company_scoped_broadcast_job(self, mock_pooled):
         primary_conn, primary_cur = self._make_mock_conn(
             rowcount=1,
-            fetchone_result=(17,),
+            fetchone_result=(33, 17),
         )
         queue_conn, queue_cur = self._make_mock_conn(fetchone_result=(123,))
         mock_pooled.side_effect = [primary_conn, queue_conn]
@@ -58,9 +58,14 @@ class TestNotifyReportRunningBroadcastJob(unittest.TestCase):
 
         self.assertTrue(result)
 
-        update_sql, update_params = primary_cur.execute.call_args[0]
-        self.assertIn("RETURNING company_id", update_sql)
+        update_sql, update_params = primary_cur.execute.call_args_list[0][0]
+        self.assertIn("RETURNING id, company_id", update_sql)
         self.assertEqual(update_params, (db_notifier.REPORT_STATUS_RUNNING, 456, "report-uuid"))
+
+        tail_reset_sql, tail_reset_params = primary_cur.execute.call_args_list[1][0]
+        self.assertIn("UPDATE report_debug_logs", tail_reset_sql)
+        self.assertIn("tail = NULL", tail_reset_sql)
+        self.assertEqual(tail_reset_params, (33,))
 
         insert_sql, insert_params = queue_cur.execute.call_args_list[0][0]
         arguments_payload = json.loads(insert_params[1])

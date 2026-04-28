@@ -1,0 +1,57 @@
+<% payload = local_assigns[:payload] || {} %>
+<% activity = payload[:activity] || {} %>
+<% updated_at = activity[:updated_at] %>
+<%
+  attempt_count = activity[:attempt_count].to_i
+  probe_count = activity[:probe_count].to_i
+  log_line_count = activity[:log_line_count].to_i
+  has_probe_activity = attempt_count.positive? || probe_count.positive?
+  status_label = activity[:status_label].presence || report.status.to_s.humanize
+
+  progress_text =
+    if has_probe_activity
+      attempts = pluralize(attempt_count, "attempt")
+      probes = pluralize(probe_count, "probe")
+      activity[:active] ? "#{attempts} so far; #{probes} loaded" : "#{attempts} recorded; #{probes} loaded"
+    elsif log_line_count.positive?
+      logs = pluralize(log_line_count, "execution log line")
+      activity[:active] ? "#{logs} captured; waiting for probe events" : "#{logs} captured"
+    elsif activity[:active]
+      "Waiting for the first probe attempt."
+    else
+      "No activity captured for this scan."
+    end
+%>
+
+<div id="report-activity-stream-summary"
+     class="min-w-0 flex-1"
+     data-activity-stream-target="summary">
+  <div class="min-w-0">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="icon icon-sm icon-sparkles text-yellow-400"></span>
+      <h2 class="text-lg font-sans font-semibold text-primary tracking-wide">Activity Stream</h2>
+      <% if activity[:active] %>
+        <span class="inline-flex items-center gap-1 rounded-full border border-green-400/40 bg-green-500/10 px-2 py-0.5 text-[11px] font-sans font-semibold uppercase tracking-wide text-green-300">
+          <span class="h-1.5 w-1.5 rounded-full bg-green-400"></span>
+          LIVE
+        </span>
+      <% end %>
+    </div>
+
+    <p class="mt-1 text-xs font-sans text-contentSecondary">
+      <% if updated_at.present? %>
+        Updated <%= time_ago_in_words(updated_at) %> ago
+      <% else %>
+        No activity yet
+      <% end %>
+    </p>
+
+    <div class="mt-5">
+      <p class="text-base font-sans font-semibold text-primary"><%= status_label %></p>
+      <p class="mt-1 text-sm font-sans text-contentSecondary"><%= progress_text %></p>
+      <p class="mt-3 max-w-3xl text-sm font-sans leading-6 text-contentSecondary">
+        Activity Stream shows probe attempts, detector checks, and execution logs produced during the scan for progress checks, troubleshooting, and audit review.
+      </p>
+    </div>
+  </div>
+</div>

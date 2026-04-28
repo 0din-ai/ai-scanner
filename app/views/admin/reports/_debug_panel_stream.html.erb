@@ -1,0 +1,44 @@
+<% payload = local_assigns[:payload] || Reports::DebugStreamPayload.new(report).call %>
+<% activity = payload[:activity] || {} %>
+<% updated_at = activity[:updated_at] %>
+
+<div id="report-debug-stream-content">
+  <div class="debug-stream-metadata mb-3 mt-3 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-sans text-contentSecondary">
+      <% if activity[:active] %>
+        <span class="inline-flex items-center gap-1 rounded-full border border-green-400/40 bg-green-500/10 px-2 py-0.5 font-semibold uppercase tracking-wide text-green-300">
+          <span class="h-1.5 w-1.5 rounded-full bg-green-400"></span>
+          LIVE
+        </span>
+      <% end %>
+
+      <span class="inline-flex items-center gap-1">
+        <span class="icon icon-xs icon-document text-zinc-500"></span>
+        <%= pluralize(activity[:entry_count].to_i, "entry") %>
+      </span>
+
+      <span class="inline-flex items-center gap-1">
+        <span class="icon icon-xs icon-clock text-zinc-500"></span>
+        <% if updated_at.present? %>
+          updated <%= time_ago_in_words(updated_at) %> ago
+        <% elsif report.raw_report_data.present? %>
+          updated <%= time_ago_in_words(report.raw_report_data.updated_at) %> ago
+        <% else %>
+          no activity yet
+        <% end %>
+      </span>
+    </div>
+  </div>
+
+  <div data-debug-tabs-target="panel" data-tab="timeline">
+    <%= render partial: "admin/reports/debug_timeline", locals: { timeline: payload[:timeline] } %>
+  </div>
+
+  <div data-debug-tabs-target="panel" data-tab="raw" class="hidden">
+    <%= render partial: "admin/reports/debug_raw_jsonl", locals: { raw_tail: payload[:raw_tail] } %>
+  </div>
+
+  <div data-debug-tabs-target="panel" data-tab="logs" class="hidden">
+    <%= render partial: "admin/reports/debug_execution_logs", locals: { logs: payload[:logs], metadata: payload[:log_metadata] } %>
+  </div>
+</div>

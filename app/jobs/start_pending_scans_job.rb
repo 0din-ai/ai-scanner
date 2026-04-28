@@ -115,8 +115,12 @@ class StartPendingScansJob < ApplicationJob
 
   # Atomic claim: UPDATE only succeeds if report is still pending
   def claim_for_starting(report)
-    updated_count = Report.where(id: report.id, status: :pending)
-                          .update_all(status: :starting, updated_at: Time.current)
+    updated_count = 0
+    Report.transaction do
+      updated_count = Report.where(id: report.id, status: :pending)
+                            .update_all(status: :starting, updated_at: Time.current)
+      ReportDebugLog.clear_tail_for_report(report.id) if updated_count.positive?
+    end
     claimed = updated_count.positive?
 
     # Broadcast immediately since update_all bypasses callbacks

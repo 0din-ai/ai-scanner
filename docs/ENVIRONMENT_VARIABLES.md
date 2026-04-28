@@ -62,6 +62,8 @@ Environment variables allow you to securely configure API keys and system settin
 
 ## System Configuration Variables
 
+These variables are process-level settings from the root `.env` file or container environment. They are not managed through **Configuration** → **Environment Variables**, and changing them requires restarting Scanner.
+
 ### SESSION_COOKIE_DOMAIN
 - **Purpose**: Enables session cookie sharing across subdomains for WebSocket authentication
 - **When to use**: Required when `ACTION_CABLE_URL` uses a different subdomain than the main application
@@ -81,6 +83,15 @@ Environment variables allow you to securely configure API keys and system settin
 - **Default Value**: `0.2`
 - **Impact**: Lower values (e.g., 0.1) are more strict and will flag more potential issues
 - **Recommendation**: Start with default and adjust based on your security requirements
+
+### DEBUG_LOG_TAIL_BYTES
+- **Purpose**: Controls how many bytes of the garak execution log are synced into the live report debug log tail
+- **Default Value**: `131072`
+- **Location**: Root `.env` file or container environment; read by the Python runner process at startup
+- **Disable live tails**: Set to `0` to skip live-tail reads and database updates
+- **Invalid values**: Blank, non-integer, or negative values fall back to the default
+- **Impact**: Higher values show more live execution-log context while a scan is running; lower values reduce database write size
+- **Restart required**: Restart Scanner after changing this value
 
 ### PARALLEL_ATTEMPTS
 > **Note**: This setting has been moved to the Settings page (`/settings`). It is no longer managed as an Environment Variable.

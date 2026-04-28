@@ -13,4 +13,9 @@ graph TD
   D --> E
   D --> F
   E --> F
+  E --> H[run_garak.py]
+  H --> I[raw_report_data JSONL]
+  H --> J[report_debug_logs live tails]
+  I --> F
+  J --> F
   F --> G

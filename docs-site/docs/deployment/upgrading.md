@@ -57,6 +57,16 @@ Or check the GitHub [releases page](https://github.com/0din-ai/ai-scanner/releas
 docker compose exec postgres pg_dump -U scanner scanner_production > backup_$(date +%Y%m%d).sql
 ```
 
+## Report Log Storage Migration
+
+Recent versions store report execution logs in `report_debug_logs` instead of `reports.logs`. The migration backfills existing final logs into `report_debug_logs.logs` and stores live debug tails in `report_debug_logs.tail`. Run migrations after upgrading:
+
+```bash
+docker compose exec scanner rails db:migrate
+```
+
+Rails callers should continue to use `Report#logs`. Direct SQL/reporting integrations must join `report_debug_logs` and read `report_debug_logs.logs` after this migration because the legacy `reports.logs` column is removed. Rolling the migration back restores final logs to `reports.logs`; transient live tails are not preserved on rollback.
+
 ## Rollback
 
 If an upgrade causes issues:

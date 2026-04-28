@@ -4,6 +4,7 @@ module Admin
   class ReportsController < Admin::BaseController
     # probes_tab and attempt_content load @report with custom includes — excluded intentionally
     before_action :set_report, only: [ :show, :destroy, :stop, :asr_history, :top_probes ]
+    before_action :set_debug_lease_report, only: [ :refresh_debug_lease ]
 
     include TargetsHelper
 
@@ -51,6 +52,7 @@ module Admin
     def show
       authorize @report
       @page_title = "Report ##{@report.id}"
+      # Activity Stream leases are refreshed by the mounted lease controller.
     end
 
     def destroy
@@ -207,12 +209,22 @@ module Admin
       }
     end
 
+    def refresh_debug_lease
+      authorize @report, :show?
+      Reports::DebugWatcher.refresh_and_enqueue(@report)
+      head :ok
+    end
+
     private
 
     def set_report
       @report = Report.includes(:target, :scan,
                                 detector_results: :detector)
                       .find(params[:id])
+    end
+
+    def set_debug_lease_report
+      @report = Report.select(:id, :status, :company_id).find(params[:id])
     end
 
     def apply_sorting(scope)

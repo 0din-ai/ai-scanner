@@ -14,6 +14,7 @@ An open-source web application for AI model security assessments, built with Rub
 - **Multi-target scanning** — test API-based LLMs and browser-based chat UIs
 - **Scheduled and on-demand scans** with configurable recurrence
 - **Attack Success Rate (ASR)** scoring with trend tracking across scan runs
+- **Live Activity Stream** — monitor queued and running scans with database-backed execution-log tails and final report logs
 - **PDF report export** with per-probe, per-attempt drill-down
 - **SIEM integration** — forward results to Splunk or Rsyslog
 - **Multi-tenant** — multiple organizations on a single deployment, data encrypted at rest

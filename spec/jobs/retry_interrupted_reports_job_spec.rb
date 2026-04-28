@@ -52,6 +52,21 @@ RSpec.describe RetryInterruptedReportsJob, type: :job do
         expect(report.pid).to be_nil
       end
 
+      it "clears stale live tail on retry" do
+        report = create(:report, target: target, scan: scan, status: :interrupted, updated_at: 1.minute.ago)
+        debug_log = create(:report_debug_log, report: report, tail: "previous attempt tail\n", tail_offset: 256, tail_digest: "old-tail", tail_synced_at: 1.minute.ago, tail_truncated: true)
+
+        described_class.new.perform
+
+        debug_log.reload
+        expect(report.reload.status).to eq("pending")
+        expect(debug_log.tail).to be_nil
+        expect(debug_log.tail_offset).to eq(0)
+        expect(debug_log.tail_digest).to be_nil
+        expect(debug_log.tail_synced_at).to be_nil
+        expect(debug_log.tail_truncated).to be(false)
+      end
+
       it "appends retry log message" do
         report = create(:report, target: target, scan: scan, status: :interrupted, logs: "Previous log", retry_count: 0, updated_at: 1.minute.ago)
 

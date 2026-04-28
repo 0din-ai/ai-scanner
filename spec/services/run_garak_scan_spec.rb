@@ -92,6 +92,59 @@ RSpec.describe RunGarakScan, type: :service do
       service.call
     end
 
+    it 'uses the same generated log path for the runner env and command output' do
+      service = described_class.new(report)
+      argv = [ "python3", "script/run_garak.py", report.uuid ]
+      captured_env = nil
+
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:build_argv).and_return(argv)
+      allow(LogPathManager).to receive(:scan_log_file_for_report)
+        .with(report)
+        .and_return(Pathname.new("/tmp/first.log"), Pathname.new("/tmp/second.log"))
+
+      run_command = double("RunCommand")
+      expect(run_command).to receive(:call_async).with(log_file: "/tmp/first.log")
+      expect(RunCommand).to receive(:new) do |received_argv, env:|
+        expect(received_argv).to eq(argv)
+        captured_env = env
+        run_command
+      end
+
+      service.call
+
+      expect(captured_env["LOG_FILE_PATH"]).to eq("/tmp/first.log")
+      expect(LogPathManager).to have_received(:scan_log_file_for_report).once
+    end
+
+    it 'uses the same generated log path for immediate-start failure output' do
+      service = described_class.new(report)
+      argv = [ "python3", "script/run_garak.py", report.uuid ]
+
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:build_argv).and_return(argv)
+      allow(LogPathManager).to receive(:scan_log_file_for_report)
+        .with(report)
+        .and_return(Pathname.new("/tmp/first.log"), Pathname.new("/tmp/second.log"))
+
+      run_command = double("RunCommand")
+      expect(run_command).to receive(:call_async).with(log_file: "/tmp/first.log").and_raise(
+        RunCommand::ImmediateExitError.new(127, "/opt/venv/bin/python3 script/run_garak.py")
+      )
+      expect(RunCommand).to receive(:new).and_return(run_command)
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with("/tmp/first.log").and_return(true)
+      allow(File).to receive(:read).with("/tmp/first.log").and_return("first path stderr\n")
+      allow(File).to receive(:exist?).with("/tmp/second.log").and_return(true)
+      allow(File).to receive(:read).with("/tmp/second.log").and_return("wrong path stderr\n")
+
+      service.call
+
+      expect(report.reload.logs).to include("first path stderr")
+      expect(report.logs).not_to include("wrong path stderr")
+      expect(LogPathManager).to have_received(:scan_log_file_for_report).once
+    end
+
     it 'fails the report if target has validating status' do
       validating_target = create(:target, :validating)
       validating_report = create(:report, target: validating_target, scan: scan)
@@ -498,6 +551,55 @@ RSpec.describe RunGarakScan, type: :service do
         expect(service).not_to receive(:execute_scan)
 
         service.call
+      end
+
+      it 'persists an existing same-pod log file before processing' do
+        # spec/support/run_garak_scan_stub.rb globally stubs RunGarakScan#call.
+        # Override here to test the real implementation path.
+        allow_any_instance_of(RunGarakScan).to receive(:call).and_call_original
+
+        service = described_class.new(report)
+        log_path = instance_double(Pathname, exist?: true)
+
+        allow(LogPathManager).to receive(:find_existing_log_for_report)
+          .with(report)
+          .and_return(log_path)
+        allow(File).to receive(:read).with(log_path).and_return("resumed logs\n")
+
+        expect(service).to receive(:persist_existing_logs).ordered.and_call_original
+        expect(ProcessReportJob).to receive(:perform_later).ordered.with(report.id)
+
+        service.call
+
+        expect(report.raw_report_data.reload.logs_data).to eq("resumed logs\n")
+      end
+
+      it 'does not overwrite existing full logs_data' do
+        report.raw_report_data.update!(logs_data: "existing full logs\n")
+        service = described_class.new(report)
+
+        expect(LogPathManager).not_to receive(:find_existing_log_for_report)
+
+        service.send(:persist_existing_logs)
+
+        expect(report.raw_report_data.reload.logs_data).to eq("existing full logs\n")
+      end
+
+      it 'logs persistence failures from bang updates' do
+        service = described_class.new(report)
+        raw_data = report.raw_report_data
+        log_path = instance_double(Pathname, exist?: true)
+
+        allow(LogPathManager).to receive(:find_existing_log_for_report)
+          .with(report)
+          .and_return(log_path)
+        allow(File).to receive(:read).with(log_path).and_return("resumed logs\n")
+        allow(raw_data).to receive(:update!).and_raise(ActiveRecord::RecordInvalid.new(raw_data))
+        allow(report).to receive(:raw_report_data).and_return(raw_data)
+
+        expect(Rails.logger).to receive(:warn).with(/\[ScanResume\] Report #{report.uuid}: Could not persist logs:/)
+
+        service.send(:persist_existing_logs)
       end
     end
 

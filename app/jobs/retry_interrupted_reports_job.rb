@@ -53,17 +53,20 @@ class RetryInterruptedReportsJob < ApplicationJob
       "attempt #{report.retry_count + 1}/#{CheckStaleReportsJob::MAX_INTERRUPT_RETRIES}"
     )
 
-    report.update!(
-      status: :pending,
-      retry_count: report.retry_count + 1,
-      last_retry_at: Time.current,
-      heartbeat_at: nil, # Reset heartbeat for fresh start
-      pid: nil, # Clear stale PID so new run gets a fresh process identity
-      logs: append_log(
-        report.logs,
-        "Auto-retry #{report.retry_count + 1}: Requeued after interruption"
+    Report.transaction do
+      report.update!(
+        status: :pending,
+        retry_count: report.retry_count + 1,
+        last_retry_at: Time.current,
+        heartbeat_at: nil, # Reset heartbeat for fresh start
+        pid: nil, # Clear stale PID so new run gets a fresh process identity
+        logs: append_log(
+          report.logs,
+          "Auto-retry #{report.retry_count + 1}: Requeued after interruption"
+        )
       )
-    )
+      ReportDebugLog.clear_tail_for_report(report.id)
+    end
   end
 
   def append_log(existing_logs, message)

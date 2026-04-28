@@ -1,0 +1,82 @@
+<% if timeline.blank? %>
+  <p class="text-contentSecondary font-sans text-sm py-4">No events yet.</p>
+<% else %>
+  <div class="space-y-2 max-h-[60vh] overflow-auto" data-debug-stream-filter-target="group">
+    <% timeline.each_with_index do |entry, idx| %>
+      <div class="debug-stream-row flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-zinc-800/50 font-mono text-xs"
+           data-debug-stream-filter-target="row"
+           data-debug-stream-filter-match="true">
+        <span class="text-zinc-500 w-6 text-right shrink-0 select-none"><%= idx + 1 %></span>
+
+        <% case entry[:type] %>
+        <% when "init" %>
+          <span class="icon icon-xs icon-play text-green-400 mt-0.5 shrink-0"></span>
+          <div>
+            <span class="text-green-400 font-semibold">INIT</span>
+            <% if entry[:start_time].present? %>
+              <span class="text-zinc-400 ml-2"><%= entry[:start_time] %></span>
+            <% end %>
+          </div>
+
+        <% when "attempt" %>
+          <span class="icon icon-xs icon-arrow-right text-blue-400 mt-0.5 shrink-0"></span>
+          <div class="min-w-0">
+            <span class="text-blue-400 font-semibold">ATTEMPT</span>
+            <% if entry[:probe].present? %>
+              <span class="text-cyan-400 ml-2"><%= entry[:probe] %></span>
+            <% end %>
+            <% if entry[:prompt_preview].present? %>
+              <div class="text-zinc-400 mt-1 break-all">Prompt: <span class="text-zinc-300"><%= entry[:prompt_preview] %></span></div>
+            <% end %>
+            <% if entry[:output_preview].present? %>
+              <div class="text-zinc-400 mt-0.5 break-all">Output: <span class="text-zinc-300"><%= entry[:output_preview] %></span></div>
+            <% end %>
+          </div>
+
+        <% when "eval" %>
+          <span class="icon icon-xs icon-check text-yellow-400 mt-0.5 shrink-0"></span>
+          <div>
+            <span class="text-yellow-400 font-semibold">EVAL</span>
+            <% if entry[:probe].present? %>
+              <span class="text-cyan-400 ml-2"><%= entry[:probe] %></span>
+            <% end %>
+            <% if entry[:detector].present? %>
+              <span class="text-zinc-400 ml-1">&rarr; <%= entry[:detector] %></span>
+            <% end %>
+            <% if entry[:passed].present? && entry[:total].present? %>
+              <span class="text-zinc-300 ml-2"><%= entry[:passed] %>/<%= entry[:total] %></span>
+            <% end %>
+          </div>
+
+        <% when "completion" %>
+          <span class="icon icon-xs icon-check-circle text-green-400 mt-0.5 shrink-0"></span>
+          <div>
+            <span class="text-green-400 font-semibold">COMPLETE</span>
+            <% if entry[:end_time].present? %>
+              <span class="text-zinc-400 ml-2"><%= entry[:end_time] %></span>
+            <% end %>
+          </div>
+
+        <% when "_parse_error" %>
+          <span class="icon icon-xs icon-exclamation-triangle text-red-400 mt-0.5 shrink-0"></span>
+          <div class="min-w-0">
+            <span class="text-red-400 font-semibold">PARSE ERROR</span>
+            <div class="text-zinc-500 mt-0.5 break-all"><%= entry[:raw] %></div>
+          </div>
+
+        <% else %>
+          <span class="icon icon-xs icon-question text-zinc-500 mt-0.5 shrink-0"></span>
+          <div>
+            <span class="text-zinc-400 font-semibold"><%= entry[:type]&.upcase %></span>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <p class="text-contentSecondary font-sans text-sm py-4 text-center"
+       data-debug-stream-filter-target="emptyState"
+       hidden>
+      No matching activity.
+    </p>
+  </div>
+<% end %>

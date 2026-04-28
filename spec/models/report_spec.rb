@@ -15,6 +15,13 @@ RSpec.describe Report, type: :model do
     it { is_expected.to have_many(:probe_results).dependent(:destroy) }
     it { is_expected.to have_many(:detector_results).dependent(:destroy) }
     it { is_expected.to have_many(:detectors).through(:detector_results) }
+    it { is_expected.to have_one(:report_debug_log).dependent(:destroy) }
+
+    it "autosaves report_debug_log changes" do
+      association = Report.reflect_on_association(:report_debug_log)
+
+      expect(association.options[:autosave]).to be(true)
+    end
   end
 
   describe 'validations' do
@@ -215,6 +222,92 @@ RSpec.describe Report, type: :model do
 
   describe 'status enum' do
     it { is_expected.to define_enum_for(:status).with_values(pending: 0, running: 1, processing: 2, completed: 3, failed: 4, stopped: 5, starting: 6, interrupted: 7) }
+  end
+
+  describe "#logs compatibility" do
+    it "reads logs from report_debug_logs" do
+      report = create(:report)
+      create(:report_debug_log, report: report, logs: "stored logs")
+
+      expect(report.reload.logs).to eq("stored logs")
+    end
+
+    it "persists logs assigned before saving" do
+      report = build(:report)
+
+      report.logs = "assigned logs"
+      report.save!
+
+      expect(report.reload.logs).to eq("assigned logs")
+      expect(report.report_debug_log.logs).to eq("assigned logs")
+    end
+
+    it "persists logs assigned to an existing report" do
+      report = create(:report)
+
+      report.logs = "updated logs"
+      report.save!
+
+      expect(report.reload.logs).to eq("updated logs")
+      expect(report.report_debug_log.logs).to eq("updated logs")
+    end
+
+    it "supports update! with logs" do
+      report = create(:report)
+
+      report.update!(logs: "updated through attributes")
+
+      expect(report.reload.logs).to eq("updated through attributes")
+      expect(report.report_debug_log.logs).to eq("updated through attributes")
+    end
+
+    it "preserves live tail metadata when assigning final logs" do
+      report = create(:report)
+      create(
+        :report_debug_log,
+        report: report,
+        tail: "live tail\n",
+        tail_offset: 12,
+        tail_digest: "tail-digest",
+        tail_truncated: true
+      )
+
+      report.logs = "final logs"
+      report.save!
+
+      debug_log = report.reload.report_debug_log
+      expect(debug_log.logs).to eq("final logs")
+      expect(debug_log.tail).to eq("live tail\n")
+      expect(debug_log.tail_offset).to eq(12)
+      expect(debug_log.tail_digest).to eq("tail-digest")
+      expect(debug_log.tail_truncated).to be(true)
+    end
+
+    it "uses an existing row when the association cache was loaded empty" do
+      report = create(:report)
+      expect(report.report_debug_log).to be_nil
+
+      now = Time.current
+      ReportDebugLog.insert_all!(
+        [
+          {
+            report_id: report.id,
+            tail: "live tail\n",
+            tail_offset: 10,
+            tail_truncated: false,
+            created_at: now,
+            updated_at: now
+          }
+        ]
+      )
+      debug_log = ReportDebugLog.find_by!(report_id: report.id)
+
+      report.logs = "final logs"
+      report.save!
+
+      expect(debug_log.reload.logs).to eq("final logs")
+      expect(report.reload.report_debug_log.id).to eq(debug_log.id)
+    end
   end
 
   describe 'status transitions' do

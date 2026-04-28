@@ -54,7 +54,16 @@ RSpec.describe Reports::Process, type: :service do
       let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: jsonl_content, logs_data: logs_content) }
 
       it 'updates report status to processing' do
-        expect(report).to receive(:update).with(status: :processing)
+        expect(report).to receive(:update!).with(status: :processing).and_call_original
+        service.call
+      end
+
+      it 'commits processing status before the final persistence transaction' do
+        expect(Report).to receive(:transaction).and_wrap_original do |method, *args, &block|
+          expect(report.reload.status).to eq('processing')
+          method.call(*args, &block)
+        end
+
         service.call
       end
 
@@ -82,6 +91,7 @@ RSpec.describe Reports::Process, type: :service do
         expect(report.end_time).to be_present
         expect(report.status).to eq('completed')
         expect(report.logs).to eq(logs_content)
+        expect(report.report_debug_log.logs).to eq(logs_content)
         expect(report.input_tokens).to be > 0
         expect(report.output_tokens).to be > 0
       end
@@ -103,6 +113,69 @@ RSpec.describe Reports::Process, type: :service do
 
       it 'destroys raw_data after successful processing' do
         expect { service.call }.to change { RawReportData.count }.by(-1)
+      end
+
+      it 'keeps final logs after raw_data is destroyed' do
+        service.call
+
+        expect(RawReportData.exists?(raw_data.id)).to be(false)
+        expect(report.reload.logs).to eq(logs_content)
+        expect(report.report_debug_log.logs).to eq(logs_content)
+      end
+
+      it 'promotes the shared live log tail when final logs_data is missing' do
+        raw_data.update!(logs_data: nil)
+        create(:report_debug_log, report: report, tail: "shared live tail\n")
+
+        service.call
+
+        expect(report.reload.logs).to eq("shared live tail\n")
+        expect(report.report_debug_log.logs).to eq("shared live tail\n")
+      end
+
+      it 'clears stale final logs when logs_data and live tail are missing' do
+        raw_data.update!(logs_data: nil)
+        debug_log = create(:report_debug_log, report: report, logs: "previous run logs\n")
+
+        service.call
+
+        expect(report.reload.logs).to be_nil
+        expect(debug_log.reload.logs).to be_nil
+      end
+
+      it 'preserves retry audit logs when logs_data and live tail are missing' do
+        raw_data.update!(logs_data: nil)
+        report.update!(retry_count: 1)
+        create(
+          :report_debug_log,
+          report: report,
+          logs: "Previous log\n[2026-04-27 12:00:00] Auto-retry 1: Requeued after interruption"
+        )
+
+        service.call
+
+        expect(report.reload.logs).to include("Previous log")
+        expect(report.logs).to include("Auto-retry 1:")
+        expect(report.report_debug_log.logs).to eq(report.logs)
+      end
+
+      it 'keeps raw_data when the final report save fails' do
+        jsonl_without_time_saves = [
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json
+        ].join("\n")
+        raw_data.update!(jsonl_data: jsonl_without_time_saves)
+        save_calls = 0
+        allow(report).to receive(:save!).and_wrap_original do |method, *args, **kwargs, &block|
+          save_calls += 1
+          raise ActiveRecord::RecordInvalid.new(report) if save_calls > 1
+
+          method.call(*args, **kwargs, &block)
+        end
+
+        expect { service.call }.to raise_error(ActiveRecord::RecordInvalid)
+        expect(RawReportData.exists?(raw_data.id)).to be true
+        expect(report.probe_results.reload).to be_empty
       end
 
       it 'logs successful database processing' do

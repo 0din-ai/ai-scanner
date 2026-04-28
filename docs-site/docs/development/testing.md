@@ -30,6 +30,13 @@ Without `RAILS_ENV=test`, RSpec will run against the development database.
 ## Static Analysis
 
 ```bash
+# Python notifier/runner tests
+python3 -m unittest discover -s script/tests
+python3 -m py_compile script/db_notifier.py script/run_garak.py
+
+# Stimulus controller tests
+npm run test:js
+
 # Security scan (Brakeman)
 bundle exec brakeman
 
@@ -78,7 +85,7 @@ Stub garak execution in tests to avoid real subprocess calls:
 allow_any_instance_of(RunGarakScan).to receive(:call)
 ```
 
-To test with mock Unix socket communication, see the existing scan job specs for patterns.
+For live progress and execution-log behavior, mock `JournalSyncThread` and database notifier behavior rather than local socket communication.
 
 ## Test Factories
 

@@ -10,6 +10,7 @@ class Report < ApplicationRecord
   belongs_to :parent_report, class_name: "Report", optional: true
   has_one :child_report, class_name: "Report", foreign_key: "parent_report_id", dependent: :destroy
   has_one :raw_report_data, dependent: :destroy
+  has_one :report_debug_log, dependent: :destroy, autosave: true
   has_one :report_pdf, dependent: :destroy
 
   validates :uuid, presence: true, uniqueness: true
@@ -48,6 +49,7 @@ class Report < ApplicationRecord
 
   # Trigger widget broadcast when status affects running count (multi-pod safe)
   after_commit :broadcast_running_stats_if_needed, if: :saved_change_to_status?
+  after_commit :broadcast_debug_stream_if_watched, if: :saved_change_to_status?
 
   enum :status, {
     pending: 0,
@@ -65,6 +67,9 @@ class Report < ApplicationRecord
   # - interrupted is visible so users can monitor auto-retry behavior
   ACTIONABLE_STATUSES = (statuses.keys - %w[processing starting]).freeze
   BROADCAST_ACTIVE_STATUSES = %w[running starting].freeze
+  DEBUG_BROADCAST_ACTIVE_STATUSES = (BROADCAST_ACTIVE_STATUSES + %w[processing]).freeze
+  DEBUG_STREAM_LIVE_TAIL_STATUSES = %w[running processing].freeze
+  DEBUG_STREAM_POLLING_STATUSES = (DEBUG_BROADCAST_ACTIVE_STATUSES + %w[pending]).freeze
 
   def self.ransackable_attributes(auth_object = nil)
     [ "company_id", "name", "created_at", "id", "status", "target_id", "updated_at", "uuid", "asr" ]
@@ -72,6 +77,23 @@ class Report < ApplicationRecord
 
   def self.ransackable_associations(auth_object = nil)
     [ "company", "target", "scan" ]
+  end
+
+  def logs
+    debug_logs = report_debug_log&.logs if report_debug_logs_table_available?
+    return debug_logs unless debug_logs.nil?
+
+    legacy_logs_value
+  end
+
+  def logs=(value)
+    if report_debug_logs_table_available?
+      debug_log = report_debug_log || find_or_build_report_debug_log
+      debug_log.logs = value
+    end
+
+    self[:logs] = value if has_attribute?(:logs)
+    value
   end
 
   def detector_results_as_hash
@@ -142,6 +164,24 @@ class Report < ApplicationRecord
 
   private
 
+  def find_or_build_report_debug_log
+    if persisted?
+      ReportDebugLog.find_or_initialize_by(report_id: id).tap do |record|
+        self.report_debug_log = record
+      end
+    else
+      build_report_debug_log
+    end
+  end
+
+  def legacy_logs_value
+    self[:logs] if has_attribute?(:logs)
+  end
+
+  def report_debug_logs_table_available?
+    self.class.connection.data_source_exists?("report_debug_logs")
+  end
+
   # Failed/stopped scans should not count against the company's weekly quota.
   # Decrements the scan count so the user can retry without being penalized.
   def refund_scan_quota
@@ -178,6 +218,13 @@ class Report < ApplicationRecord
 
     # Pass company_id for company-scoped broadcast
     BroadcastRunningStatsJob.perform_later(company_id) if affects_count
+  end
+
+  def broadcast_debug_stream_if_watched
+    return unless Reports::DebugWatcher.watching?(id)
+
+    _old_status, new_status = saved_change_to_status
+    BroadcastReportDebugJob.enqueue_status_change(id, new_status)
   end
 
   def collect_metrics

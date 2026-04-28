@@ -6,6 +6,8 @@ sidebar_position: 4
 
 A report is generated after each completed scan. It contains the full results of every probe attempt made against your target.
 
+For troubleshooting queued or active reports, Activity Stream appears automatically for authenticated users while a report is pending, starting, running, or processing. Select **View activity** to expand timeline entries, the raw JSONL tail, and execution logs. Running scans display the live database-backed log tail; terminal reports can use the optional `?debug=true` fallback to show final logs. The log viewer supports search plus PASS/FAIL filters.
+
 ## Report Structure
 
 ### Summary

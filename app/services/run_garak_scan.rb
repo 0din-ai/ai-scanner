@@ -65,35 +65,37 @@ class RunGarakScan
   end
 
   def build_argv
-    script_path = Rails.root.join("script", "run_garak.py")
-    [ "/opt/venv/bin/python3", script_path.to_s, report.uuid ] + params
+    with_report_tenant do
+      script_path = Rails.root.join("script", "run_garak.py")
+      [ "/opt/venv/bin/python3", script_path.to_s, report.uuid ] + params
+    end
   end
 
   def build_env
-    # Tenant context needed for decrypting EnvironmentVariable.env_value
-    # via per-tenant key provider
-    merged = merged_env_vars
-    env = merged.dup
+    with_report_tenant do
+      merged = merged_env_vars
+      env = merged.dup
 
-    env["HOME"] = "/home/rails"
-    env["VARIANT_SCAN"] = "true" if report.is_variant_report?
+      env["HOME"] = "/home/rails"
+      env["VARIANT_SCAN"] = "true" if report.is_variant_report?
 
-    env["LOG_FILE_PATH"] = scan_log_path
-    env["DATABASE_URL"] = database_url_for_python
+      env["LOG_FILE_PATH"] = scan_log_path
+      env["DATABASE_URL"] = database_url_for_python
 
-    if MonitoringService.active?
-      MonitoringService.trace_context.each do |key, value|
-        env[key] = value
+      if MonitoringService.active?
+        MonitoringService.trace_context.each do |key, value|
+          env[key] = value
+        end
       end
+
+      env["REPORT_UUID"] = report.uuid
+      env["SCAN_ID"] = report.scan.id.to_s
+      env["SCAN_NAME"] = report.scan.name
+      env["TARGET_ID"] = target.id.to_s
+      env["TARGET_NAME"] = target.name
+
+      env
     end
-
-    env["REPORT_UUID"] = report.uuid
-    env["SCAN_ID"] = report.scan.id.to_s
-    env["SCAN_NAME"] = report.scan.name
-    env["TARGET_ID"] = target.id.to_s
-    env["TARGET_NAME"] = target.name
-
-    env
   end
 
   def scan_log_path
@@ -162,29 +164,33 @@ class RunGarakScan
   end
 
   def api_params
-    [
-      [ "--skip_unknown" ],
-      target_type_arg,
-      target_name_arg,
-      probes_config,
-      report_prefix,
-      evaluation_threshold,
-      parallel_attempts,
-      generator_options
-    ].compact.flatten
+    with_report_tenant do
+      [
+        [ "--skip_unknown" ],
+        target_type_arg,
+        target_name_arg,
+        probes_config,
+        report_prefix,
+        evaluation_threshold,
+        parallel_attempts,
+        generator_options
+      ].compact.flatten
+    end
   end
 
   def web_chat_params
-    [
-      [ "--skip_unknown" ],
-      [ "--target_type", "web_chatbot.WebChatbotGenerator" ],
-      web_chat_target_name,
-      probes_config,
-      report_prefix,
-      evaluation_threshold,
-      parallel_attempts,
-      web_chat_generator_options
-    ].compact.flatten
+    with_report_tenant do
+      [
+        [ "--skip_unknown" ],
+        [ "--target_type", "web_chatbot.WebChatbotGenerator" ],
+        web_chat_target_name,
+        probes_config,
+        report_prefix,
+        evaluation_threshold,
+        parallel_attempts,
+        web_chat_generator_options
+      ].compact.flatten
+    end
   end
 
   def target
@@ -311,15 +317,22 @@ class RunGarakScan
   end
 
   def evaluation_threshold
-    # Tenant context is set by execute_scan's with_tenant wrapper
-    env_var = target.environment_variables.find_by(env_name: EVALUATION_THRESHOLD_ENV_NAME) ||
-      EnvironmentVariable.global.find_by(env_name: EVALUATION_THRESHOLD_ENV_NAME)
+    with_report_tenant do
+      env_var = target.environment_variables.find_by(env_name: EVALUATION_THRESHOLD_ENV_NAME) ||
+        EnvironmentVariable.global.find_by(env_name: EVALUATION_THRESHOLD_ENV_NAME)
 
-    if env_var&.env_value
-      value = env_var.env_value.to_s.strip
-      raise ArgumentError, "Invalid evaluation threshold: #{value}" unless value.match?(/\A\d+(\.\d+)?\z/)
-      [ "--eval_threshold", value ]
+      if env_var&.env_value
+        value = env_var.env_value.to_s.strip
+        raise ArgumentError, "Invalid evaluation threshold: #{value}" unless value.match?(/\A\d+(\.\d+)?\z/)
+        [ "--eval_threshold", value ]
+      end
     end
+  end
+
+  def with_report_tenant(&block)
+    return yield if ActsAsTenant.current_tenant == report.company
+
+    ActsAsTenant.with_tenant(report.company, &block)
   end
 
   # Returns the list of remaining probes for a regular report, filtering out
@@ -429,19 +442,19 @@ class RunGarakScan
   # previous day (scan crossing a date boundary).
   def persist_existing_logs
     raw_data = report.raw_report_data
-    return unless raw_data
+    return if raw_data.nil? || raw_data.logs_data.present?
 
     log_path = LogPathManager.find_existing_log_for_report(report)
     return unless log_path&.exist?
 
-    raw_data.update(logs_data: File.read(log_path))
+    raw_data.update!(logs_data: File.read(log_path))
     Rails.logger.info("[ScanResume] Report #{report.uuid}: Persisted existing log file to raw_report_data")
   rescue StandardError => e
     Rails.logger.warn("[ScanResume] Report #{report.uuid}: Could not persist logs: #{e.message}")
   end
 
   def read_log_tail
-    log_path = LogPathManager.scan_log_file_for_report(report)
+    log_path = scan_log_path
     return nil unless log_path && File.exist?(log_path.to_s)
 
     content = File.read(log_path.to_s)

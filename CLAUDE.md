@@ -7,6 +7,7 @@ Rails 8 + NVIDIA garak scanner for AI model safety assessments.
 ```bash
 # Dev: docker compose -f docker-compose.dev.yml up|exec scanner /bin/bash
 # Test: RAILS_ENV=test bundle exec rspec | brakeman | rubocop -A
+# Python/JS checks: python3 -m unittest discover -s script/tests | python3 -m py_compile script/db_notifier.py script/run_garak.py | npm run test:js
 # NOTE: Run all rails/bundle commands inside the dev container
 ```
 
@@ -24,6 +25,7 @@ Rails 8 + NVIDIA garak scanner for AI model safety assessments.
 
 ## Pitfalls
 - Always `RAILS_ENV=test` for rspec | Max 5 concurrent scans | `Shellwords.escape` for shell
+- Report execution logs live in `report_debug_logs.logs`; live tails live in `report_debug_logs.tail`; Rails callers should use `Report#logs`
 
 ## HTTP/HTTPS
 Localhost: HTTP allowed | Production: `ASSUME_SSL=true` (behind TLS-terminating proxy)

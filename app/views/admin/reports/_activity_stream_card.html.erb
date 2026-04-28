@@ -1,0 +1,32 @@
+<% payload = local_assigns[:payload] || Reports::DebugStreamPayload.new(report).call %>
+
+<div id="report-activity-stream"
+     class="bg-zinc-900 rounded-lg border border-zinc-700 overflow-hidden"
+     data-controller="activity-stream">
+  <div class="p-4 sm:p-5">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <%= render partial: "admin/reports/activity_stream_summary", locals: { report: report, payload: payload } %>
+
+      <div class="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center lg:pt-0.5">
+        <span class="text-xs font-sans text-contentTertiary">Timeline, JSONL, logs</span>
+        <button type="button"
+                class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm font-sans font-medium text-primary transition-colors hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
+                data-action="click->activity-stream#toggle"
+                data-activity-stream-target="button"
+                aria-controls="report-activity-stream-details"
+                aria-expanded="false">
+          <span data-activity-stream-target="buttonLabel">View activity</span>
+          <span class="icon icon-xs icon-chevron-right text-contentSecondary"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="report-activity-stream-details"
+       class="hidden border-t border-zinc-700"
+       data-activity-stream-target="details">
+    <div tabindex="-1" data-activity-stream-focus-target>
+      <%= render partial: "admin/reports/debug_panel", locals: { report: report, payload: payload } %>
+    </div>
+  </div>
+</div>

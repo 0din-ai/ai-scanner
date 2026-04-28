@@ -46,6 +46,7 @@ See [Database Configuration](../deployment/database) for `DATABASE_URL` format a
 |---|---|---|
 | `EVALUATION_THRESHOLD` | `0.2` | Controls vulnerability detection strictness. Lower = stricter. |
 | `RETENTION_DAYS` | `90` | Days to keep reports before automatic deletion. |
+| `DEBUG_LOG_TAIL_BYTES` | `131072` | Maximum bytes synced into live report execution-log tails. Set to `0` to disable live-tail reads. Blank, non-integer, or negative values fall back to the default. This is read by the Python runner at startup, applies globally, and requires restarting Scanner after changes. |
 
 ### Logging
 

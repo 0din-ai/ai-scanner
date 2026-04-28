@@ -1,0 +1,161 @@
+<% log_data = logs.to_s %>
+<% metadata = local_assigns[:metadata] || {} %>
+<%
+  source = metadata[:source].to_s
+  source_label = case source
+  when "live_tail" then "Live tail"
+  when "full_logs" then "Final logs"
+  else "No log source"
+  end
+%>
+<div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-sans text-contentSecondary">
+  <span><%= source_label %></span>
+  <% if source == "live_tail" && metadata[:offset].present? %>
+    <span>Offset <%= number_with_delimiter(metadata[:offset]) %> bytes</span>
+  <% end %>
+  <% if metadata[:truncated] %>
+    <span>Tail truncated</span>
+  <% end %>
+  <% if metadata[:synced_at].present? %>
+    <span>Updated <%= time_ago_in_words(metadata[:synced_at]) %> ago</span>
+  <% end %>
+</div>
+
+<% if log_data.present? %>
+  <% log_lines = log_data.lines %>
+  <div class="mt-2" data-controller="log-viewer">
+    <div>
+      <div class="bg-zinc-950 p-4 overflow-auto max-h-[60vh] rounded-lg">
+        <div class="font-mono text-xs break-all"
+             data-log-viewer-target="content"
+             data-debug-stream-filter-target="group">
+          <% log_lines.each_with_index do |line, index| %>
+            <%
+              line_class = "py-0.5 px-1 flex items-start hover:bg-zinc-800/50 rounded relative group min-w-0"
+              line_num_class = "text-zinc-500 w-8 inline-block text-right mr-2 select-none opacity-50 group-hover:opacity-100 shrink-0"
+              status_class =
+                if line =~ /\e?\[1m\e?\[91mFAIL\e?\[0m/
+                  "fail-line"
+                elsif line =~ /\e?\[1m\e?\[92mPASS\e?\[0m/
+                  "pass-line"
+                end
+              row_class = [ line_class, "debug-stream-row", "log-line", status_class ].compact.join(" ")
+              row_attrs = {
+                "data-debug-stream-filter-target" => "row",
+                "data-debug-stream-filter-match" => "true",
+                "data-log-viewer-filter-match" => "true"
+              }
+            %>
+
+            <% if line =~ /\e?\[1m\e?\[91mFAIL\e?\[0m/ %>
+              <div class="<%= row_class %>" <%= row_attrs.map { |k, v| "#{k}=\"#{v}\"" }.join(" ").html_safe %>>
+                <span class="<%= line_num_class %>"><%= index + 1 %></span>
+                <%
+                  styled = ERB::Util.html_escape(line)
+                    .gsub(/\e?\[1m\e?\[91mFAIL\e?\[0m/, '<span class="font-bold text-red-400">FAIL</span>')
+                    .gsub(/\[91mfailure rate:.+?\]/, '<span class="text-red-300">\0</span>')
+                    .gsub(/ok on\s+(\d+)\/\s*(\d+)/, 'ok on <span class="text-blue-400">\1</span>/<span class="text-blue-300">\2</span>')
+                    .gsub(/^(.+?)\s+(\w+\.)/, '<span class="text-orange-400">\1</span> \2')
+                %>
+                <span class="flex-1 min-w-0 break-all overflow-hidden"><%= raw(styled) %></span>
+              </div>
+
+            <% elsif line =~ /\e?\[1m\e?\[92mPASS\e?\[0m/ %>
+              <div class="<%= row_class %>" <%= row_attrs.map { |k, v| "#{k}=\"#{v}\"" }.join(" ").html_safe %>>
+                <span class="<%= line_num_class %>"><%= index + 1 %></span>
+                <%
+                  styled = ERB::Util.html_escape(line)
+                    .gsub(/\e?\[1m\e?\[92mPASS\e?\[0m/, '<span class="font-bold text-green-400">PASS</span>')
+                    .gsub(/ok on\s+(\d+)\/\s*(\d+)/, 'ok on <span class="text-blue-400">\1</span>/<span class="text-blue-300">\2</span>')
+                    .gsub(/^(.+?)\s+(\w+\.)/, '<span class="text-orange-400">\1</span> \2')
+                %>
+                <span class="flex-1 min-w-0 break-all overflow-hidden"><%= raw(styled) %></span>
+              </div>
+
+            <% elsif line =~ /^📜|^🕵️|^🦜|^✔️/ %>
+              <div class="<%= row_class %> emoji-line" <%= row_attrs.map { |k, v| "#{k}=\"#{v}\"" }.join(" ").html_safe %>>
+                <span class="<%= line_num_class %>"><%= index + 1 %></span>
+                <%
+                  styled = ERB::Util.html_escape(line)
+                    .gsub(/(\/[\w\/.~-]+)/, '<span class="text-blue-300">\1</span>')
+                    .gsub(/(\d+\.\d+s|\d{2}:\d{2}:\d{2})/, '<span class="text-yellow-300">\1</span>')
+                %>
+                <span class="flex-1 text-blue-400 min-w-0 break-all overflow-hidden"><%= raw(styled) %></span>
+              </div>
+
+            <% elsif line =~ /\d+%\|\s+\|\s+\d+\/\d+/ %>
+              <div class="<%= row_class %> progress-line opacity-60" <%= row_attrs.map { |k, v| "#{k}=\"#{v}\"" }.join(" ").html_safe %>>
+                <span class="<%= line_num_class %>"><%= index + 1 %></span>
+                <span class="flex-1 text-contentTertiary min-w-0 break-all overflow-hidden"><%= line %></span>
+              </div>
+
+            <% elsif line =~ /^detectors\./ %>
+              <div class="<%= row_class %> detector-line" <%= row_attrs.map { |k, v| "#{k}=\"#{v}\"" }.join(" ").html_safe %>>
+                <span class="<%= line_num_class %>"><%= index + 1 %></span>
+                <span class="flex-1 text-white min-w-0 break-all overflow-hidden"><%= raw(ERB::Util.html_escape(line).gsub(/^(detectors\.\w+):/, '<span class="text-yellow-400">\1</span>:')) %></span>
+              </div>
+
+            <% elsif line =~ /^\w+\.\w/ %>
+              <div class="<%= row_class %> module-line" <%= row_attrs.map { |k, v| "#{k}=\"#{v}\"" }.join(" ").html_safe %>>
+                <span class="<%= line_num_class %>"><%= index + 1 %></span>
+                <span class="flex-1 text-contentSecondary min-w-0 break-all overflow-hidden"><%= raw(ERB::Util.html_escape(line).gsub(/^(\w+\.\w+)/, '<span class="text-cyan-400">\1</span>')) %></span>
+              </div>
+
+            <% elsif line.strip.empty? %>
+              <div class="<%= row_class %> h-1" <%= row_attrs.map { |k, v| "#{k}=\"#{v}\"" }.join(" ").html_safe %>>
+                <span class="<%= line_num_class %>"><%= index + 1 %></span>
+              </div>
+
+            <% else %>
+              <div class="<%= row_class %>" <%= row_attrs.map { |k, v| "#{k}=\"#{v}\"" }.join(" ").html_safe %>>
+                <span class="<%= line_num_class %>"><%= index + 1 %></span>
+                <%
+                  styled = ERB::Util.html_escape(line)
+                    .gsub(/(ERROR|WARNING|INFO)/, '<span class="text-red-400">\1</span>')
+                    .gsub(/(https?:\/\/[^\s]+)/, '<span class="text-blue-400 underline">\1</span>')
+                %>
+                <span class="flex-1 text-green-300 min-w-0 break-all overflow-hidden"><%= raw(styled) %></span>
+              </div>
+            <% end %>
+          <% end %>
+
+          <p class="text-contentSecondary font-sans text-sm py-4 text-center"
+             data-debug-stream-filter-target="emptyState"
+             hidden>
+            No matching activity.
+          </p>
+        </div>
+      </div>
+
+      <div class="px-4 py-3 bg-zinc-900 border-t border-zinc-800 rounded-b-lg">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="text-xs font-sans text-contentSecondary">Shown lines:</span>
+            <span class="text-sm font-sans font-semibold text-white bg-zinc-800 px-2 py-0.5 rounded"><%= log_lines.count %></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button"
+                    class="text-xs font-sans text-contentTertiary hover:text-white px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
+                    data-action="click->log-viewer#filter"
+                    data-filter-type="pass">
+              Show PASS
+            </button>
+            <button type="button"
+                    class="text-xs font-sans text-contentTertiary hover:text-white px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
+                    data-action="click->log-viewer#filter"
+                    data-filter-type="fail">
+              Show FAIL
+            </button>
+            <button type="button"
+                    class="text-xs font-sans text-contentTertiary hover:text-white px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
+                    data-action="click->log-viewer#resetFilter">
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+<% else %>
+  <p class="text-contentSecondary font-sans text-sm py-4">No logs available.</p>
+<% end %>

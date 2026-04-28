@@ -36,10 +36,13 @@ graph TD
     SQ --> Garak
 
     subgraph Garak["garak subprocess"]
-        GarakProcess["garak\n(Python, Unix socket)"]
+        GarakProcess["garak\n(Python runner)"]
+        JournalSync["JournalSyncThread\n(JSONL + log tail sync)"]
     end
 
     GarakProcess --> AI
+    GarakProcess --> JournalSync
+    JournalSync --> Primary
     SQ --> SIEM
 ```
 
@@ -51,9 +54,11 @@ Puma and Solid Queue run in the same container process. This simplifies deployme
 
 ### garak as a Subprocess
 
-[NVIDIA garak](https://github.com/NVIDIA/garak) is a Python library. Scanner invokes it as a separate process and communicates via a Unix socket. This isolates Python dependency management from the Rails app and lets garak run with its own environment.
+[NVIDIA garak](https://github.com/NVIDIA/garak) is a Python library. Scanner invokes it as a separate process so Python dependency management stays isolated from the Rails app and garak can run with its own environment.
 
-The `RunGarakScan` service class manages the garak subprocess lifecycle. Scan results are streamed back through the socket and written to the database in real time.
+The `RunGarakScan` service class starts `script/run_garak.py` and passes the report UUID plus execution-log path. The Python runner writes JSONL progress to disk while `JournalSyncThread` syncs progress into `raw_report_data` and bounded execution-log tails into `report_debug_logs`. When processing completes, `Reports::Process` promotes final logs into `report_debug_logs.logs`; `Report#logs` remains a compatibility accessor for existing Rails callers.
+
+Pending, starting, running, and processing report pages show Activity Stream automatically for authenticated users. The mounted lease controller refreshes a short Rails-cache watcher lease, and `BroadcastReportDebugJob` polls watched active reports and publishes Turbo Stream updates when the rendered debug payload changes. Select **View activity** to expand timeline entries, the raw JSONL tail, and execution logs. Terminal reports can still expose final execution logs with the optional `?debug=true` troubleshooting fallback.
 
 ### Multi-Database PostgreSQL
 

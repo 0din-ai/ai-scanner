@@ -98,6 +98,81 @@ RSpec.describe CheckStaleReportsJob, type: :job do
         expect(report.logs).not_to start_with("\n")
       end
 
+      it "leaves existing logs intact when the live tail is blank" do
+        stale_time = 3.minutes.ago
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, logs: "Previous log entry", retry_count: 0)
+        report.report_debug_log.update!(tail: "")
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("interrupted")
+        expect(report.logs).to start_with("Previous log entry")
+        expect(report.logs).to include("Interrupted:")
+      end
+
+      it "promotes live tail before marking stale reports interrupted when logs are blank" do
+        stale_time = 3.minutes.ago
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time, logs: nil, retry_count: 0)
+        report.report_debug_log.update!(tail: "garak line 1\ngarak line 2\n")
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("interrupted")
+        expect(report.logs).to start_with("garak line 1\ngarak line 2")
+        expect(report.logs.index("garak line 2")).to be < report.logs.index("Interrupted:")
+      end
+
+      it "appends live tail when the same tail text appears earlier but not at the end" do
+        stale_time = 3.minutes.ago
+        tail = "repeated garak output\nretry detail\n"
+        existing_logs = "previous attempt\n#{tail}newer persisted line"
+        report = create(
+          :report,
+          target: target,
+          scan: scan,
+          status: :running,
+          pid: 12345,
+          heartbeat_at: stale_time,
+          logs: existing_logs,
+          retry_count: 0
+        )
+        report.report_debug_log.update!(tail: tail)
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("interrupted")
+        expect(report.logs.scan(tail).size).to eq(2)
+        expect(report.logs).to include("newer persisted line\n#{tail}")
+        expect(report.logs).to include("Interrupted:")
+      end
+
+      it "does not duplicate live tail when logs already end with it" do
+        stale_time = 3.minutes.ago
+        tail = "garak line 1\ngarak line 2\n"
+        existing_logs = "previous log\n#{tail.rstrip}"
+        report = create(
+          :report,
+          target: target,
+          scan: scan,
+          status: :running,
+          pid: 12345,
+          heartbeat_at: stale_time,
+          logs: existing_logs,
+          retry_count: 0
+        )
+        report.report_debug_log.update!(tail: tail)
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("interrupted")
+        expect(report.logs.scan(tail.rstrip).size).to eq(1)
+        expect(report.logs).to include("Interrupted:")
+      end
+
       it "skips report if status changed during processing" do
         stale_time = 3.minutes.ago
         report = create(:report, target: target, scan: scan, status: :running, pid: 12345, heartbeat_at: stale_time)
@@ -137,6 +212,19 @@ RSpec.describe CheckStaleReportsJob, type: :job do
         report.reload
         expect(report.status).to eq("failed")
         expect(report.logs).to include("after 3 retry attempts")
+      end
+
+      it "promotes live tail before marking never-started reports failed" do
+        old_time = 3.minutes.ago
+        report = create(:report, target: target, scan: scan, status: :running, heartbeat_at: nil, updated_at: old_time, retry_count: 3)
+        create(:report_debug_log, report: report, tail: "startup stderr\n")
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("failed")
+        expect(report.logs).to include("startup stderr")
+        expect(report.logs.index("startup stderr")).to be < report.logs.index("after 3 retry attempts")
       end
 
       it "does not affect recent reports with nil heartbeat" do
@@ -212,6 +300,19 @@ RSpec.describe CheckStaleReportsJob, type: :job do
         report.reload
         expect(report.status).to eq("failed")
         expect(report.logs).to include("after 3 retry attempts")
+      end
+
+      it "promotes live tail before marking orphaned reports interrupted" do
+        report = create(:report, target: target, scan: scan, status: :running,
+                        pid: nil, heartbeat_at: 1.minute.ago, updated_at: 3.minutes.ago, retry_count: 0)
+        create(:report_debug_log, report: report, tail: "orphan stderr\n")
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("interrupted")
+        expect(report.logs).to include("orphan stderr")
+        expect(report.logs.index("orphan stderr")).to be < report.logs.index("Interrupted:")
       end
 
       it "does not affect running reports with a pid still set" do
@@ -310,6 +411,33 @@ RSpec.describe CheckStaleReportsJob, type: :job do
         expect(report.logs).to include("Retry 2:")
       end
 
+      it "does not append stale live tail when retrying a stuck starting report" do
+        stuck_time = 3.minutes.ago
+        report = create(
+          :report,
+          target: target,
+          scan: scan,
+          status: :starting,
+          logs: "previous retry audit",
+          retry_count: 0,
+          updated_at: stuck_time
+        )
+        debug_log = report.report_debug_log
+        debug_log.update!(tail: "stale previous tail\n", tail_offset: 512, tail_digest: "stale")
+
+        described_class.new.perform
+
+        report.reload
+        debug_log.reload
+        expect(report.status).to eq("pending")
+        expect(report.logs).to include("previous retry audit")
+        expect(report.logs).to include("Retry 1:")
+        expect(report.logs).not_to include("stale previous tail")
+        expect(debug_log.tail).to be_nil
+        expect(debug_log.tail_offset).to eq(0)
+        expect(debug_log.tail_digest).to be_nil
+      end
+
       it "marks as failed after max retries" do
         stuck_time = 3.minutes.ago
         report = create(:report, target: target, scan: scan, status: :starting, retry_count: 3, updated_at: stuck_time)
@@ -318,6 +446,19 @@ RSpec.describe CheckStaleReportsJob, type: :job do
 
         report.reload
         expect(report.status).to eq("failed")
+        expect(report.logs).to include("Failed after 3 start attempts")
+      end
+
+      it "does not append stale live tail before marking start-timeout reports failed" do
+        stuck_time = 3.minutes.ago
+        report = create(:report, target: target, scan: scan, status: :starting, retry_count: 3, updated_at: stuck_time)
+        create(:report_debug_log, report: report, tail: "start timeout stderr\n")
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("failed")
+        expect(report.logs).not_to include("start timeout stderr")
         expect(report.logs).to include("Failed after 3 start attempts")
       end
 

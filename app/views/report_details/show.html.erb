@@ -419,9 +419,10 @@
     <% end %>
   </div>
 
-  <% if params[:debug] == 'true' && !pdf_mode %>
+  <% if show_activity_stream_for_report?(@report, params: params, user: current_user, pdf_mode: pdf_mode) %>
     <div class="<%= pdf_mode ? 'px-6 py-4' : 'px-8 py-6' %>">
-      <%= render partial: 'admin/reports/logs_section', locals: { report: @report } %>
+      <%= render partial: 'admin/reports/logs_section',
+                 locals: { report: @report, lease_url: refresh_debug_lease_report_detail_path(@report) } %>
     </div>
   <% end %>
 </div>

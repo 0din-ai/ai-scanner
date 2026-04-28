@@ -222,15 +222,18 @@ class CheckStaleReportsJob < ApplicationJob
       "moving to pending for retry (attempt #{report.retry_count + 1}/#{MAX_START_RETRIES})"
     )
 
-    report.update!(
-      status: :pending,
-      retry_count: report.retry_count + 1,
-      last_retry_at: Time.current,
-      logs: append_log(
-        report.logs,
-        "Retry #{report.retry_count + 1}: Previous start attempt timed out after #{STARTING_TIMEOUT.inspect}"
+    Report.transaction do
+      report.update!(
+        status: :pending,
+        retry_count: report.retry_count + 1,
+        last_retry_at: Time.current,
+        logs: append_log(
+          report.logs,
+          "Retry #{report.retry_count + 1}: Previous start attempt timed out after #{STARTING_TIMEOUT.inspect}"
+        )
       )
-    )
+      ReportDebugLog.clear_tail_for_report(report.id)
+    end
   end
 
   # Mark report as interrupted for automatic retry by RetryInterruptedReportsJob.
@@ -243,7 +246,7 @@ class CheckStaleReportsJob < ApplicationJob
 
     report.update!(
       status: :interrupted,
-      logs: append_log(report.logs, "Interrupted: #{reason}")
+      logs: append_log(logs_with_live_tail(report), "Interrupted: #{reason}")
     )
   end
 
@@ -252,8 +255,29 @@ class CheckStaleReportsJob < ApplicationJob
 
     report.update!(
       status: :failed,
-      logs: append_log(report.logs, reason)
+      logs: append_log(logs_with_live_tail(report), reason)
     )
+  end
+
+  def logs_with_live_tail(report)
+    logs = report.logs
+    tail = current_live_tail(report)
+
+    return logs if tail.blank?
+    return tail if logs.blank?
+    return logs if logs_end_with_tail?(logs, tail)
+
+    "#{logs}\n#{tail}"
+  end
+
+  def logs_end_with_tail?(logs, tail)
+    logs.to_s.rstrip.end_with?(tail.to_s.rstrip)
+  end
+
+  def current_live_tail(report)
+    return nil unless report.running?
+
+    report.report_debug_log&.tail
   end
 
   def append_log(existing_logs, message)

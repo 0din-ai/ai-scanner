@@ -1,140 +1,18 @@
-<% if report.logs.present? %>
-  <div class="bg-zinc-900 rounded-lg border border-zinc-700 overflow-hidden">
-    <button
-      class="w-full px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-zinc-800/50 transition-colors duration-200"
-      data-action="click->report-redesigned#toggleLogs">
-      <h2 class="text-xl font-sans font-semibold text-primary tracking-wide">
-        Execution Logs
-      </h2>
-      <span
-        data-report-redesigned-target="logsChevron"
-        class="icon icon-sm icon-chevron-down text-zinc-400 transition-transform duration-200 rotate-180"></span>
-    </button>
+<% lease_url = local_assigns[:lease_url] %>
+<% active_stream = activity_stream_active_status_for_report?(report) %>
+<% payload = Reports::DebugStreamPayload.new(report).call %>
+<% lease_data = if lease_url.present? && active_stream
+  {
+    controller: "debug-stream-lease",
+    debug_stream_lease_url_value: lease_url,
+    debug_stream_lease_interval_value: 30_000
+  }
+end %>
 
-    <div data-report-redesigned-target="logsContent" class="px-4 pb-4">
-      <div class="relative" data-controller="log-viewer">
-        <div class="absolute top-0 right-0 mt-4 mr-4 z-10">
-          <input type="text"
-                 placeholder="Search logs..."
-                 class="px-3 py-1.5 text-xs bg-zinc-800 text-white border border-zinc-600 rounded-lg w-48 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
-                 data-log-viewer-target="search"
-                 data-action="input->log-viewer#search" />
-        </div>
+<%= tag.div data: lease_data do %>
+  <% if active_stream %>
+    <%= turbo_stream_from Reports::DebugWatcher.stream_name(report) %>
+  <% end %>
 
-        <div class="bg-zinc-950 p-4 pt-14 overflow-auto max-h-[60vh] rounded-lg mt-3">
-          <div class="font-mono text-xs break-all" data-log-viewer-target="content">
-          <% report.logs.lines.each_with_index do |line, index| %>
-            <%
-              line_class = "py-0.5 px-1 flex items-start hover:bg-zinc-800/50 rounded relative group min-w-0"
-              line_num_class = "text-zinc-500 w-8 inline-block text-right mr-2 select-none opacity-50 group-hover:opacity-100 shrink-0"
-            %>
-
-            <% if line =~ /\[1m\[91mFAIL\[0m/ %>
-              <div class="<%= line_class %> log-line fail-line">
-                <span class="<%= line_num_class %>"><%= index + 1 %></span>
-                <%
-                  styled_line = ERB::Util.html_escape(line)
-                    .gsub(/\[1m\[91mFAIL\[0m/, '<span class="font-bold text-red-400">FAIL</span>')
-                    .gsub(/\[91mfailure rate:.+?\]/, '<span class="text-red-300">\0</span>')
-                    .gsub(/ok on\s+(\d+)\/\s*(\d+)/, 'ok on <span class="text-blue-400">\1</span>/<span class="text-blue-300">\2</span>')
-                    .gsub(/^(.+?)\s+(\w+\.)/, '<span class="text-orange-400">\1</span> \2')
-                %>
-                <span class="flex-1 min-w-0 break-all overflow-hidden"><%= raw(styled_line) %></span>
-              </div>
-
-            <% elsif line =~ /\[1m\[92mPASS\[0m/ %>
-              <div class="<%= line_class %> log-line pass-line">
-                <span class="<%= line_num_class %>"><%= index + 1 %></span>
-                <%
-                  styled_line = ERB::Util.html_escape(line)
-                    .gsub(/\[1m\[92mPASS\[0m/, '<span class="font-bold text-green-400">PASS</span>')
-                    .gsub(/ok on\s+(\d+)\/\s*(\d+)/, 'ok on <span class="text-blue-400">\1</span>/<span class="text-blue-300">\2</span>')
-                    .gsub(/^(.+?)\s+(\w+\.)/, '<span class="text-orange-400">\1</span> \2')
-                %>
-                <span class="flex-1 min-w-0 break-all overflow-hidden"><%= raw(styled_line) %></span>
-              </div>
-
-            <% elsif line =~ /^📜|^🕵️|^🦜|^✔️/ %>
-              <div class="<%= line_class %> log-line emoji-line">
-                <span class="<%= line_num_class %>"><%= index + 1 %></span>
-                <%
-                  styled_line = ERB::Util.html_escape(line)
-                    .gsub(/(\/[\w\/.~-]+)/, '<span class="text-blue-300">\1</span>')
-                    .gsub(/(\d+\.\d+s|\d{2}:\d{2}:\d{2})/, '<span class="text-yellow-300">\1</span>')
-                %>
-                <span class="flex-1 text-blue-400 min-w-0 break-all overflow-hidden"><%= raw(styled_line) %></span>
-              </div>
-
-            <% elsif line =~ /\d+%\|\s+\|\s+\d+\/\d+/ %>
-              <div class="<%= line_class %> log-line progress-line opacity-60">
-                <span class="<%= line_num_class %>"><%= index + 1 %></span>
-                <span class="flex-1 text-contentTertiary min-w-0 break-all overflow-hidden"><%= line %></span>
-              </div>
-
-            <% elsif line =~ /^\w+\.\w/ %>
-              <div class="<%= line_class %> log-line module-line">
-                <span class="<%= line_num_class %>"><%= index + 1 %></span>
-                <span class="flex-1 text-contentSecondary min-w-0 break-all overflow-hidden"><%= raw(ERB::Util.html_escape(line).gsub(/^(\w+\.\w+)/, '<span class="text-cyan-400">\1</span>')) %></span>
-              </div>
-
-            <% elsif line =~ /^detectors\./ %>
-              <div class="<%= line_class %> log-line detector-line">
-                <span class="<%= line_num_class %>"><%= index + 1 %></span>
-                <span class="flex-1 text-white min-w-0 break-all overflow-hidden"><%= raw(ERB::Util.html_escape(line).gsub(/^(detectors\.\w+):/, '<span class="text-yellow-400">\1</span>:')) %></span>
-              </div>
-
-            <% elsif line.strip.empty? %>
-              <div class="h-1">
-                <span class="<%= line_num_class %>"><%= index + 1 %></span>
-              </div>
-
-            <% else %>
-              <div class="<%= line_class %> log-line">
-                <span class="<%= line_num_class %>"><%= index + 1 %></span>
-                <%
-                  styled_line = ERB::Util.html_escape(line)
-                    .gsub(/(ERROR|WARNING|INFO)/, '<span class="text-red-400">\1</span>')
-                    .gsub(/(https?:\/\/[^\s]+)/, '<span class="text-blue-400 underline">\1</span>')
-                %>
-                <span class="flex-1 text-green-300 min-w-0 break-all overflow-hidden"><%= raw(styled_line) %></span>
-              </div>
-            <% end %>
-          <% end %>
-        </div>
-      </div>
-
-        <div class="px-4 py-3 bg-zinc-900 border-t border-zinc-800 rounded-b-lg">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center space-x-2">
-              <span class="text-xs font-sans text-contentSecondary">Total lines:</span>
-              <span class="text-sm font-sans font-semibold text-white bg-zinc-800 px-2 py-0.5 rounded"><%= report.logs.lines.count %></span>
-            </div>
-            <div class="flex items-center gap-2">
-              <button type="button"
-                      class="text-xs font-sans text-contentTertiary hover:text-white px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
-                      data-action="click->log-viewer#filter"
-                      data-filter-type="pass">
-                Show PASS
-              </button>
-              <button type="button"
-                      class="text-xs font-sans text-contentTertiary hover:text-white px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
-                      data-action="click->log-viewer#filter"
-                      data-filter-type="fail">
-                Show FAIL
-              </button>
-              <button type="button"
-                      class="text-xs font-sans text-contentTertiary hover:text-white px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
-                      data-action="click->log-viewer#resetFilter">
-                Reset
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-<% else %>
-  <div class="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
-    <p class="text-contentSecondary font-sans text-sm">No logs available</p>
-  </div>
+  <%= render partial: "admin/reports/activity_stream_card", locals: { report: report, payload: payload } %>
 <% end %>

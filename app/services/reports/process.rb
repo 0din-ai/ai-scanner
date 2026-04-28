@@ -32,19 +32,35 @@ module Reports
 
     def process_from_database
       @raw_data.mark_processing!
-      process_jsonl_data(@raw_data.jsonl_data)
+      report.update!(status: :processing)
 
-      report.logs = @raw_data.logs_data if @raw_data.logs_data.present?
-      report.save
-      save_detector_results
-      update_target_token_rate
+      Report.transaction do
+        process_jsonl_data(@raw_data.jsonl_data, mark_processing: false)
 
-      @raw_data.destroy!
+        persist_final_logs
+        save_detector_results
+        update_target_token_rate
+
+        @raw_data.destroy!
+        report.save!
+      end
       Rails.logger.info("Report #{id}: Processed from database, raw_report_data deleted")
     end
 
-    def process_jsonl_data(jsonl_string)
-      report.update(status: :processing)
+    def persist_final_logs
+      final_logs = @raw_data.logs_data.presence || report.report_debug_log&.tail.presence
+      return if final_logs.nil? && report.report_debug_log.nil?
+      return if final_logs.nil? && preserve_existing_logs_without_final_logs?
+
+      report.logs = final_logs
+    end
+
+    def preserve_existing_logs_without_final_logs?
+      report.retry_count.to_i.positive? && report.logs.present?
+    end
+
+    def process_jsonl_data(jsonl_string, mark_processing: true)
+      report.update!(status: :processing) if mark_processing
 
       processed = false
       line_number = 0

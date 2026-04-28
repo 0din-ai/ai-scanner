@@ -37,6 +37,10 @@ While a scan runs, the progress view shows:
 
 You can navigate away — the scan continues in the background. Return to the scan page to check status.
 
+### Activity Stream
+
+Authenticated users see Activity Stream automatically on pending, starting, running, and processing report pages while troubleshooting a scan. Select **View activity** to expand timeline entries, the raw JSONL tail, and execution logs. Running scans show a database-backed live tail with offset, truncation, and last-updated metadata. Terminal reports can use the optional `?debug=true` fallback to show final execution logs. PDF rendering does not include Activity Stream.
+
 ## Parallel Attempts
 
 Each probe runs multiple attempts in parallel to improve coverage. The default is **16 parallel attempts**.

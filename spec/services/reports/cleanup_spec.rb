@@ -22,6 +22,14 @@ RSpec.describe Reports::Cleanup do
       it 'deletes any stale raw_report_data' do
         expect { service.call }.to change { RawReportData.count }.by(-1)
       end
+
+      it 'preserves shared final logs' do
+        debug_log = create(:report_debug_log, report: report, logs: 'Final execution logs')
+
+        service.call
+
+        expect(debug_log.reload.logs).to eq('Final execution logs')
+      end
     end
 
     context 'when raw_report_data does not exist' do

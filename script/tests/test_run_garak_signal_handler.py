@@ -18,6 +18,7 @@ import signal
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
@@ -34,6 +35,7 @@ _mock_db.notify_report_ready = MagicMock(return_value=True)
 _mock_db.notify_report_ready_from_synced = MagicMock(return_value=True)
 _mock_db.notify_report_stopped = MagicMock(return_value=True)
 _mock_db.load_existing_jsonl_prefix = MagicMock(return_value="")
+_mock_db.get_log_file_path = MagicMock(return_value=Path("/tmp/fake_reports/report.log"))
 _mock_db.HeartbeatThread = MagicMock
 _mock_db.JournalSyncThread = MagicMock
 _mock_db.REPORTS_PATH = "/tmp/fake_reports"
@@ -42,9 +44,11 @@ _mock_db.REPORTS_PATH = "/tmp/fake_reports"
 _mock_psycopg2 = ModuleType("psycopg2")
 _mock_psycopg2.OperationalError = Exception
 _mock_psycopg2.pool = ModuleType("psycopg2.pool")
+_mock_psycopg2.pool.ThreadedConnectionPool = MagicMock
 sys.modules["psycopg2"] = _mock_psycopg2
 sys.modules["psycopg2.pool"] = _mock_psycopg2.pool
 
+_original_db_notifier = sys.modules.get("db_notifier")
 sys.modules["db_notifier"] = _mock_db
 
 # Add script/ to sys.path so `import run_garak` resolves
@@ -55,7 +59,13 @@ sys.path.insert(0, SCRIPT_DIR)
 _orig_sigterm = signal.getsignal(signal.SIGTERM)
 _orig_sigint = signal.getsignal(signal.SIGINT)
 
-import run_garak  # noqa: E402  (registers global SIGTERM/SIGINT handlers)
+try:
+    import run_garak  # noqa: E402  (registers global SIGTERM/SIGINT handlers)
+finally:
+    if _original_db_notifier is None:
+        sys.modules.pop("db_notifier", None)
+    else:
+        sys.modules["db_notifier"] = _original_db_notifier
 
 
 class TestParentSignalHandler(unittest.TestCase):

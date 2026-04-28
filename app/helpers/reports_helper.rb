@@ -1,4 +1,18 @@
 module ReportsHelper
+  def activity_stream_active_status_for_report?(report)
+    return false if report.blank?
+
+    (Report::DEBUG_BROADCAST_ACTIVE_STATUSES + %w[pending]).uniq.include?(report.status.to_s)
+  end
+
+  def show_activity_stream_for_report?(report, params:, user:, pdf_mode: false)
+    return false if pdf_mode
+    return false if user.blank?
+    return false if report.blank?
+
+    activity_stream_active_status_for_report?(report) || debug_param_enabled?(params)
+  end
+
   # Get CSS classes for success rate coloring
   def success_rate_classes(rate)
     case rate
@@ -75,5 +89,14 @@ module ReportsHelper
   def format_token_count(input_tokens, output_tokens)
     return nil if input_tokens.to_i == 0 && output_tokens.to_i == 0
     "#{number_with_delimiter(input_tokens)} in / #{number_with_delimiter(output_tokens)} out"
+  end
+
+  private
+
+  def debug_param_enabled?(params)
+    value = params[:debug] if params.respond_to?(:[])
+    value ||= params["debug"] if params.respond_to?(:[])
+
+    value.to_s == "true"
   end
 end

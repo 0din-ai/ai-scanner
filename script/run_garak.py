@@ -40,6 +40,7 @@ from db_notifier import (
     notify_report_ready_from_synced as db_notify_ready_from_synced,
     notify_report_stopped as db_notify_stopped,
     load_existing_jsonl_prefix,
+    get_log_file_path,
     HeartbeatThread,
     JournalSyncThread,
     REPORTS_PATH,
@@ -211,7 +212,13 @@ def main():
 
             # Start JournalSyncThread to periodically persist JSONL to database
             jsonl_path = REPORTS_PATH / f"{report_uuid}.report.jsonl"
-            journal_sync = JournalSyncThread(report_uuid, jsonl_path, prefix=prefix)
+            log_path = get_log_file_path(report_uuid)
+            journal_sync = JournalSyncThread(
+                report_uuid,
+                jsonl_path,
+                prefix=prefix,
+                log_path=log_path,
+            )
             current_journal_sync = journal_sync
             journal_sync.start()
 

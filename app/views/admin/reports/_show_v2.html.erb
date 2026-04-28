@@ -33,8 +33,9 @@
 
       <%= render partial: 'admin/reports/statistics_section', locals: { report: report } %>
 
-      <% if params[:debug] == 'true' %>
-        <%= render partial: 'admin/reports/logs_section', locals: { report: report } %>
+      <% if show_activity_stream_for_report?(report, params: params, user: current_user) %>
+        <%= render partial: 'admin/reports/logs_section',
+                   locals: { report: report, lease_url: refresh_debug_lease_report_path(report) } %>
       <% end %>
     </div>
   </div>

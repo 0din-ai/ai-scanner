@@ -165,6 +165,21 @@ RSpec.describe StartPendingScansJob, type: :job do
         expect(report.status).to eq("starting")
       end
 
+      it "clears stale live tail when claiming a retry for starting" do
+        report = create(:report, target: target, scan: scan, status: :pending, retry_count: 1)
+        debug_log = create(:report_debug_log, report: report, tail: "previous attempt tail\n", tail_offset: 128, tail_digest: "old-tail", tail_synced_at: 1.minute.ago, tail_truncated: true)
+
+        described_class.new.perform
+
+        debug_log.reload
+        expect(report.reload.status).to eq("starting")
+        expect(debug_log.tail).to be_nil
+        expect(debug_log.tail_offset).to eq(0)
+        expect(debug_log.tail_digest).to be_nil
+        expect(debug_log.tail_synced_at).to be_nil
+        expect(debug_log.tail_truncated).to be(false)
+      end
+
       it "does not start scan if claim fails (status changed)" do
         report = create(:report, target: target, scan: scan, status: :pending)
 

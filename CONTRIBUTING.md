@@ -28,6 +28,9 @@ Run tests locally before opening a PR:
 ```bash
 # Inside the dev container:
 RAILS_ENV=test bundle exec rspec   # Always use RAILS_ENV=test
+python3 -m unittest discover -s script/tests
+python3 -m py_compile script/db_notifier.py script/run_garak.py
+npm run test:js
 rubocop -A                          # Linter with auto-fix
 brakeman                            # Security scanner
 ```
@@ -95,7 +98,7 @@ docs: update contributing guide
 
 - Add unit tests for model, service, and job changes
 - Stub garak execution in tests: `allow_any_instance_of(RunGarakScan).to receive(:call)`
-- Mock Unix socket communication
+- Mock `JournalSyncThread` and database notifier behavior for garak integration paths
 - Run rubocop and fix warnings before opening a PR
 
 ## Architecture
