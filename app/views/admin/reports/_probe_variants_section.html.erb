@@ -2,7 +2,7 @@
   probe_result = local_assigns[:probe_result]
   report = local_assigns[:report]
   index = local_assigns[:index] || 0
-  preloaded = local_assigns[:preloaded]
+  preloaded = local_assigns[:preloaded] || { attack_counts: {}, success_rates: {}, subindustry_maps: {} }
 
   variant_attacks = preloaded[:attack_counts][probe_result.probe_id] || { total: 0, passed: 0 }
   variant_success_rate = preloaded[:success_rates][probe_result.probe_id] || 0

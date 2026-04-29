@@ -57,6 +57,12 @@ RSpec.describe ReportPolicy do
       end
     end
 
+    describe '#probe_attempts?' do
+      it 'allows viewing probe attempt rows' do
+        expect(subject.probe_attempts?).to be true
+      end
+    end
+
     describe '#batch_stop?' do
       it 'allows batch stopping reports' do
         expect(subject.batch_stop?).to be true

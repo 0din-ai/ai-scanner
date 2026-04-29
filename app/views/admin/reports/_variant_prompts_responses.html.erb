@@ -2,13 +2,9 @@
   probe_result = local_assigns[:probe_result]
   report = local_assigns[:report]
   probe_index = local_assigns[:probe_index] || 0
-  preloaded = local_assigns[:preloaded]
 
-  all_attempts = if preloaded
-    preloaded[:all_attempts][probe_result.probe_id] || []
-  else
+  all_attempts = local_assigns[:all_attempts] ||
     (probe_result.attempts || []).map { |a| { attempt: a, variant_industry: nil } }
-  end
 %>
 
 <div class="flex flex-col gap-4 w-full font-sans">

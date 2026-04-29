@@ -21,6 +21,10 @@ class ReportPolicy < TenantScopedPolicy
     true
   end
 
+  def probe_attempts?
+    true
+  end
+
   def batch_stop?
     true
   end

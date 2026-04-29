@@ -58,7 +58,7 @@
 
 <div class="block" data-report-redesigned-target="probesContent">
   <%
-    probe_results = report.probe_results.to_a
+    probe_results = local_assigns[:probe_results] || report.probe_results.to_a
   %>
   <% if probe_results.any? %>
     <%
@@ -77,8 +77,8 @@
       # Preload expensive variant display data once for all probe cards
       all_industries = show_variants ? report.all_selected_variant_industries_grouped : nil
 
-      # Batch-preload all variant per-probe data (attack counts, success rates, subindustry maps, attempts)
-      preloaded = has_variant_data ? report.preloaded_variant_data : nil
+      # Batch-preload variant summary data only; attempts are loaded per probe on demand.
+      preloaded = has_variant_data ? report.preloaded_variant_summary_data(probe_results) : nil
     %>
     <div class="space-y-4">
       <% probe_results.each_with_index do |probe_result, index| %>

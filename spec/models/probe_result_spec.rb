@@ -87,6 +87,46 @@ RSpec.describe ProbeResult, type: :model do
     end
   end
 
+  describe '.for_report_probe_cards' do
+    it 'loads card columns and omits attempt payloads' do
+      probe_result = create(:probe_result,
+                            attempts: [ { "prompt" => "large prompt", "outputs" => [ "large response" ] } ],
+                            input_tokens: 12,
+                            output_tokens: 34,
+                            max_score: 56,
+                            passed: 7,
+                            total: 8,
+                            any_detector_passed: true)
+
+      result = probe_result.report.probe_results.for_report_probe_cards.first
+
+      expect(result).to have_attributes(
+        id: probe_result.id,
+        report_id: probe_result.report_id,
+        probe_id: probe_result.probe_id,
+        detector_id: probe_result.detector_id,
+        threat_variant_id: probe_result.threat_variant_id,
+        passed: 7,
+        total: 8,
+        max_score: 56,
+        input_tokens: 12,
+        output_tokens: 34,
+        any_detector_passed: true
+      )
+      expect(result.probe).to eq(probe_result.probe)
+      expect(result.detector).to eq(probe_result.detector)
+      expect(result).not_to have_attribute(:attempts)
+    end
+
+    it 'returns readonly records' do
+      probe_result = create(:probe_result)
+
+      result = probe_result.report.probe_results.for_report_probe_cards.first
+
+      expect(result).to be_readonly
+    end
+  end
+
   describe 'counter cache callbacks' do
     let(:probe) { create(:probe) }
     let(:target) { create(:target) }

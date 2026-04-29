@@ -1,10 +1,26 @@
 # frozen_string_literal: true
 
 class ProbeResult < ApplicationRecord
+  REPORT_PROBE_CARD_COLUMNS = %i[
+    id
+    report_id
+    probe_id
+    detector_id
+    threat_variant_id
+    passed
+    total
+    max_score
+    input_tokens
+    output_tokens
+    any_detector_passed
+  ].freeze
+
   belongs_to :report
   belongs_to :probe
   belongs_to :detector
   belongs_to :threat_variant, optional: true
+
+  scope :for_report_probe_cards, -> { select(*REPORT_PROBE_CARD_COLUMNS).includes(:probe, :detector).readonly }
 
   validates :report_id, uniqueness: { scope: [ :probe_id, :threat_variant_id ] }
 

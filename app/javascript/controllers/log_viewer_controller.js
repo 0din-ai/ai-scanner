@@ -69,9 +69,6 @@ export default class extends Controller {
   }
 
   get lines() {
-    if (!this._cachedLines || !this.contentTarget.contains(this._cachedLines[0])) {
-      this._cachedLines = Array.from(this.contentTarget.querySelectorAll('.log-line'))
-    }
-    return this._cachedLines
+    return Array.from(this.contentTarget.querySelectorAll('.log-line'))
   }
 }

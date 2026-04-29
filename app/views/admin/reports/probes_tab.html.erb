@@ -1,3 +1,6 @@
 <%= turbo_frame_tag "report-probes-tab" do %>
-  <%= render partial: 'admin/reports/probe_results_section', locals: { report: @report } %>
+  <%= render partial: 'admin/reports/probe_results_section', locals: {
+    report: @report,
+    probe_results: @probe_results
+  } %>
 <% end %>

@@ -124,6 +124,48 @@ function loadLogViewerController() {
   return { ControllerClass }
 }
 
+function loadReportRedesignedController() {
+  const source = readFileSync(
+    new URL("../../app/javascript/controllers/report_redesigned_controller.js", import.meta.url),
+    "utf8"
+  )
+
+  const transformed = source
+    .replace(/^import .*?\n/gm, "")
+    .replace(
+      "export default class extends Controller",
+      "class ReportRedesignedController extends Controller"
+    )
+
+  const context = {
+    Controller: class {},
+    colors: {},
+    isDark() { return true },
+    disposeCharts() {},
+    resizeCharts() {},
+    BRAND_FONT: "Inter",
+    console: { error() {} },
+    document: {
+      querySelector() { return null },
+      createDocumentFragment() {
+        return { appendChild() {} }
+      }
+    },
+    window: {
+      addEventListener() {},
+      removeEventListener() {}
+    },
+    setTimeout(callback) { callback() }
+  }
+
+  const ControllerClass = vm.runInNewContext(
+    `${transformed}\nReportRedesignedController`,
+    context
+  )
+
+  return { ControllerClass }
+}
+
 function classListWith(...initialClasses) {
   const classes = new Set(initialClasses)
 
@@ -543,6 +585,154 @@ function testDebugStreamFilterController() {
   assert.equal(filterRows[1].style.display, "", "rows hidden by query should be visible after clearQuery")
 }
 
+function testReportRedesignedController() {
+  const { ControllerClass } = loadReportRedesignedController()
+  const events = []
+  const callbacks = {}
+  const turboFrame = {
+    dataset: { probeAttemptsUrl: "/reports/1/probe_attempts?probe_result_id=2" },
+    src: "",
+    innerHTML: "",
+    addEventListener(type, callback, options) {
+      events.push({ type, options })
+      callbacks[type] = callback
+    },
+    removeAttribute(name) {
+      if (name === "src") this.src = ""
+    }
+  }
+  const attemptsContent = {
+    classList: classListWith("hidden"),
+    querySelector(selector) {
+      return selector === "turbo-frame" ? turboFrame : null
+    }
+  }
+  const attemptsChevron = { style: {} }
+  const controller = new ControllerClass()
+
+  controller.element = {
+    querySelector(selector) {
+      if (selector.includes("attemptsContent")) return attemptsContent
+      if (selector.includes("attemptsChevron")) return attemptsChevron
+      return null
+    }
+  }
+
+  controller.toggleProbeAttempts({
+    stopPropagation() {},
+    currentTarget: { dataset: { probeResultId: "2" } }
+  })
+
+  assert.equal(attemptsContent.classList.contains("hidden"), false)
+  assert.equal(attemptsChevron.style.transform, "rotate(180deg)")
+  assert.equal(turboFrame.src, "/reports/1/probe_attempts?probe_result_id=2")
+  assert.deepEqual(events.map((event) => event.type), [
+    "turbo:frame-missing",
+    "turbo:fetch-request-error"
+  ])
+
+  let prevented = false
+  callbacks["turbo:fetch-request-error"]({
+    preventDefault() { prevented = true }
+  })
+
+  assert.equal(prevented, true)
+  assert.equal(turboFrame.src, "")
+  assert.equal(turboFrame.innerHTML.includes("Failed to load attempts"), true)
+
+  controller.toggleProbeAttempts({
+    stopPropagation() {},
+    currentTarget: { dataset: { probeResultId: "2" } }
+  })
+
+  assert.equal(attemptsContent.classList.contains("hidden"), true)
+  assert.equal(attemptsChevron.style.transform, "rotate(0deg)")
+
+  controller.toggleProbeAttempts({
+    stopPropagation() {},
+    currentTarget: { dataset: { probeResultId: "2" } }
+  })
+
+  assert.equal(attemptsContent.classList.contains("hidden"), false)
+  assert.equal(turboFrame.src, "/reports/1/probe_attempts?probe_result_id=2")
+}
+
+function testReportRedesignedControllerListenerCleanup() {
+  const { ControllerClass } = loadReportRedesignedController()
+  const addCalls = []
+  const removeCalls = []
+  const turboFrame = {
+    dataset: { probeAttemptsUrl: "/reports/1/probe_attempts?probe_result_id=2" },
+    src: "",
+    innerHTML: "",
+    addEventListener(type, callback, options) {
+      addCalls.push({ type, callback, options })
+    },
+    removeEventListener(type, callback) {
+      removeCalls.push({ type, callback })
+    },
+    removeAttribute(name) {
+      if (name === "src") this.src = ""
+    }
+  }
+  const attemptsContent = {
+    classList: classListWith("hidden"),
+    querySelector(selector) {
+      return selector === "turbo-frame" ? turboFrame : null
+    }
+  }
+  const attemptsChevron = { style: {} }
+  const controller = new ControllerClass()
+
+  controller.element = {
+    addEventListener() {},
+    querySelector(selector) {
+      if (selector.includes("attemptsContent")) return attemptsContent
+      if (selector.includes("attemptsChevron")) return attemptsChevron
+      return null
+    }
+  }
+  controller.hasAsrHistoryChartTarget = false
+  controller.hasTopProbesChartTarget = false
+
+  if (typeof controller.connect === "function") {
+    controller.connect()
+  }
+
+  controller.toggleProbeAttempts({
+    stopPropagation() {},
+    currentTarget: { dataset: { probeResultId: "2" } }
+  })
+
+  assert.equal(addCalls.length, 2, "expected two error listeners attached")
+  const addedTypes = addCalls.map((call) => call.type).sort()
+  assert.deepEqual(addedTypes, [
+    "turbo:fetch-request-error",
+    "turbo:frame-missing"
+  ])
+
+  // listeners never fire (happy path); disconnect must clean them up
+  controller.disconnect()
+
+  const removedTypes = removeCalls.map((call) => call.type).sort()
+  assert.deepEqual(
+    removedTypes,
+    ["turbo:fetch-request-error", "turbo:frame-missing"],
+    "disconnect should remove both turbo-frame error listeners"
+  )
+
+  // each removed handler should match the originally attached handler
+  for (const removeCall of removeCalls) {
+    const matchingAdd = addCalls.find(
+      (a) => a.type === removeCall.type && a.callback === removeCall.callback
+    )
+    assert.ok(
+      matchingAdd,
+      `removeEventListener for ${removeCall.type} should match the originally registered handler`
+    )
+  }
+}
+
 function testLogViewerController() {
   const { ControllerClass } = loadLogViewerController()
 
@@ -644,11 +834,47 @@ function testLogViewerController() {
   const eventCountBefore = events.length
   controller.notifyFilterChange()
   assert.equal(events.length, eventCountBefore + 1)
+
+  // appended rows are included on later filter runs
+  const dynamicPassLine = {
+    classList: classListWith("log-line", "pass-line"),
+    textContent: "early PASS line",
+    style: { display: "" },
+    dataset: {}
+  }
+  const dynamicFailLine = {
+    classList: classListWith("log-line", "fail-line"),
+    textContent: "late FAIL line",
+    style: { display: "" },
+    dataset: {}
+  }
+  const dynamicEvents = []
+  const dynamicController = new ControllerClass()
+  let dynamicLines = [dynamicPassLine]
+  dynamicController.element = {
+    dispatchEvent(evt) { dynamicEvents.push(evt) }
+  }
+  dynamicController.contentTarget = {
+    contains(node) { return dynamicLines.includes(node) },
+    querySelectorAll(selector) {
+      assert.equal(selector, ".log-line")
+      return dynamicLines
+    }
+  }
+
+  dynamicController.filter({ currentTarget: { dataset: { filterType: "pass" } } })
+  dynamicLines = [dynamicPassLine, dynamicFailLine]
+  dynamicController.filter({ currentTarget: { dataset: { filterType: "pass" } } })
+
+  assert.equal(dynamicFailLine.dataset.logViewerStatusMatch, "false")
+  assert.equal(dynamicFailLine.style.display, "none")
 }
 
 await testDebugStreamLeaseController()
 testActivityStreamController()
 testDebugTabsController()
 testDebugStreamFilterController()
+testReportRedesignedController()
+testReportRedesignedControllerListenerCleanup()
 testLogViewerController()
 console.log("JavaScript controller tests passed")

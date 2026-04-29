@@ -47,6 +47,45 @@ RSpec.describe BroadcastReportDebugJob, type: :job do
     ActiveJob::Base.queue_adapter.performed_jobs.clear
   end
 
+  def job_report_id(job)
+    job[:args].first
+  end
+
+  def job_keyword_args(job)
+    args = job[:args]
+    return {} unless args.second.is_a?(Hash)
+
+    args.second.with_indifferent_access
+  end
+
+  def final_tail_followup_job?(job)
+    job_keyword_args(job)[:final_tail_followup] == true
+  end
+
+  def final_tail_followup_generation(job)
+    job_keyword_args(job)[:final_tail_followup_generation]
+  end
+
+  def final_tail_followup_key(report_id, generation)
+    described_class.final_tail_followup_cache_key(report_id, generation)
+  end
+
+  def cache_entry_for(key)
+    Rails.cache.instance_variable_get(:@data)[key]
+  end
+
+  def delayed_debug_jobs_for(report_id)
+    ActiveJob::Base.queue_adapter.enqueued_jobs.select do |job|
+      job[:job] == described_class && job_report_id(job) == report_id && job[:at].present?
+    end
+  end
+
+  def debug_jobs_for(report_id)
+    ActiveJob::Base.queue_adapter.enqueued_jobs.select do |job|
+      job[:job] == described_class && job_report_id(job) == report_id
+    end
+  end
+
   def render_partial(partial, payload)
     ActsAsTenant.with_tenant(company) do
       ApplicationController.render(
@@ -57,6 +96,14 @@ RSpec.describe BroadcastReportDebugJob, type: :job do
   end
 
   describe "#perform" do
+    it "keys concurrency by report id when final-tail args are serialized as positional options" do
+      key = described_class.concurrency_key
+
+      expect(key.call(report.id)).to eq("broadcast_report_debug:#{report.id}")
+      expect(key.call(report.id, { final_tail_followup: true })).to eq("broadcast_report_debug:#{report.id}")
+      expect(key.call(report.id, final_tail_followup: true)).to eq("broadcast_report_debug:#{report.id}")
+    end
+
     it "only enqueues one poller while a poller lease is active" do
       expect(Reports::DebugWatcher.refresh_and_enqueue(report)).to be(true)
       expect(Reports::DebugWatcher.refresh_and_enqueue(report)).to be(false)
@@ -95,6 +142,7 @@ RSpec.describe BroadcastReportDebugJob, type: :job do
       )
       expect(Rails.cache.read(described_class.digest_cache_key(report.id))).to be_present
       expect(Rails.cache.read(described_class.fingerprint_cache_key(report.id))).to be_present
+      expect(cache_entry_for(described_class.fingerprint_cache_key(report.id)).expires_at).to be_within(2.0).of(5.minutes.from_now.to_f)
     end
 
     it "does not advance caches when payload construction fails" do
@@ -229,6 +277,29 @@ RSpec.describe BroadcastReportDebugJob, type: :job do
       )
     end
 
+    it "schedules one delayed final-tail follow-up when status flips from polling to stopped during the job" do
+      Reports::DebugWatcher.refresh(report.id)
+      create(:raw_report_data, report: report, jsonl_data: raw_jsonl)
+      create(:report_debug_log, report: report, tail: "live tail\n", tail_digest: "tail-live")
+      report_id = report.id
+
+      payload = Reports::DebugStreamPayload.new(report.reload).call
+      payload_builder = instance_double(Reports::DebugStreamPayload)
+      allow(Reports::DebugStreamPayload).to receive(:new).and_return(payload_builder)
+      allow(payload_builder).to receive(:call) do
+        Report.where(id: report_id).update_all(status: Report.statuses[:stopped])
+        payload
+      end
+
+      described_class.new.perform(report_id)
+
+      delayed_jobs = delayed_debug_jobs_for(report_id)
+
+      expected_at = (Time.current + described_class::FINAL_TAIL_FOLLOWUP_DELAY).to_f
+      expect(delayed_jobs.size).to eq(1)
+      expect(delayed_jobs.first[:at]).to be_within(2.0).of(expected_at)
+    end
+
     it "renders broadcast partials with the same locals used by the job" do
       create(:raw_report_data, report: report, jsonl_data: raw_jsonl("probe.Rendered"))
       create(:report_debug_log, report: report, tail: "rendered live tail\n", tail_digest: "tail-render")
@@ -340,7 +411,7 @@ RSpec.describe BroadcastReportDebugJob, type: :job do
 
       expect {
         described_class.enqueue_status_change(report.id, "stopped")
-      }.to have_enqueued_job(described_class).with(report.id).twice
+      }.to change { debug_jobs_for(report.id).size }.by(2)
     end
 
     it "schedules a delayed follow-up broadcast for failed transitions" do
@@ -348,7 +419,7 @@ RSpec.describe BroadcastReportDebugJob, type: :job do
 
       expect {
         described_class.enqueue_status_change(report.id, "failed")
-      }.to have_enqueued_job(described_class).with(report.id).twice
+      }.to change { debug_jobs_for(report.id).size }.by(2)
     end
 
     it "schedules a delayed follow-up broadcast for interrupted transitions" do
@@ -356,7 +427,7 @@ RSpec.describe BroadcastReportDebugJob, type: :job do
 
       expect {
         described_class.enqueue_status_change(report.id, "interrupted")
-      }.to have_enqueued_job(described_class).with(report.id).twice
+      }.to change { debug_jobs_for(report.id).size }.by(2)
     end
 
     it "does not schedule a follow-up broadcast for completed transitions" do
@@ -372,13 +443,171 @@ RSpec.describe BroadcastReportDebugJob, type: :job do
 
       described_class.enqueue_status_change(report.id, "stopped")
 
-      delayed_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs.select do |job|
-        job[:job] == described_class && job[:args].first == report.id && job[:at].present?
-      end
+      delayed_jobs = delayed_debug_jobs_for(report.id)
 
       expect(delayed_jobs.size).to eq(1)
       expected_at = (Time.current + described_class::FINAL_TAIL_FOLLOWUP_DELAY).to_f
       expect(delayed_jobs.first[:at]).to be_within(2.0).of(expected_at)
+    end
+
+    it "marks delayed final-tail follow-up jobs with final-tail mode and a generation" do
+      Reports::DebugWatcher.refresh(report.id)
+
+      described_class.enqueue_status_change(report.id, "stopped")
+
+      delayed_jobs = delayed_debug_jobs_for(report.id)
+      expect(delayed_jobs.size).to eq(1)
+      expect(final_tail_followup_job?(delayed_jobs.first)).to be(true)
+      expect(final_tail_followup_generation(delayed_jobs.first)).to be_present
+    end
+
+    it "deduplicates delayed final-tail follow-up requests" do
+      Reports::DebugWatcher.refresh(report.id)
+
+      expect {
+        described_class.enqueue_status_change(report.id, "stopped")
+        described_class.enqueue_status_change(report.id, "failed")
+      }.to change { debug_jobs_for(report.id).size }.by(3)
+
+      delayed_jobs = delayed_debug_jobs_for(report.id)
+
+      expect(delayed_jobs.size).to eq(1)
+    end
+
+    it "allows a later terminal generation after polling re-entry" do
+      Reports::DebugWatcher.refresh(report.id)
+
+      report.update!(status: :stopped)
+      expect(delayed_debug_jobs_for(report.id).size).to eq(1)
+
+      report.update!(status: :pending)
+      report.update!(status: :stopped)
+
+      expect(delayed_debug_jobs_for(report.id).size).to eq(2)
+    end
+
+    it "runs a valid final-tail follow-up even if its generation cache key expired" do
+      Reports::DebugWatcher.refresh(report.id)
+      create(:raw_report_data, report: report, jsonl_data: raw_jsonl)
+      create(:report_debug_log, report: report, tail: "final tail\n", tail_digest: "tail-final")
+      report.update!(status: :stopped)
+      delayed_job = delayed_debug_jobs_for(report.id).last
+      generation = final_tail_followup_generation(delayed_job)
+      Rails.cache.delete(final_tail_followup_key(report.id, generation))
+      clear_test_jobs
+
+      described_class.new.perform(report.id, final_tail_followup: true, final_tail_followup_generation: generation)
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to).with(
+        Reports::DebugWatcher.stream_name(report),
+        hash_including(target: "report-debug-stream-content")
+      )
+    end
+
+    it "does not let a stale final-tail job clear or suppress a newer generation" do
+      Reports::DebugWatcher.refresh(report.id)
+
+      report.update!(status: :stopped)
+      generation_a = final_tail_followup_generation(delayed_debug_jobs_for(report.id).last)
+      key_a = final_tail_followup_key(report.id, generation_a)
+
+      report.update!(status: :pending)
+      report.update!(status: :stopped)
+      generation_b = final_tail_followup_generation(delayed_debug_jobs_for(report.id).last)
+      key_b = final_tail_followup_key(report.id, generation_b)
+
+      expect(generation_a).to be_present
+      expect(generation_b).to be_present
+      expect(generation_b).not_to eq(generation_a)
+      expect(Rails.cache.read(key_a)).to be_present
+      expect(Rails.cache.read(key_b)).to be_present
+
+      described_class.new.perform(report.id, final_tail_followup: true, final_tail_followup_generation: generation_a)
+
+      expect(Rails.cache.read(key_b)).to be_present
+      expect {
+        described_class.enqueue_status_change(report.id, "failed")
+      }.not_to change { delayed_debug_jobs_for(report.id).size }
+    end
+
+    it "does not let a final-tail follow-up rejoin polling when the report is polling again" do
+      Reports::DebugWatcher.refresh(report.id)
+      described_class.schedule_final_tail_followup(report.id)
+      generation = final_tail_followup_generation(delayed_debug_jobs_for(report.id).last)
+      report.update!(status: :pending)
+      clear_test_jobs
+
+      expect {
+        described_class.new.perform(report.id, final_tail_followup: true, final_tail_followup_generation: generation)
+      }.not_to have_enqueued_job(described_class)
+    end
+
+    it "clears final-tail dedupe after a final-tail follow-up so later terminal transitions can schedule" do
+      Reports::DebugWatcher.refresh(report.id)
+      described_class.schedule_final_tail_followup(report.id)
+      generation = final_tail_followup_generation(delayed_debug_jobs_for(report.id).last)
+      clear_test_jobs
+
+      described_class.new.perform(report.id, final_tail_followup: true, final_tail_followup_generation: generation)
+
+      expect {
+        described_class.enqueue_status_change(report.id, "stopped")
+      }.to change { delayed_debug_jobs_for(report.id).size }.by(1)
+
+      expect(delayed_debug_jobs_for(report.id).size).to eq(1)
+    end
+
+    it "clears the matching final-tail generation key" do
+      Reports::DebugWatcher.refresh(report.id)
+      described_class.schedule_final_tail_followup(report.id)
+      generation = final_tail_followup_generation(delayed_debug_jobs_for(report.id).last)
+      key = final_tail_followup_key(report.id, generation)
+
+      described_class.new.perform(report.id, final_tail_followup: true, final_tail_followup_generation: generation)
+
+      expect(Rails.cache.read(key)).to be_nil
+    end
+  end
+
+  describe "#clear_job_state on the final-tail follow-up path" do
+    it "clears poller, digest, fingerprint, and follow-up cache keys" do
+      report_id = 12345
+      generation = "stopped:1745934000.123456"
+
+      Rails.cache.write(described_class.poller_cache_key(report_id), true)
+      Rails.cache.write(described_class.digest_cache_key(report_id), "abc")
+      Rails.cache.write(described_class.fingerprint_cache_key(report_id), "def")
+      Rails.cache.write(described_class.final_tail_followup_cache_key(report_id, generation), true)
+
+      job = described_class.new
+      job.send(:clear_job_state,
+               report_id,
+               final_tail_followup: true,
+               final_tail_followup_generation: generation)
+
+      expect(Rails.cache.read(described_class.poller_cache_key(report_id))).to be_nil
+      expect(Rails.cache.read(described_class.digest_cache_key(report_id))).to be_nil
+      expect(Rails.cache.read(described_class.fingerprint_cache_key(report_id))).to be_nil
+      expect(Rails.cache.read(described_class.final_tail_followup_cache_key(report_id, generation))).to be_nil
+    end
+  end
+
+  describe ".final_tail_followup_generation" do
+    it "includes report status so two terminal transitions in the same micro-bucket do not collide" do
+      report = build_stubbed(:report, status: "stopped", updated_at: Time.zone.local(2026, 1, 1, 12, 0, 0))
+      other  = build_stubbed(:report, status: "failed",  updated_at: Time.zone.local(2026, 1, 1, 12, 0, 0))
+
+      expect(described_class.final_tail_followup_generation(report))
+        .not_to eq(described_class.final_tail_followup_generation(other))
+    end
+
+    it "is stable for the same status + updated_at" do
+      ts = Time.zone.local(2026, 1, 1, 12, 0, 0)
+      a  = build_stubbed(:report, status: "stopped", updated_at: ts)
+      b  = build_stubbed(:report, status: "stopped", updated_at: ts)
+
+      expect(described_class.final_tail_followup_generation(a))
+        .to eq(described_class.final_tail_followup_generation(b))
     end
   end
 end

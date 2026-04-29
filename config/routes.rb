@@ -49,6 +49,7 @@ Rails.application.routes.draw do
         get :asr_history
         get :top_probes
         get :probes_tab
+        get :probe_attempts
         get :attempt_content
         post :refresh_debug_lease
       end

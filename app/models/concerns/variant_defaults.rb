@@ -82,69 +82,63 @@ module VariantDefaults
     @all_subindustry_ids ||= scan.threat_variant_subindustry_ids
   end
 
-  def preloaded_variant_data
-    @preloaded_variant_data ||= begin
-      if has_variant_data?
-        parent_prs = probe_results.to_a
-        child_prs = child_report.probe_results
-          .includes(:probe, threat_variant: { threat_variant_subindustry: :threat_variant_industry })
-          .order(:id)
-          .to_a
+  def preloaded_variant_summary_data(parent_probe_results = probe_results.to_a)
+    return { attack_counts: {}, success_rates: {}, subindustry_maps: {} } unless has_variant_data?
 
-        grouped = child_prs.group_by(&:probe_id)
-        sub_ids = all_subindustry_ids
+    child_prs = child_report.probe_results
+      .select(:id, :report_id, :probe_id, :threat_variant_id, :passed, :total, :any_detector_passed)
+      .includes(threat_variant: { threat_variant_subindustry: :threat_variant_industry })
+      .order(:id)
+      .to_a
 
-        attack_counts = {}
-        success_rates = {}
-        subindustry_maps = {}
-        all_attempts = {}
+    grouped = child_prs.group_by(&:probe_id)
+    sub_ids = all_subindustry_ids
 
-        parent_prs.each do |pr|
-          pid = pr.probe_id
-          children = grouped[pid] || []
+    attack_counts = {}
+    success_rates = {}
+    subindustry_maps = {}
 
-          total = children.sum(&:total)
-          passed = children.sum(&:passed)
-          attack_counts[pid] = { total: total, passed: passed }
-          success_rates[pid] = total.zero? ? 0 : (passed.to_f / total * 100).round(1)
+    parent_probe_results.each do |pr|
+      pid = pr.probe_id
+      children = grouped[pid] || []
 
-          map = sub_ids.each_with_object({}) { |id, h| h[id] = nil }
-          children.each do |cpr|
-            sub_id = cpr.threat_variant&.threat_variant_subindustry_id
-            map[sub_id] = cpr if sub_id
-          end
-          subindustry_maps[pid] = map
+      total = children.sum(&:total)
+      passed = children.sum(&:passed)
+      attack_counts[pid] = { total: total, passed: passed }
+      success_rates[pid] = total.zero? ? 0 : (passed.to_f / total * 100).round(1)
 
-          attempts_arr = []
-          (pr.attempts || []).each do |a|
-            attempts_arr << { attempt: a, is_variant: false, variant_industry: nil }
-          end
-          children.each do |vpr|
-            next unless vpr.attempts
-            label = build_variant_label(vpr)
-            vpr.attempts.each do |a|
-              attempts_arr << { attempt: a, is_variant: true, variant_industry: label }
-            end
-          end
-          all_attempts[pid] = attempts_arr
-        end
-
-        { attack_counts: attack_counts, success_rates: success_rates,
-          subindustry_maps: subindustry_maps, all_attempts: all_attempts }
-      else
-        { attack_counts: {}, success_rates: {}, subindustry_maps: {}, all_attempts: {} }
+      map = sub_ids.each_with_object({}) { |id, h| h[id] = nil }
+      children.each do |cpr|
+        sub_id = cpr.threat_variant&.threat_variant_subindustry_id
+        map[sub_id] = cpr if sub_id
       end
+      subindustry_maps[pid] = map
     end
+
+    { attack_counts: attack_counts, success_rates: success_rates, subindustry_maps: subindustry_maps }
   end
 
   def all_attempts_for_probe(probe_result)
     return [] unless probe_result
 
-    if has_variant_data?
-      preloaded_variant_data[:all_attempts][probe_result.probe_id] || []
-    else
-      (probe_result.attempts || []).map { |a| { attempt: a, is_variant: false, variant_industry: nil } }
+    attempts = (probe_result.attempts || []).map do |a|
+      { attempt: a, is_variant: false, variant_industry: nil }
     end
+
+    return attempts unless has_variant_data? && child_report.present?
+
+    child_report.probe_results
+      .where(probe_id: probe_result.probe_id)
+      .includes(threat_variant: { threat_variant_subindustry: :threat_variant_industry })
+      .order(:id)
+      .each do |vpr|
+        label = build_variant_label(vpr)
+        (vpr.attempts || []).each do |a|
+          attempts << { attempt: a, is_variant: true, variant_industry: label }
+        end
+      end
+
+    attempts
   end
 
   private

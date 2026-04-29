@@ -134,14 +134,34 @@ module Admin
 
     # Probes tab content loaded via Turbo Frame
     def probes_tab
-      report_includes = [ :child_report, probe_results: [ :probe, :detector ] ]
       scan_includes = if Scan.reflect_on_association(:threat_variant_subindustries)
         { scan: :threat_variant_subindustries }
       else
         :scan
       end
-      @report = Report.includes(report_includes, scan_includes).find(params[:id])
+
+      @report = Report.includes(:child_report, scan_includes).find(params[:id])
       authorize @report
+      @probe_results = @report.probe_results.for_report_probe_cards.to_a
+      render layout: false
+    end
+
+    # Probe attempt rows loaded on demand from each probe card.
+    def probe_attempts
+      @report = Report.includes(:child_report).find(params[:id])
+      authorize @report
+
+      @probe_result = @report.probe_results.find(params[:probe_result_id])
+
+      raw_probe_index = params[:probe_index].to_s
+      if params.key?(:probe_index) && !raw_probe_index.match?(/\A\d+\z/)
+        head :bad_request
+        return
+      end
+      @probe_index = raw_probe_index.match?(/\A\d+\z/) ? raw_probe_index.to_i : 0
+
+      @attempt_items = @report.all_attempts_for_probe(@probe_result)
+
       render layout: false
     end
 

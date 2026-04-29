@@ -2,19 +2,32 @@
   probe_result = local_assigns[:probe_result]
   report = local_assigns[:report]
   index = local_assigns[:index] || 0
+  attempts_frame_id = "probe-attempts-#{probe_result.id}"
 %>
 
 <div class="flex flex-col gap-2">
-  <h3 class="text-lg text-white font-sans mb-4">Prompts & Responses</h3>
+  <button type="button"
+          class="flex items-center justify-between w-full cursor-pointer hover:bg-zinc-800/30 rounded-lg transition-colors py-2 px-1"
+          data-action="click->report-redesigned#toggleProbeAttempts"
+          data-probe-result-id="<%= probe_result.id %>">
+    <span class="text-lg text-white font-sans">Prompts & Responses</span>
 
-  <div class="w-full">
+    <span class="icon icon-sm icon-chevron-down text-contentTertiary transition-transform duration-200 ml-auto"
+          data-report-redesigned-target="attemptsChevron"
+          data-probe-result-id="<%= probe_result.id %>"
+          style="transform: rotate(0deg)"></span>
+  </button>
+
+  <div class="hidden w-full"
+       data-report-redesigned-target="attemptsContent"
+       data-probe-result-id="<%= probe_result.id %>">
     <div class="pl-4 w-full">
-      <%= render partial: 'admin/reports/variant_prompts_responses', locals: {
-        probe_result: probe_result,
-        report: report,
-        probe_index: index,
-        preloaded: local_assigns[:preloaded]
-      } %>
+      <turbo-frame id="<%= attempts_frame_id %>"
+                   data-probe-attempts-url="<%= probe_attempts_report_path(report, probe_result_id: probe_result.id, probe_index: index) %>">
+        <div class="flex items-center justify-center py-4">
+          <span class="text-sm text-contentSecondary font-sans">Loading attempts...</span>
+        </div>
+      </turbo-frame>
     </div>
   </div>
 </div>

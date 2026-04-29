@@ -9,6 +9,7 @@ export default class extends Controller {
     "detectorChevron", "detectorContent",
     "variantChevron", "variantContent",
     "variantPromptsChevron", "variantPromptsContent",
+    "attemptsChevron", "attemptsContent",
     "probesChevron", "probesContent",
     "sortLabel", "sortButton",
     "attemptChevron", "attemptContent",
@@ -24,6 +25,7 @@ export default class extends Controller {
   }
 
   async connect() {
+    this._attemptsErrorListeners = []
     this.setupProbeCardToggle()
 
     if (this.hasAsrHistoryChartTarget || this.hasTopProbesChartTarget) {
@@ -44,6 +46,13 @@ export default class extends Controller {
     if (this.resizeHandler) {
       window.removeEventListener('resize', this.resizeHandler)
       this.resizeHandler = null
+    }
+
+    if (this._attemptsErrorListeners) {
+      for (const { target, event, handler } of this._attemptsErrorListeners) {
+        target.removeEventListener(event, handler)
+      }
+      this._attemptsErrorListeners = []
     }
   }
 
@@ -512,6 +521,54 @@ export default class extends Controller {
     } else {
       variantContent.classList.add("hidden")
       variantChevron.style.transform = "rotate(0deg)"
+    }
+  }
+
+  toggleProbeAttempts(event) {
+    event.stopPropagation()
+
+    const button = event.currentTarget
+    const probeResultId = button.dataset.probeResultId
+    const attemptsContent = this.element.querySelector(`[data-report-redesigned-target="attemptsContent"][data-probe-result-id="${probeResultId}"]`)
+    const attemptsChevron = this.element.querySelector(`[data-report-redesigned-target="attemptsChevron"][data-probe-result-id="${probeResultId}"]`)
+
+    if (!attemptsContent || !attemptsChevron) return
+
+    const isHidden = attemptsContent.classList.contains("hidden")
+
+    if (isHidden) {
+      attemptsContent.classList.remove("hidden")
+      attemptsChevron.style.transform = "rotate(180deg)"
+
+      const turboFrame = attemptsContent.querySelector("turbo-frame")
+      if (turboFrame && !turboFrame.src) {
+        const attemptsUrl = turboFrame.dataset.probeAttemptsUrl
+        const onAttemptsError = (e) => {
+          e.preventDefault()
+          console.error(`[report-redesigned] Failed to load probe attempts from ${attemptsUrl}:`, e)
+          turboFrame.removeAttribute("src")
+          turboFrame.innerHTML = '<p class="text-sm text-red-400 p-4 font-sans">Failed to load attempts. Please try again.</p>'
+        }
+        const trackedHandler = (e) => {
+          onAttemptsError(e)
+          if (this._attemptsErrorListeners) {
+            this._attemptsErrorListeners = this._attemptsErrorListeners.filter(
+              (l) => l.handler !== trackedHandler
+            )
+          }
+        }
+        turboFrame.addEventListener("turbo:frame-missing", trackedHandler, { once: true })
+        turboFrame.addEventListener("turbo:fetch-request-error", trackedHandler, { once: true })
+        this._attemptsErrorListeners ||= []
+        this._attemptsErrorListeners.push(
+          { target: turboFrame, event: "turbo:frame-missing", handler: trackedHandler },
+          { target: turboFrame, event: "turbo:fetch-request-error", handler: trackedHandler }
+        )
+        turboFrame.src = attemptsUrl
+      }
+    } else {
+      attemptsContent.classList.add("hidden")
+      attemptsChevron.style.transform = "rotate(0deg)"
     }
   }
 

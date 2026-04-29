@@ -553,9 +553,9 @@ RSpec.describe Report, type: :model do
       expect(report.variant_count).to eq(0)
     end
 
-    it '#preloaded_variant_data returns empty structure' do
-      expect(report.preloaded_variant_data).to eq({
-        attack_counts: {}, success_rates: {}, subindustry_maps: {}, all_attempts: {}
+    it '#preloaded_variant_summary_data returns empty summary structure' do
+      expect(report.preloaded_variant_summary_data).to eq({
+        attack_counts: {}, success_rates: {}, subindustry_maps: {}
       })
     end
   end
@@ -589,6 +589,30 @@ RSpec.describe Report, type: :model do
 
       result = report.all_attempts_for_probe(probe_result)
       expect(result).to eq([])
+    end
+
+    it 'loads only the requested probe attempts for variant data' do
+      other_probe = create(:probe)
+      child_report = create(:report, parent_report: report, scan: report.scan, target: report.target, company: report.company)
+      subindustry = create(:threat_variant_subindustry)
+      threat_variant = create(:threat_variant, probe: probe, threat_variant_subindustry: subindustry)
+      other_threat_variant = create(:threat_variant, probe: other_probe, threat_variant_subindustry: subindustry)
+      probe_result = create(:probe_result, report: report, probe: probe, detector: detector,
+                            attempts: [ { 'prompt' => 'parent prompt' } ])
+      create(:probe_result, report: child_report, probe: probe, detector: detector,
+                            threat_variant: threat_variant,
+                            attempts: [ { 'prompt' => 'variant prompt' } ])
+      create(:probe_result, report: child_report, probe: other_probe, detector: detector,
+                            threat_variant: other_threat_variant,
+                            attempts: [ { 'prompt' => 'other variant prompt' } ])
+
+      expect(report).not_to receive(:preloaded_variant_summary_data)
+
+      result = report.all_attempts_for_probe(probe_result)
+
+      expect(result.map { |item| item[:attempt]['prompt'] }).to eq([ 'parent prompt', 'variant prompt' ])
+      expect(result.map { |item| item[:is_variant] }).to eq([ false, true ])
+      expect(result.last[:variant_industry]).to include(subindustry.name)
     end
   end
 
@@ -932,6 +956,12 @@ RSpec.describe Report, type: :model do
 
         expect(labels).to include(trace_id: 'none')
       end
+    end
+  end
+
+  describe "removed methods" do
+    it "no longer exposes #preloaded_variant_data" do
+      expect(Report.new).not_to respond_to(:preloaded_variant_data)
     end
   end
 end

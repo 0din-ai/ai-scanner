@@ -1,0 +1,8 @@
+<%= turbo_frame_tag "probe-attempts-#{@probe_result.id}" do %>
+  <%= render partial: 'admin/reports/variant_prompts_responses', locals: {
+    probe_result: @probe_result,
+    report: @report,
+    probe_index: @probe_index,
+    all_attempts: @attempt_items
+  } %>
+<% end %>
