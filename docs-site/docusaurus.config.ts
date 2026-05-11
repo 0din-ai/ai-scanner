@@ -65,6 +65,20 @@ const config: Config = {
   ],
 
   themeConfig: {
+    image: "img/0dinbanner.png",
+    metadata: [
+      { name: "description", content: "We are building for the next generation in GenAI security and beyond." },
+      { name: "keywords", content: "AI, GenAI, bug bounty, bug bounty program" },
+      { property: "og:site_name", content: "0din.ai" },
+      { property: "og:title", content: "Automated AI Red Teaming by Mozilla" },
+      { property: "og:description", content: "We are building for the next generation in GenAI security and beyond." },
+      { property: "og:type", content: "website" },
+      { property: "og:image", content: "https://0din.ai/docs/img/0dinbanner.png" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Automated AI Red Teaming by Mozilla" },
+      { name: "twitter:description", content: "We are building for the next generation in GenAI security and beyond." },
+      { name: "twitter:image", content: "https://0din.ai/docs/img/0dinbanner.png" },
+    ],
     colorMode: {
       defaultMode: "dark",
       respectPrefersColorScheme: true,
