@@ -124,16 +124,7 @@
         <tr>
           <th class="py-3 pr-4 text-left text-sm font-medium text-contentSecondary w-1/4">Attribution</th>
           <td class="py-3 text-sm text-contentPrimary">
-            <% if @probe.attribution.include?("http") %>
-              <% url = @probe.attribution[/https?:\/\/[^\s]+/] %>
-              <% text = @probe.attribution.sub(url, '').strip.sub(/ - $/, '') %>
-              <%= text %>
-              <% if url %>
-                — <%= link_to url, url, target: "_blank", class: "text-primary hover:text-primary/80" %>
-              <% end %>
-            <% else %>
-              <%= @probe.attribution %>
-            <% end %>
+            <%= probe_attribution(@probe.attribution) %>
           </td>
         </tr>
         <% end %>

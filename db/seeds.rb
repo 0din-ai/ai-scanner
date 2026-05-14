@@ -14,12 +14,17 @@ company = Company.find_or_create_by!(slug: "default-organization") do |c|
 end
 
 admin_email = ENV.fetch("ADMIN_EMAIL", "admin@example.com")
-initial_password = ENV.fetch("ADMIN_INITIAL_PASSWORD", "password")
 
 admin = User.find_or_initialize_by(email: admin_email)
 if admin.new_record?
-  admin.password = initial_password
-  admin.password_confirmation = initial_password
+  admin.password = admin.password_confirmation =
+    ENV.fetch("ADMIN_INITIAL_PASSWORD") do
+      unless Rails.env.development? || Rails.env.test?
+        raise "ADMIN_INITIAL_PASSWORD must be set to seed the initial admin user outside development and test"
+      end
+
+      "password"
+    end
 end
 admin.super_admin = true
 admin.company = company

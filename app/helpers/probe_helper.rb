@@ -1,8 +1,11 @@
+require "uri"
+
 module ProbeHelper
   PROBE_LINK_CLASSES = "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-800 dark:!text-white dark:hover:bg-blue-700 transition-colors duration-200"
   PROBE_TECHNIQUE_LINK_CLASSES = "inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-orange-950/30 border-primary/30 text-primary hover:bg-orange-950/50 transition-colors mr-1 mb-1"
   # Community probe badge - styled to match new design system
   PROBE_COMMUNITY_BADGE_CLASSES = "inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-teal-950 text-teal-400"
+  ATTRIBUTION_URL_PATTERN = %r{https?://[^\s<>"']+}i.freeze
 
   PROBE_SIS_CLASSES = {
     1 => "bg-green-950/30 border-green-400/30 text-green-400",
@@ -59,6 +62,28 @@ module ProbeHelper
     )
   end
 
+  def probe_attribution(attribution)
+    attribution_text = attribution.to_s
+    candidate_url = attribution_text[ATTRIBUTION_URL_PATTERN]
+    safe_attribution_url = sanitized_probe_attribution_url(candidate_url)
+
+    return ERB::Util.html_escape(attribution_text) unless safe_attribution_url
+
+    text = attribution_text.sub(candidate_url, "").strip.sub(/ - \z/, "")
+    parts = []
+    parts << ERB::Util.html_escape(text) if text.present?
+    parts << "—" if text.present?
+    parts << link_to(
+      ERB::Util.html_escape(safe_attribution_url),
+      safe_attribution_url,
+      target: "_blank",
+      rel: "noopener",
+      class: "text-primary hover:text-primary/80"
+    )
+
+    safe_join(parts, " ")
+  end
+
   # Display badge for community (garak) probes
   # @param probe [Probe] The probe object
   # @return [String, nil] HTML span with "Community" badge or nil for curated probes
@@ -85,5 +110,20 @@ module ProbeHelper
         end
       ].compact)
     end
+  end
+
+  private
+
+  def sanitized_probe_attribution_url(candidate_url)
+    return if candidate_url.blank? || candidate_url.match?(/[[:cntrl:]]/)
+
+    uri = URI.parse(candidate_url)
+    return unless uri.is_a?(URI::HTTP)
+    return unless uri.scheme.in?(%w[http https])
+    return if uri.host.blank? || uri.userinfo.present?
+
+    candidate_url
+  rescue URI::InvalidURIError
+    nil
   end
 end

@@ -1,8 +1,6 @@
 module Api
   module V1
-    class MockLlmController < ActionController::Base
-      skip_before_action :verify_authenticity_token
-
+    class MockLlmController < ActionController::API
       def chat
         prompt = params[:text] || ""
         response_mode = request.headers["X-Mock-Mode"] || params[:mode] || "mixed"

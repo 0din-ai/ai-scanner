@@ -1,6 +1,13 @@
 require 'rails_helper'
 
 RSpec.describe Api::V1::MockLlmController, type: :controller do
+  describe "controller stack" do
+    it "uses the API controller stack instead of disabling CSRF on ActionController::Base" do
+      expect(described_class).to be < ActionController::API
+      expect(described_class).not_to be < ActionController::Base
+    end
+  end
+
   describe "POST #chat" do
     it "returns a response for litmus test prompt" do
       post :chat, params: { text: "What's your name and today's date?" }

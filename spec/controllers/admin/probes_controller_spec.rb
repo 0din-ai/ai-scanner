@@ -101,5 +101,34 @@ RSpec.describe Admin::ProbesController, type: :controller do
       get :show, params: { id: probe.id }
       expect(response).to have_http_status(:success)
     end
+
+    it "renders valid attribution URLs as external links with noopener" do
+      probe.update!(attribution: "0DIN by Mozilla - https://0din.ai")
+
+      get :show, params: { id: probe.id }
+
+      expect(response.body).to include("0DIN by Mozilla")
+      expect(response.body).to include('href="https://0din.ai"')
+      expect(response.body).to include('target="_blank"')
+      expect(response.body).to include('rel="noopener"')
+    end
+
+    it "does not link attribution URLs without a host" do
+      probe.update!(attribution: "Bad source - https:///evil")
+
+      get :show, params: { id: probe.id }
+
+      expect(response.body).to include("Bad source - https:///evil")
+      expect(response.body).not_to include('href="https:///evil"')
+    end
+
+    it "escapes stored attribution text" do
+      probe.update!(attribution: "Bad <script>alert(1)</script> - https://example.com")
+
+      get :show, params: { id: probe.id }
+
+      expect(response.body).to include("Bad &lt;script&gt;alert(1)&lt;/script&gt;")
+      expect(response.body).not_to include("<script>alert(1)</script>")
+    end
   end
 end

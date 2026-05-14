@@ -6,6 +6,9 @@ on:
       - "docs-site/**"
       - ".github/workflows/docs-test.yml"
 
+permissions:
+  contents: read
+
 jobs:
   test-build:
     name: Test Docusaurus Build

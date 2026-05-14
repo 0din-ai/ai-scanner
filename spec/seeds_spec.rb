@@ -29,6 +29,33 @@ RSpec.describe "Seeds", type: :feature do
       end
     end
 
+    context "outside development and test without an explicit initial password" do
+      around do |example|
+        original_password = ENV["ADMIN_INITIAL_PASSWORD"]
+        ENV.delete("ADMIN_INITIAL_PASSWORD")
+
+        example.run
+      ensure
+        if original_password.nil?
+          ENV.delete("ADMIN_INITIAL_PASSWORD")
+        else
+          ENV["ADMIN_INITIAL_PASSWORD"] = original_password
+        end
+      end
+
+      before do
+        User.destroy_all
+        Company.destroy_all
+        allow(Rails.env).to receive(:development?).and_return(false)
+        allow(Rails.env).to receive(:test?).and_return(false)
+      end
+
+      it "requires ADMIN_INITIAL_PASSWORD instead of using the development default" do
+        expect { load Rails.root.join('db', 'seeds.rb') }
+          .to raise_error(RuntimeError, /ADMIN_INITIAL_PASSWORD/)
+      end
+    end
+
     context "when companies and users already exist" do
       before do
         load Rails.root.join('db', 'seeds.rb')
