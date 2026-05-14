@@ -31,6 +31,7 @@ cp .env.example .env
 # Edit .env (required values)
 # SECRET_KEY_BASE=$(openssl rand -hex 64)
 # POSTGRES_PASSWORD=your_strong_password
+# ADMIN_INITIAL_PASSWORD=$(openssl rand -base64 24)
 
 docker compose up -d
 ```
@@ -42,6 +43,7 @@ docker compose up -d
 ```bash title=".env"
 SECRET_KEY_BASE=<64-byte hex string from `openssl rand -hex 64`>
 POSTGRES_PASSWORD=<strong password>
+ADMIN_INITIAL_PASSWORD=<strong initial admin password>
 ```
 
 ### Production Recommended

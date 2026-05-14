@@ -37,11 +37,13 @@ curl -sfL "https://raw.githubusercontent.com/0din-ai/ai-scanner/main/dist/docker
 # Generate secrets
 SECRET_KEY_BASE=$(openssl rand -hex 64)
 POSTGRES_PASSWORD=$(openssl rand -hex 16)
+ADMIN_INITIAL_PASSWORD=$(openssl rand -base64 24)
 
 # Write .env
 cat > .env <<EOF
 SECRET_KEY_BASE=$SECRET_KEY_BASE
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+ADMIN_INITIAL_PASSWORD=$ADMIN_INITIAL_PASSWORD
 EOF
 
 echo "🔐 Generated secrets in .env"
@@ -59,9 +61,9 @@ for i in $(seq 1 30); do
     echo ""
     echo "   URL:      http://localhost"
     echo "   Email:    admin@example.com"
-    echo "   Password: password"
+    echo "   Password: $ADMIN_INITIAL_PASSWORD"
     echo ""
-    echo "   ⚠️  Change the default password immediately!"
+    echo "   ⚠️  Store this generated password securely and change it after first login."
     echo ""
     echo "   To stop:  cd $(pwd) && docker compose down"
     echo "   To start: cd $(pwd) && docker compose up -d"

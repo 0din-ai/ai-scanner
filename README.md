@@ -36,11 +36,11 @@ Or manually:
 curl -O https://raw.githubusercontent.com/0din-ai/ai-scanner/main/dist/docker-compose.yml
 curl -O https://raw.githubusercontent.com/0din-ai/ai-scanner/main/.env.example
 cp .env.example .env
-# Edit .env: set SECRET_KEY_BASE (openssl rand -hex 64) and POSTGRES_PASSWORD
+# Edit .env: set SECRET_KEY_BASE (openssl rand -hex 64), POSTGRES_PASSWORD, and ADMIN_INITIAL_PASSWORD
 docker compose up -d
 ```
 
-Open `http://localhost` and log in with `admin@example.com` / `password`. **Change the default password immediately.**
+Open `http://localhost` and log in with `admin@example.com` and the `ADMIN_INITIAL_PASSWORD` value from your `.env` file. **Change the initial password immediately.**
 
 See the [Quick Start guide](https://0din.ai/docs/getting-started/quick-start?utm_source=github&utm_medium=readme&utm_campaign=opensourcescanner) for full instructions including port configuration, first scan walkthrough, and troubleshooting.
 

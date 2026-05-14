@@ -19,6 +19,7 @@ Set these in your root `.env` file before starting Scanner.
 |---|---|
 | `SECRET_KEY_BASE` | Secret key for sessions and encryption. Generate with `openssl rand -hex 64`. |
 | `POSTGRES_PASSWORD` | PostgreSQL database password. |
+| `ADMIN_INITIAL_PASSWORD` | Initial admin password used only when creating the first admin account. Generate with `openssl rand -base64 24`. |
 
 ### Network & Port
 
@@ -59,7 +60,7 @@ See [Database Configuration](../deployment/database) for `DATABASE_URL` format a
 | Variable | Default | Description |
 |---|---|---|
 | `ADMIN_EMAIL` | `admin@example.com` | Initial admin email (used only on first boot). |
-| `ADMIN_INITIAL_PASSWORD` | `password` | Initial admin password (used only on first boot). |
+| `ADMIN_INITIAL_PASSWORD` | — | Required outside development/test; initial admin password used only on first boot. |
 
 ---
 

@@ -22,7 +22,7 @@ curl -O https://raw.githubusercontent.com/0din-ai/ai-scanner/main/dist/docker-co
 curl -o .env https://raw.githubusercontent.com/0din-ai/ai-scanner/main/.env.example
 ```
 
-Open `.env` in your editor and set two required values:
+Open `.env` in your editor and set three required values:
 
 ```bash
 # Generate a secret key — run this and copy the output:
@@ -32,6 +32,7 @@ openssl rand -hex 64
 ```bash title=".env"
 SECRET_KEY_BASE=<paste your generated key here>
 POSTGRES_PASSWORD=choose_a_strong_password
+ADMIN_INITIAL_PASSWORD=<paste a generated admin password here>
 ```
 
 :::warning Don't skip SECRET_KEY_BASE
@@ -52,7 +53,7 @@ cd ai-scanner
 cp .env.example .env
 ```
 
-Edit `.env` as above (set `SECRET_KEY_BASE` and `POSTGRES_PASSWORD`), then:
+Edit `.env` as above (set `SECRET_KEY_BASE`, `POSTGRES_PASSWORD`, and `ADMIN_INITIAL_PASSWORD`), then:
 
 ```bash
 docker compose build scanner
@@ -92,15 +93,15 @@ Once you see `Listening on`, Scanner is ready.
 
 ## Log In
 
-Open `http://localhost` (or your configured port) and log in with the default credentials:
+Open `http://localhost` (or your configured port) and log in with the initial credentials:
 
 | Field | Value |
 |---|---|
-| Email | `admin@example.com` |
-| Password | `password` |
+| Email | `admin@example.com` unless you set `ADMIN_EMAIL` |
+| Password | The `ADMIN_INITIAL_PASSWORD` value from your `.env` file |
 
 :::danger Change your password immediately
-The default credentials are publicly known. Go to your profile settings and change the password before doing anything else.
+The initial password is only used when the admin account is created on first boot. Go to your profile settings and change it before doing anything else.
 :::
 
 The admin email and initial password can be customized before first boot via `ADMIN_EMAIL` and `ADMIN_INITIAL_PASSWORD` environment variables.
