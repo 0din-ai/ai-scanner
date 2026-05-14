@@ -24,6 +24,33 @@ RSpec.describe Admin::ReportsController, type: :controller do
       get :show, params: { id: report.id }
       expect(response).to have_http_status(:success)
     end
+
+    it "omits the sparse max score column from detector statistics" do
+      ActsAsTenant.with_tenant(company) do
+        scored_detector = create(:detector, name: "0din.CrystalMethScore")
+        binary_detector = create(:detector, name: "mitigation.MitigationBypass")
+
+        create(:detector_result, report: report, detector: scored_detector, passed: 1, total: 10, max_score: 90)
+        create(:detector_result, report: report, detector: binary_detector, passed: 4, total: 10, max_score: nil)
+      end
+
+      get :show, params: { id: report.id }
+
+      detector_stats_section = Nokogiri::HTML(response.body).at_xpath(
+        "//h2[normalize-space()='Detector Statistics']/ancestor::div[contains(@class,'bg-zinc-900')][1]"
+      )
+
+      expect(response).to have_http_status(:success)
+      expect(detector_stats_section).to be_present
+
+      detector_stat_headers = detector_stats_section.css("th").map { |header| header.text.squish }
+
+      expect(detector_stats_section.text).to include("Illicit Substances: Crystal Meth")
+      expect(detector_stats_section.text).to include("Generic Mitigation Bypass Checks")
+      expect(detector_stat_headers).to eq([ "Detector", "Attack Success Rate", "Successful Attacks" ])
+      expect(detector_stats_section.text).not_to include("Max Score")
+      expect(detector_stats_section.text).not_to include("--")
+    end
   end
 
   describe "GET #probes_tab" do
