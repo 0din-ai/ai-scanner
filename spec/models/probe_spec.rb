@@ -64,4 +64,26 @@ RSpec.describe Probe, type: :model do
       end
     end
   end
+
+  describe '#variant_eligible?' do
+    it 'is true when the detector is variant-eligible' do
+      detector = build(:detector, name: '0din.MitigationBypass')
+      probe = build(:probe, detector: detector)
+
+      expect(probe.variant_eligible?).to be true
+    end
+
+    it 'is false when the detector is not variant-eligible' do
+      detector = build(:detector, name: '0din.PromptInjection')
+      probe = build(:probe, detector: detector)
+
+      expect(probe.variant_eligible?).to be false
+    end
+
+    it 'is false when there is no detector' do
+      probe = build(:probe, detector: nil)
+
+      expect(probe.variant_eligible?).to be false
+    end
+  end
 end

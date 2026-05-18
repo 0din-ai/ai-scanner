@@ -8,7 +8,9 @@ export default class extends Controller {
     "industryCheckbox",
     "subindustryCheckbox",
     "subindustryItem",
-    "subindustriesContainer"
+    "subindustriesContainer",
+    "content",
+    "disabledNotice"
   ]
 
   connect() {
@@ -20,6 +22,65 @@ export default class extends Controller {
     this.updateSummary()
     // Start with all industries collapsed
     this.collapseAll()
+
+    this._probeSelectionHandler = this.refreshEligibility.bind(this)
+    this._listenerScope = this.element.closest('form') || document
+    this._listenerScope.addEventListener('probe-category:probeSelectionChanged', this._probeSelectionHandler)
+
+    this.refreshEligibility()
+  }
+
+  disconnect() {
+    if (this._probeSelectionHandler && this._listenerScope) {
+      this._listenerScope.removeEventListener('probe-category:probeSelectionChanged', this._probeSelectionHandler)
+      this._probeSelectionHandler = null
+      this._listenerScope = null
+    }
+  }
+
+  refreshEligibility() {
+    this.applyEligibility(this.computeEligibility())
+  }
+
+  computeEligibility() {
+    const form = this.element.closest('form')
+    if (!form) return false
+    return form.querySelectorAll('[data-variant-eligible="true"]:checked').length > 0
+  }
+
+  applyEligibility(eligible) {
+    const disabled = !eligible
+    const variantCheckboxTargets = this.industryCheckboxTargets.concat(this.subindustryCheckboxTargets)
+
+    variantCheckboxTargets.forEach(checkbox => {
+      checkbox.disabled = disabled
+    })
+
+    if (this.hasContentTarget) {
+      if (eligible) {
+        this.contentTarget.classList.remove('opacity-50', 'pointer-events-none')
+        this.contentTarget.removeAttribute('aria-disabled')
+      } else {
+        this.contentTarget.classList.add('opacity-50', 'pointer-events-none')
+        this.contentTarget.setAttribute('aria-disabled', 'true')
+      }
+    }
+
+    if (this.hasDisabledNoticeTarget) {
+      if (eligible) {
+        this.disabledNoticeTarget.classList.add('hidden')
+      } else {
+        this.disabledNoticeTarget.classList.remove('hidden')
+      }
+    }
+  }
+
+  clearSelections() {
+    this.subindustryCheckboxTargets.forEach(cb => { cb.checked = false })
+    this.industryItemTargets.forEach(industryItem => {
+      this.updateIndustryCheckboxState(industryItem)
+    })
+    this.updateSummary()
   }
 
   // Toggle expand/collapse for an industry

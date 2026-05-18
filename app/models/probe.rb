@@ -63,4 +63,8 @@ class Probe < ApplicationRecord
 
     "#{category}.#{name}"
   end
+
+  def variant_eligible?
+    detector&.variant_eligible? || false
+  end
 end

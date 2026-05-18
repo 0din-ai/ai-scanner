@@ -1,150 +1,176 @@
-<div class="bg-backgroundPrimary rounded-lg border border-borderPrimary p-6 mb-6" data-controller="threat-variants">
+<div class="bg-backgroundPrimary rounded-lg border border-borderPrimary p-6 mb-6"
+     data-controller="threat-variants">
   <h3 class="text-lg font-semibold mb-4 text-primary">
     Threat Variants (Optional)
   </h3>
 
-  <div class="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-6">
+  <!-- Disabled-state notice: shown only when no variant-eligible probe is selected -->
+  <div class="hidden bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-6"
+       role="alert"
+       data-threat-variants-target="disabledNotice">
     <div class="flex items-start gap-3">
-      <div class="shrink-0 mt-0.5">
-        <span class="icon icon-md icon-info text-primary"></span>
-      </div>
-      <div>
+      <span class="icon icon-md icon-info text-amber-400 shrink-0 mt-0.5"></span>
+      <div class="flex-1">
         <h4 class="text-sm font-medium text-contentPrimary mb-1">
-          Select industry-specific variants as a follow up for every successful attack from the probes selected above.
+          Threat variants require a copyright or illicit-substance probe.
         </h4>
         <p class="text-sm text-contentSecondary">
-          Select industry categories to include specialized threat variants that will be applied as follow-ups to successful probe attacks.
+          Select at least one copyright or illicit-substance probe above to enable industry-specific variants.
         </p>
       </div>
-    </div>
-  </div>
-
-  <!-- Selection Summary -->
-  <div class="mb-6 flex items-center justify-between">
-    <div data-threat-variants-target="summary" class="text-sm font-medium text-contentSecondary">
-      No categories selected
-    </div>
-    <div class="flex gap-2">
       <button type="button"
-              data-action="click->threat-variants#expandAll"
-              class="btn-base btn-sm btn-default-gray">
-        <span class="icon icon-sm icon-chevron-down"></span>
-        Expand All
-      </button>
-      <button type="button"
-              data-action="click->threat-variants#collapseAll"
-              class="btn-base btn-sm btn-default-gray">
-        <span class="icon icon-sm icon-chevron-up"></span>
-        Collapse All
+              class="btn-base btn-sm btn-default-gray shrink-0"
+              data-action="click->threat-variants#clearSelections">
+        Clear selections
       </button>
     </div>
   </div>
 
-  <!-- Hidden field to ensure empty array is submitted when no variants selected -->
-  <%= hidden_field_tag "scan[threat_variant_subindustry_ids][]", "" %>
-
-  <!-- Industries list -->
-  <div class="threat-variants-container" data-threat-variants-target="container">
-    <div class="industries-list space-y-3">
-      <% industry_configs = {
-           "automotive" => { icon: "icon-truck", color: "blue" },
-           "finance" => { icon: "icon-banknotes", color: "blue" },
-           "healthcare" => { icon: "icon-plus", color: "blue" },
-           "retail" => { icon: "icon-shopping-bag", color: "blue" },
-           "technology" => { icon: "icon-computer", color: "blue" },
-           "energy" => { icon: "icon-lightning", color: "blue" },
-           "education" => { icon: "icon-document", color: "blue" },
-           "government" => { icon: "icon-building", color: "blue" },
-           "manufacturing" => { icon: "icon-wrench-screwdriver", color: "blue" },
-           "marketing" => { icon: "icon-chart", color: "blue" },
-           "social networks" => { icon: "icon-globe", color: "blue" },
-           "telecom" => { icon: "icon-phone", color: "blue" }
-         } %>
-
-      <% threat_variant_industries.each do |industry| %>
-        <% industry_probe_ids = industry.threat_variant_subindustries
-             .flat_map { |sub| sub.threat_variants.pluck(:probe_id) }
-             .uniq %>
-        <% industry_key = industry.name.downcase %>
-        <% config = industry_configs[industry_key] || { icon: "📁", color: "blue" } %>
-
-        <div class="industry-item border border-borderPrimary rounded-lg overflow-hidden hover:border-primary/50 transition-all"
-             data-probe-ids="<%= industry_probe_ids.join(',') %>"
-             data-industry-id="<%= industry.id %>"
-             data-industry-name="<%= industry.name %>"
-             data-threat-variants-target="industryItem">
-          <!-- Industry Header -->
-          <div class="industry-header bg-backgroundSecondary hover:bg-backgroundSecondary/80 transition-colors cursor-pointer"
-               data-action="click->threat-variants#toggleIndustry">
-            <div class="p-4">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <!-- Checkbox -->
-                  <div data-action="click->threat-variants#stopPropagation">
-                    <%= check_box_tag "industry_#{industry.id}",
-                        "1",
-                        false,
-                        class: "industry-checkbox",
-                        data: {
-                          action: "change->threat-variants#selectAllIndustry",
-                          "threat-variants-target": "industryCheckbox",
-                          "industry-id": industry.id
-                        } %>
-                  </div>
-                  <!-- Icon -->
-                  <span class="icon icon-md <%= config[:icon] %> text-contentSecondary"></span>
-                  <!-- Industry name and count -->
-                  <div class="flex-1">
-                    <h5 class="text-base font-semibold text-contentPrimary"><%= industry.name.humanize %></h5>
-                    <p class="text-xs text-contentTertiary">
-                      <%= industry.threat_variant_subindustries.count %> specialized categories
-                    </p>
-                  </div>
-                </div>
-                <!-- Chevron icon -->
-                <div class="p-1">
-                  <span class="icon icon-md icon-chevron-down chevron-icon text-contentTertiary transition-transform duration-200" data-industry-id="<%= industry.id %>"></span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Subindustries Container -->
-          <div class="subindustries-container bg-backgroundPrimary hidden"
-               data-industry-id="<%= industry.id %>"
-               data-threat-variants-target="subindustriesContainer">
-            <div class="p-4 border-t border-borderPrimary">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <% industry.threat_variant_subindustries.each do |subindustry| %>
-                  <% subindustry_probe_ids = subindustry.threat_variants.pluck(:probe_id).uniq %>
-                  <div class="subindustry-item flex items-center gap-3 p-3 bg-backgroundSecondary rounded-md hover:bg-backgroundSecondary/80 transition-colors"
-                       data-probe-ids="<%= subindustry_probe_ids.join(',') %>"
-                       data-industry-id="<%= industry.id %>"
-                       data-industry-name="<%= industry.name %>"
-                       data-subindustry-id="<%= subindustry.id %>"
-                       data-threat-variants-target="subindustryItem">
-                    <% is_checked = scan.persisted? && scan.threat_variant_subindustries.include?(subindustry) %>
-                    <%= check_box_tag "scan[threat_variant_subindustry_ids][]",
-                        subindustry.id,
-                        is_checked,
-                        id: "scan_threat_variant_subindustry_ids_#{subindustry.id}",
-                        class: "subindustry-checkbox",
-                        data: {
-                          action: "change->threat-variants#selectSubindustry",
-                          "threat-variants-target": "subindustryCheckbox",
-                          "industry-id": industry.id
-                        } %>
-                    <label for="scan_threat_variant_subindustry_ids_<%= subindustry.id %>"
-                           class="text-sm text-contentSecondary cursor-pointer flex-1 hover:text-contentPrimary transition-colors">
-                      <%= subindustry.name.humanize %>
-                    </label>
-                  </div>
-                <% end %>
-              </div>
-            </div>
-          </div>
+  <!-- Content wrapper: dimmed + pointer-events-none when disabled -->
+  <div data-threat-variants-target="content">
+    <div class="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-6">
+      <div class="flex items-start gap-3">
+        <div class="shrink-0 mt-0.5">
+          <span class="icon icon-md icon-info text-primary"></span>
         </div>
-      <% end %>
+        <div>
+          <h4 class="text-sm font-medium text-contentPrimary mb-1">
+            Select industry-specific variants as a follow up for every successful attack from the probes selected above.
+          </h4>
+          <p class="text-sm text-contentSecondary">
+            Select industry categories to include specialized threat variants that will be applied as follow-ups to successful probe attacks.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Selection Summary -->
+    <div class="mb-6 flex items-center justify-between">
+      <div data-threat-variants-target="summary" class="text-sm font-medium text-contentSecondary">
+        No categories selected
+      </div>
+      <div class="flex gap-2">
+        <button type="button"
+                data-action="click->threat-variants#expandAll"
+                class="btn-base btn-sm btn-default-gray">
+          <span class="icon icon-sm icon-chevron-down"></span>
+          Expand All
+        </button>
+        <button type="button"
+                data-action="click->threat-variants#collapseAll"
+                class="btn-base btn-sm btn-default-gray">
+          <span class="icon icon-sm icon-chevron-up"></span>
+          Collapse All
+        </button>
+      </div>
+    </div>
+
+    <!-- Hidden field to ensure empty array is submitted when no variants selected -->
+    <%= hidden_field_tag "scan[threat_variant_subindustry_ids][]", "" %>
+
+    <!-- Industries list -->
+    <div class="threat-variants-container" data-threat-variants-target="container">
+      <div class="industries-list space-y-3">
+        <% industry_configs = {
+             "automotive" => { icon: "icon-truck", color: "blue" },
+             "finance" => { icon: "icon-banknotes", color: "blue" },
+             "healthcare" => { icon: "icon-plus", color: "blue" },
+             "retail" => { icon: "icon-shopping-bag", color: "blue" },
+             "technology" => { icon: "icon-computer", color: "blue" },
+             "energy" => { icon: "icon-lightning", color: "blue" },
+             "education" => { icon: "icon-document", color: "blue" },
+             "government" => { icon: "icon-building", color: "blue" },
+             "manufacturing" => { icon: "icon-wrench-screwdriver", color: "blue" },
+             "marketing" => { icon: "icon-chart", color: "blue" },
+             "social networks" => { icon: "icon-globe", color: "blue" },
+             "telecom" => { icon: "icon-phone", color: "blue" }
+           } %>
+
+        <% threat_variant_industries.each do |industry| %>
+          <% industry_probe_ids = industry.threat_variant_subindustries
+               .flat_map { |sub| sub.threat_variants.pluck(:probe_id) }
+               .uniq %>
+          <% industry_key = industry.name.downcase %>
+          <% config = industry_configs[industry_key] || { icon: "📁", color: "blue" } %>
+
+          <div class="industry-item border border-borderPrimary rounded-lg overflow-hidden hover:border-primary/50 transition-all"
+               data-probe-ids="<%= industry_probe_ids.join(',') %>"
+               data-industry-id="<%= industry.id %>"
+               data-industry-name="<%= industry.name %>"
+               data-threat-variants-target="industryItem">
+            <!-- Industry Header -->
+            <div class="industry-header bg-backgroundSecondary hover:bg-backgroundSecondary/80 transition-colors cursor-pointer"
+                 data-action="click->threat-variants#toggleIndustry">
+              <div class="p-4">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <!-- Checkbox -->
+                    <div data-action="click->threat-variants#stopPropagation">
+                      <%= check_box_tag "industry_#{industry.id}",
+                          "1",
+                          false,
+                          class: "industry-checkbox",
+                          data: {
+                            action: "change->threat-variants#selectAllIndustry",
+                            "threat-variants-target": "industryCheckbox",
+                            "industry-id": industry.id
+                          } %>
+                    </div>
+                    <!-- Icon -->
+                    <span class="icon icon-md <%= config[:icon] %> text-contentSecondary"></span>
+                    <!-- Industry name and count -->
+                    <div class="flex-1">
+                      <h5 class="text-base font-semibold text-contentPrimary"><%= industry.name.humanize %></h5>
+                      <p class="text-xs text-contentTertiary">
+                        <%= industry.threat_variant_subindustries.count %> specialized categories
+                      </p>
+                    </div>
+                  </div>
+                  <!-- Chevron icon -->
+                  <div class="p-1">
+                    <span class="icon icon-md icon-chevron-down chevron-icon text-contentTertiary transition-transform duration-200" data-industry-id="<%= industry.id %>"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subindustries Container -->
+            <div class="subindustries-container bg-backgroundPrimary hidden"
+                 data-industry-id="<%= industry.id %>"
+                 data-threat-variants-target="subindustriesContainer">
+              <div class="p-4 border-t border-borderPrimary">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <% industry.threat_variant_subindustries.each do |subindustry| %>
+                    <% subindustry_probe_ids = subindustry.threat_variants.pluck(:probe_id).uniq %>
+                    <div class="subindustry-item flex items-center gap-3 p-3 bg-backgroundSecondary rounded-md hover:bg-backgroundSecondary/80 transition-colors"
+                         data-probe-ids="<%= subindustry_probe_ids.join(',') %>"
+                         data-industry-id="<%= industry.id %>"
+                         data-industry-name="<%= industry.name %>"
+                         data-subindustry-id="<%= subindustry.id %>"
+                         data-threat-variants-target="subindustryItem">
+                      <% is_checked = scan.persisted? && scan.threat_variant_subindustries.include?(subindustry) %>
+                      <%= check_box_tag "scan[threat_variant_subindustry_ids][]",
+                          subindustry.id,
+                          is_checked,
+                          id: "scan_threat_variant_subindustry_ids_#{subindustry.id}",
+                          class: "subindustry-checkbox",
+                          data: {
+                            action: "change->threat-variants#selectSubindustry",
+                            "threat-variants-target": "subindustryCheckbox",
+                            "industry-id": industry.id
+                          } %>
+                      <label for="scan_threat_variant_subindustry_ids_<%= subindustry.id %>"
+                             class="text-sm text-contentSecondary cursor-pointer flex-1 hover:text-contentPrimary transition-colors">
+                        <%= subindustry.name.humanize %>
+                      </label>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
     </div>
   </div>
 </div>

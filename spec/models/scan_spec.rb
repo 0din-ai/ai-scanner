@@ -92,6 +92,35 @@ RSpec.describe Scan, type: :model do
 
       expect(scan.valid?).to be_truthy
     end
+
+    it 'rejects scans that select threat variants without any variant-eligible probe' do
+      ineligible_detector = create(:detector, name: '0din.PromptInjection')
+      ineligible_probe = create(:probe, detector: ineligible_detector)
+      subindustry = create(:threat_variant_subindustry)
+      scan = Scan.new(name: 'Variant Without Eligible Probe', uuid: SecureRandom.uuid, company: company)
+      scan.targets = [ create(:target, company: company) ]
+      scan.probes = [ ineligible_probe ]
+      scan.threat_variant_subindustries = [ subindustry ]
+
+      allow(scan).to receive(:update_next_scheduled_run)
+
+      expect(scan).not_to be_valid
+      expect(scan.errors[:base]).to include('Threat variants require at least one copyright or illicit-substance probe')
+    end
+
+    it 'is valid when at least one selected probe is variant-eligible' do
+      eligible_detector = create(:detector, name: '0din.MitigationBypass')
+      eligible_probe = create(:probe, detector: eligible_detector)
+      subindustry = create(:threat_variant_subindustry)
+      scan = Scan.new(name: 'Variant With Eligible Probe', uuid: SecureRandom.uuid, company: company)
+      scan.targets = [ create(:target, company: company) ]
+      scan.probes = [ eligible_probe ]
+      scan.threat_variant_subindustries = [ subindustry ]
+
+      allow(scan).to receive(:update_next_scheduled_run)
+
+      expect(scan).to be_valid
+    end
   end
 
   describe 'callbacks' do

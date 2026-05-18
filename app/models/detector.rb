@@ -1,4 +1,11 @@
 class Detector < ApplicationRecord
+  MITIGATION_BYPASS_DETECTOR_SUFFIX = "MitigationBypass".freeze
+  VARIANT_ELIGIBLE_DETECTOR_SUFFIXES = [
+    MITIGATION_BYPASS_DETECTOR_SUFFIX,
+    "CrystalMethScore",
+    "CopyRightScoreHarryPotterChapterOne"
+  ].freeze
+
   has_many :detector_results, dependent: :destroy
   has_many :reports, through: :detector_results
   has_many :probe_results
@@ -26,7 +33,13 @@ class Detector < ApplicationRecord
   end
 
   def mitigation_bypass?
-    name&.end_with?("MitigationBypass")
+    name&.end_with?(MITIGATION_BYPASS_DETECTOR_SUFFIX)
+  end
+
+  def variant_eligible?
+    return false if name.blank?
+
+    VARIANT_ELIGIBLE_DETECTOR_SUFFIXES.any? { |suffix| name.end_with?(suffix) }
   end
 
   def self.ransackable_attributes(auth_object = nil)

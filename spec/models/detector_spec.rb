@@ -108,4 +108,24 @@ RSpec.describe Detector, type: :model do
       expect(detector.probes.count).to eq(2)
     end
   end
+
+  describe '#variant_eligible?' do
+    it 'is true for MitigationBypass detector names' do
+      expect(Detector.new(name: '0din.MitigationBypass').variant_eligible?).to be true
+      expect(Detector.new(name: 'mitigation.MitigationBypass').variant_eligible?).to be true
+    end
+
+    it 'is true for CrystalMethScore detector names' do
+      expect(Detector.new(name: '0din.CrystalMethScore').variant_eligible?).to be true
+    end
+
+    it 'is true for CopyRightScoreHarryPotterChapterOne detector names' do
+      expect(Detector.new(name: '0din.CopyRightScoreHarryPotterChapterOne').variant_eligible?).to be true
+    end
+
+    it 'is false for other detector names' do
+      expect(Detector.new(name: '0din.PromptInjection').variant_eligible?).to be false
+      expect(Detector.new(name: nil).variant_eligible?).to be false
+    end
+  end
 end

@@ -124,6 +124,21 @@ function loadLogViewerController() {
   return { ControllerClass }
 }
 
+function loadThreatVariantsController() {
+  const transformed = loadControllerSource(
+    "threat_variants_controller.js",
+    "ThreatVariantsController"
+  )
+
+  const context = { Controller: class {}, document: {} }
+  const ControllerClass = vm.runInNewContext(
+    `${transformed}\nThreatVariantsController`,
+    context
+  )
+
+  return { ControllerClass }
+}
+
 function loadReportRedesignedController() {
   const source = readFileSync(
     new URL("../../app/javascript/controllers/report_redesigned_controller.js", import.meta.url),
@@ -203,6 +218,9 @@ function fakeElement(...initialClasses) {
     focusTarget: null,
     setAttribute(name, value) {
       attributes.set(name, value)
+    },
+    removeAttribute(name) {
+      attributes.delete(name)
     },
     getAttribute(name) {
       return attributes.get(name)
@@ -870,6 +888,69 @@ function testLogViewerController() {
   assert.equal(dynamicFailLine.style.display, "none")
 }
 
+function testThreatVariantsController() {
+  const { ControllerClass } = loadThreatVariantsController()
+
+  const enabledController = new ControllerClass()
+  const enabledContent = fakeElement()
+  const enabledNotice = fakeElement("hidden")
+  const enabledIndustryCheckbox = fakeElement()
+  const enabledSubindustryCheckbox = fakeElement()
+
+  enabledController.contentTarget = enabledContent
+  enabledController.hasContentTarget = true
+  enabledController.disabledNoticeTarget = enabledNotice
+  enabledController.hasDisabledNoticeTarget = true
+  enabledController.industryCheckboxTargets = [enabledIndustryCheckbox]
+  enabledController.subindustryCheckboxTargets = [enabledSubindustryCheckbox]
+
+  enabledController.applyEligibility(true)
+
+  assert.equal(enabledContent.classList.contains("opacity-50"), false)
+  assert.equal(enabledContent.classList.contains("pointer-events-none"), false)
+  assert.equal(enabledContent.getAttribute("aria-disabled"), undefined)
+  assert.equal(enabledNotice.classList.contains("hidden"), true)
+  assert.equal(enabledIndustryCheckbox.disabled, false)
+  assert.equal(enabledSubindustryCheckbox.disabled, false)
+
+  const disabledController = new ControllerClass()
+  const disabledContent = fakeElement()
+  const disabledNotice = fakeElement("hidden")
+  const disabledIndustryCheckbox = fakeElement()
+  const disabledSubindustryCheckbox = fakeElement()
+
+  disabledController.contentTarget = disabledContent
+  disabledController.hasContentTarget = true
+  disabledController.disabledNoticeTarget = disabledNotice
+  disabledController.hasDisabledNoticeTarget = true
+  disabledController.industryCheckboxTargets = [disabledIndustryCheckbox]
+  disabledController.subindustryCheckboxTargets = [disabledSubindustryCheckbox]
+
+  disabledController.applyEligibility(false)
+
+  assert.equal(disabledContent.classList.contains("opacity-50"), true)
+  assert.equal(disabledContent.classList.contains("pointer-events-none"), true)
+  assert.equal(disabledContent.getAttribute("aria-disabled"), "true")
+  assert.equal(disabledNotice.classList.contains("hidden"), false)
+  assert.equal(disabledIndustryCheckbox.disabled, true)
+  assert.equal(disabledSubindustryCheckbox.disabled, true)
+
+  const clearController = new ControllerClass()
+  const cb1 = fakeElement()
+  cb1.checked = true
+  const cb2 = fakeElement()
+  cb2.checked = true
+  clearController.subindustryCheckboxTargets = [cb1, cb2]
+  clearController.industryItemTargets = []
+  clearController.summaryTarget = fakeElement()
+  clearController.hasSummaryTarget = true
+
+  clearController.clearSelections()
+
+  assert.equal(cb1.checked, false)
+  assert.equal(cb2.checked, false)
+}
+
 await testDebugStreamLeaseController()
 testActivityStreamController()
 testDebugTabsController()
@@ -877,4 +958,5 @@ testDebugStreamFilterController()
 testReportRedesignedController()
 testReportRedesignedControllerListenerCleanup()
 testLogViewerController()
+testThreatVariantsController()
 console.log("JavaScript controller tests passed")

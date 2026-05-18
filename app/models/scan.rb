@@ -36,6 +36,7 @@ class Scan < ApplicationRecord
     validates :probes, presence: true
     validates :avg_successful_attacks, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }, allow_nil: true
     validate :auto_update_flags_have_corresponding_probes
+    validate :variants_require_eligible_probe
 
     serialize :recurrence, coder: IceCubeScheduleCoder
 
@@ -272,6 +273,16 @@ class Scan < ApplicationRecord
       if auto_update_hp? && categorized[:hp].empty?
         errors.add(:auto_update_hp, "cannot be enabled without HP probes")
       end
+    end
+
+    def variants_require_eligible_probe
+      return if threat_variant_subindustries.empty?
+
+      probe_records = probes.to_a
+      ActiveRecord::Associations::Preloader.new(records: probe_records, associations: [ :detector ]).call
+      return if probe_records.any?(&:variant_eligible?)
+
+      errors.add(:base, "Threat variants require at least one copyright or illicit-substance probe")
     end
 
     def generate_uuid
