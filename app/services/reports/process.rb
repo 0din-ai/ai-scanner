@@ -38,6 +38,7 @@ module Reports
         process_jsonl_data(@raw_data.jsonl_data, mark_processing: false)
 
         persist_final_logs
+        apply_failure_metadata
         save_detector_results
         update_target_token_rate
 
@@ -48,15 +49,51 @@ module Reports
     end
 
     def persist_final_logs
-      final_logs = @raw_data.logs_data.presence || report.report_debug_log&.tail.presence
+      final_logs = current_run_final_logs
       return if final_logs.nil? && report.report_debug_log.nil?
       return if final_logs.nil? && preserve_existing_logs_without_final_logs?
 
       report.logs = final_logs
     end
 
+    def current_run_final_logs
+      return @current_run_final_logs if defined?(@current_run_final_logs)
+
+      @current_run_final_logs = @raw_data.logs_data.presence || report.report_debug_log&.tail.presence
+    end
+
     def preserve_existing_logs_without_final_logs?
       report.retry_count.to_i.positive? && report.logs.present?
+    end
+
+    def apply_failure_metadata
+      failure = FailureClassifier.new(report, logs: current_run_failure_logs).call
+      if failure.failed?
+        report.status = :failed
+        report.failure_code = failure.code
+        report.failure_message = failure.message
+        report.failure_details = failure.details
+      else
+        clear_failure_metadata
+      end
+    end
+
+    def current_run_failure_logs
+      return @current_run_failure_logs if defined?(@current_run_failure_logs)
+
+      @current_run_failure_logs = @raw_data.logs_data.presence || current_run_tail_failure_logs
+    end
+
+    def current_run_tail_failure_logs
+      return if report.retry_count.to_i.positive?
+
+      report.report_debug_log&.tail.presence
+    end
+
+    def clear_failure_metadata
+      report.failure_code = nil
+      report.failure_message = nil
+      report.failure_details = {}
     end
 
     def process_jsonl_data(jsonl_string, mark_processing: true)

@@ -105,6 +105,88 @@ class TestLocalPluginSources(unittest.TestCase):
         self.assertIn("def _load_unsafe", source)
         self.assertIn("OPENROUTER_BASE_URL", source)
         self.assertIn("def _call_model_sequential", source)
+        self.assertIn("terminal API status error", source)
+
+
+@unittest.skipUnless(_garak_available(), "garak is not importable")
+class TestOpenRouterTerminalErrors(unittest.TestCase):
+    def _generator_with_create(self, create):
+        module = _load_local_plugin("local_openrouter_terminal", "openrouter.py")
+        generator = object.__new__(module.OpenRouterGenerator)
+        generator.name = "openai/gpt-4o"
+        generator.client = object()
+        generator.generator = type("FakeCompletions", (), {"create": staticmethod(create)})()
+        generator.suppressed_params = set()
+        generator.max_tokens = 10
+        generator.generator_family_name = "OpenRouter"
+        return module, generator
+
+    def _response(self, status_code):
+        import httpx
+
+        request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+        return httpx.Response(status_code, request=request, json={"error": {"message": "provider rejected"}})
+
+    def test_openrouter_converts_terminal_api_status_to_bad_generator(self):
+        import openai
+        from garak.exception import BadGeneratorException
+
+        body = {
+            "error": "invalid request",
+            "api_key": "sk-or-v1-secretvalue",
+            "debug": '{"api_key":"plainsecret"}',
+            "nested": {"authorization": "Bearer topsecret"}
+        }
+
+        def create(**_kwargs):
+            raise openai.BadRequestError("request rejected", response=self._response(422), body=body)
+
+        _module, generator = self._generator_with_create(create)
+
+        with self.assertRaises(BadGeneratorException) as ctx:
+            generator._call_model("prompt", generations_this_call=1)
+
+        message = str(ctx.exception)
+        self.assertIn("OpenRouter terminal API status error", message)
+        self.assertIn("status_code=422", message)
+        self.assertIn("model='openai/gpt-4o'", message)
+        self.assertNotIn("sk-or-v1-secretvalue", message)
+        self.assertNotIn("plainsecret", message)
+        self.assertNotIn("topsecret", message)
+        self.assertIn("[REDACTED]", message)
+
+    def test_openrouter_retryable_rate_limit_propagates(self):
+        import openai
+
+        def create(**_kwargs):
+            raise openai.RateLimitError("rate limited", response=self._response(429), body={})
+
+        _module, generator = self._generator_with_create(create)
+
+        with self.assertRaises(openai.RateLimitError):
+            generator._call_model("prompt", generations_this_call=1)
+
+    def test_openrouter_all_empty_generations_raise_bad_generator(self):
+        from garak.exception import BadGeneratorException
+
+        class MessageObj:
+            content = None
+
+        class Choice:
+            message = MessageObj()
+
+        class Response:
+            choices = [Choice()]
+
+        def create(**_kwargs):
+            return Response()
+
+        _module, generator = self._generator_with_create(create)
+
+        with self.assertRaises(BadGeneratorException) as ctx:
+            generator._call_model("prompt", generations_this_call=1)
+
+        self.assertIn("empty generations", str(ctx.exception))
 
 
 if __name__ == "__main__":

@@ -134,9 +134,13 @@ class RunGarakScan
       Rails.logger.error("Cannot run scan for report #{report.id} - target #{target.id} (#{target.name}) has unexpected status: #{target.status}")
     end
 
+    sanitized_error_message = Reports::FailureClassifier.sanitize_text(error_message)
     report.update(
       status: :failed,
-      logs: "Scan failed: #{error_message}"
+      logs: "Scan failed: #{sanitized_error_message}",
+      failure_code: "target_validation_failed",
+      failure_message: sanitized_error_message,
+      failure_details: {}
     )
   end
 

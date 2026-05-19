@@ -18,11 +18,14 @@ Requires garak 0.14+ (uses Conversation/Message API).
 """
 
 import logging
+import re
+from collections.abc import Mapping, Sequence
 from typing import List, Union, Optional
 
 from garak import _config
-from garak.generators.openai import OpenAICompatible
 from garak.attempt import Conversation, Message
+from garak.exception import BadGeneratorException
+from garak.generators.openai import OpenAICompatible
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -39,6 +42,77 @@ context_lengths = {
     "mistral/mistral-medium": 32000,
     "mistral/mistral-small": 32000
 }
+
+SENSITIVE_KEY_RE = re.compile(r"(?:api[_-]?key|token|secret|password|authorization)", re.I)
+SECRET_VALUE_PATTERNS = (
+    (re.compile(r"(Bearer\s+)[A-Za-z0-9._~+\-/=]+", re.I), r"\1[REDACTED]"),
+    (re.compile(r"((?:api[_-]?key|token|secret|password|authorization)[\"']?\s*[:=]\s*)[\"']?[^\"'\s,}]+", re.I), r"\1[REDACTED]"),
+    (re.compile(r"\bsk-(?:or-v1-)?[A-Za-z0-9_-]{8,}\b", re.I), "[REDACTED]"),
+)
+
+
+def _safe_getattr(obj, attr, default=None):
+    try:
+        return getattr(obj, attr)
+    except Exception:
+        return default
+
+
+def _redact(value):
+    if isinstance(value, Mapping):
+        return {
+            key: "[REDACTED]" if SENSITIVE_KEY_RE.search(str(key)) else _redact(nested)
+            for key, nested in value.items()
+        }
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_redact(nested) for nested in value]
+
+    if isinstance(value, str):
+        redacted = value
+        for pattern, replacement in SECRET_VALUE_PATTERNS:
+            redacted = pattern.sub(replacement, redacted)
+        return redacted
+
+    return value
+
+
+def _safe_status_detail(value, max_chars=2000):
+    if value is None:
+        return ""
+
+    redacted = _redact(value)
+    try:
+        rendered = repr(redacted)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        rendered = f"<unprintable {type(value).__name__}: {type(exc).__name__}>"
+
+    if len(rendered) > max_chars:
+        return f"{rendered[:max_chars]}...<truncated>"
+    return rendered
+
+
+def _terminal_api_status_message(exc, provider, model):
+    response = _safe_getattr(exc, "response")
+    status_code = _safe_getattr(exc, "status_code")
+    if status_code is None:
+        status_code = _safe_getattr(response, "status_code")
+
+    reason = _safe_getattr(response, "reason_phrase") or _safe_getattr(response, "reason")
+    message = _safe_getattr(exc, "message") or str(exc)
+    body = _safe_getattr(exc, "body")
+    if body is None and response is not None:
+        body = _safe_getattr(response, "text")
+
+    return (
+        f"{provider} terminal API status error: "
+        f"model={_safe_status_detail(model)} "
+        f"status_code={_safe_status_detail(status_code)} "
+        f"reason={_safe_status_detail(reason)} "
+        f"message={_safe_status_detail(message)} "
+        f"body={_safe_status_detail(body)}"
+    )
+
 
 class OpenRouterGenerator(OpenAICompatible):
     """Generator wrapper for OpenRouter.ai models. Expects API key in the OPENROUTER_API_KEY environment variable"""
@@ -129,7 +203,7 @@ class OpenRouterGenerator(OpenAICompatible):
                     logging.debug(f"  Function Call: {choice.message.function_call}")
             elif hasattr(choice, 'text'):
                 logging.debug(f"- Text: {choice.text}")
-            
+
             # Log additional choice attributes if present
             if hasattr(choice, 'finish_reason'):
                 logging.debug(f"  Finish Reason: {choice.finish_reason}")
@@ -141,7 +215,7 @@ class OpenRouterGenerator(OpenAICompatible):
             logging.debug(f"\nModel: {response.model}")
         if hasattr(response, 'system_fingerprint'):
             logging.debug(f"System Fingerprint: {response.system_fingerprint}")
-            
+
         logging.debug("==================")
 
     def _call_model(
@@ -182,6 +256,7 @@ class OpenRouterGenerator(OpenAICompatible):
             self._log_completion_details(prompt, raw_response)
 
             response_messages = self._messages_from_response(raw_response)
+            self._raise_if_all_generations_empty(response_messages)
             if len(response_messages) == generations_this_call:
                 return response_messages
 
@@ -195,7 +270,10 @@ class OpenRouterGenerator(OpenAICompatible):
             )
             return self._call_model_sequential(messages, generations_this_call, prompt)
 
+        except BadGeneratorException:
+            raise
         except Exception as e:
+            self._raise_terminal_api_status_error(e)
             logging.error(f"Error in model call: {str(e)}")
             return [None] * generations_this_call
 
@@ -211,8 +289,12 @@ class OpenRouterGenerator(OpenAICompatible):
                 )
                 self._log_completion_details(original_prompt, raw_response)
                 response_messages = self._messages_from_response(raw_response)
+                self._raise_if_all_generations_empty(response_messages)
                 responses.append(response_messages[0] if response_messages else None)
+            except BadGeneratorException:
+                raise
             except Exception as e:
+                self._raise_terminal_api_status_error(e)
                 logging.error(f"Error in sequential model call: {str(e)}")
                 responses.append(None)
         return responses
@@ -222,5 +304,23 @@ class OpenRouterGenerator(OpenAICompatible):
             Message(text=choice.message.content) if choice.message.content else None
             for choice in raw_response.choices
         ]
+
+    def _raise_if_all_generations_empty(self, response_messages):
+        if response_messages and all(message is None for message in response_messages):
+            raise BadGeneratorException(
+                "OpenRouter returned only empty generations; the provider route may be unavailable."
+            )
+
+    def _raise_terminal_api_status_error(self, exc):
+        import openai
+
+        if isinstance(exc, (openai.RateLimitError, openai.InternalServerError)):
+            raise exc
+
+        if isinstance(exc, openai.APIStatusError):
+            raise BadGeneratorException(
+                _terminal_api_status_message(exc, self.generator_family_name, self.name)
+            ) from exc
+
 
 DEFAULT_CLASS = "OpenRouterGenerator"

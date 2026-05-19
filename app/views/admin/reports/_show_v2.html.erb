@@ -31,6 +31,10 @@
     <div class="mx-auto space-y-6">
       <%= render partial: 'admin/reports/metadata_section', locals: { report: report } %>
 
+      <% if report.failed_with_reason? %>
+        <%= render partial: 'reports/failure_summary', locals: { report: report, admin: true } %>
+      <% end %>
+
       <%= render partial: 'admin/reports/statistics_section', locals: { report: report } %>
 
       <% if show_activity_stream_for_report?(report, params: params, user: current_user) %>

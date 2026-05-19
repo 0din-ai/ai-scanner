@@ -518,7 +518,7 @@ RSpec.describe Report, type: :model do
     end
 
     it 'includes all expected attributes' do
-      expected_attributes = [ "company_id", "name", "created_at", "id", "status", "target_id", "updated_at", "uuid", "asr" ]
+      expected_attributes = [ "company_id", "failure_code", "name", "created_at", "id", "status", "target_id", "updated_at", "uuid", "asr" ]
       expect(Report.ransackable_attributes).to match_array(expected_attributes)
     end
   end
@@ -956,6 +956,37 @@ RSpec.describe Report, type: :model do
 
         expect(labels).to include(trace_id: 'none')
       end
+    end
+  end
+
+  describe "failure metadata helpers" do
+    let(:report) { build(:report, status: :failed, failure_code: failure_code, failure_message: failure_message) }
+    let(:failure_code) { nil }
+    let(:failure_message) { nil }
+
+    it "detects failed reports with structured failure metadata" do
+      report.failure_code = "provider_auth_failed"
+
+      expect(report).to be_failed_with_reason
+    end
+
+    it "uses explicit failure messages when present" do
+      report.failure_message = "Custom safe failure message"
+
+      expect(report.user_failure_message).to eq("Custom safe failure message")
+    end
+
+    it "maps provider outage codes to actionable user copy" do
+      report.failure_code = "provider_service_unavailable"
+
+      expect(report.failure_title).to eq("Provider temporarily unavailable")
+      expect(report.user_failure_message).to include("temporarily unavailable")
+      expect(report.failure_action).to include("Wait for the provider")
+    end
+
+    it "falls back to generic failed copy" do
+      expect(report.failure_title).to eq("Scan failed")
+      expect(report.user_failure_message).to eq("The scan failed before results could be completed.")
     end
   end
 

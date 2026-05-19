@@ -1,0 +1,53 @@
+<%
+  admin = local_assigns.fetch(:admin, false)
+  pdf_mode = local_assigns.fetch(:pdf_mode, false)
+  details = report.failure_details || {}
+  detail_items = [
+    [ "Provider", details["provider"] ],
+    [ "Model", details["model"] ],
+    [ "Status", details["status_code"] ]
+  ].select { |_label, value| value.present? }
+
+  container_class = if admin
+    "rounded-lg border border-red-400/30 bg-red-950/20 p-4"
+  elsif pdf_mode
+    "px-6 py-5 bg-red-50 border-b border-red-200"
+  else
+    "px-8 py-6 bg-red-50 border-b border-red-200"
+  end
+  title_class = admin ? "text-sm font-semibold text-red-200" : "text-base font-semibold text-red-900"
+  message_class = admin ? "mt-1 text-sm leading-6 text-contentSecondary" : "mt-1 text-sm leading-6 text-red-800"
+  action_class = admin ? "mt-3 text-sm font-medium text-red-200" : "mt-3 text-sm font-medium text-red-900"
+  meta_class = if admin
+    "mt-3 flex flex-wrap gap-2 text-xs text-red-100"
+  else
+    "mt-3 flex flex-wrap gap-2 text-xs text-red-800"
+  end
+  pill_class = if admin
+    "rounded border border-red-400/30 bg-red-950/30 px-2 py-1"
+  else
+    "rounded border border-red-200 bg-white/70 px-2 py-1"
+  end
+%>
+
+<div class="<%= container_class %>" role="alert">
+  <div class="flex gap-3">
+    <span class="icon icon-md icon-warning shrink-0 <%= admin ? 'text-red-300' : 'text-red-600' %>"></span>
+    <div class="min-w-0">
+      <h2 class="<%= title_class %>">Scan failed: <%= report.failure_title %></h2>
+      <p class="<%= message_class %>"><%= report.user_failure_message %></p>
+      <p class="<%= action_class %>">Next step: <%= report.failure_action %></p>
+
+      <% if detail_items.any? %>
+        <dl class="<%= meta_class %>">
+          <% detail_items.each do |label, value| %>
+            <div class="<%= pill_class %>">
+              <dt class="inline font-medium"><%= label %>:</dt>
+              <dd class="inline"><%= value %></dd>
+            </div>
+          <% end %>
+        </dl>
+      <% end %>
+    </div>
+  </div>
+</div>

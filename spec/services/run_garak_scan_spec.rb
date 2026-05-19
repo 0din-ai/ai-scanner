@@ -52,7 +52,10 @@ RSpec.describe RunGarakScan, type: :service do
       expect(Rails.logger).to receive(:error).with("Cannot run scan for report #{bad_report.id} - target #{bad_target.id} (#{bad_target.name}) has 'bad' status. Validation text: #{bad_target.validation_text}")
       expect(bad_report).to receive(:update).with(
         status: :failed,
-        logs: "Scan failed: Target '#{bad_target.name}' validation failed. #{bad_target.validation_text}"
+        logs: "Scan failed: Target '#{bad_target.name}' validation failed. #{bad_target.validation_text}",
+        failure_code: "target_validation_failed",
+        failure_message: "Target '#{bad_target.name}' validation failed. #{bad_target.validation_text}",
+        failure_details: {}
       )
 
       service.call
@@ -72,7 +75,10 @@ RSpec.describe RunGarakScan, type: :service do
       expect(Rails.logger).to receive(:error).with("Cannot run scan for report #{bad_report.id} - target #{bad_target.id} (#{bad_target.name}) has 'bad' status. Validation text: ")
       expect(bad_report).to receive(:update).with(
         status: :failed,
-        logs: "Scan failed: Target '#{bad_target.name}' validation failed."
+        logs: "Scan failed: Target '#{bad_target.name}' validation failed.",
+        failure_code: "target_validation_failed",
+        failure_message: "Target '#{bad_target.name}' validation failed.",
+        failure_details: {}
       )
 
       service.call
@@ -158,7 +164,10 @@ RSpec.describe RunGarakScan, type: :service do
       expect(Rails.logger).to receive(:warn).with("Cannot run scan for report #{validating_report.id} - target #{validating_target.id} (#{validating_target.name}) is in 'validating' status")
       expect(validating_report).to receive(:update).with(
         status: :failed,
-        logs: "Scan failed: Target '#{validating_target.name}' is still being validated. Please wait for validation to complete before running scans."
+        logs: "Scan failed: Target '#{validating_target.name}' is still being validated. Please wait for validation to complete before running scans.",
+        failure_code: "target_validation_failed",
+        failure_message: "Target '#{validating_target.name}' is still being validated. Please wait for validation to complete before running scans.",
+        failure_details: {}
       )
 
       service.call
@@ -180,7 +189,10 @@ RSpec.describe RunGarakScan, type: :service do
       expect(Rails.logger).to receive(:error).with("Cannot run scan for report #{unexpected_report.id} - target #{unexpected_target.id} (#{unexpected_target.name}) has unexpected status: unknown_status")
       expect(unexpected_report).to receive(:update).with(
         status: :failed,
-        logs: "Scan failed: Target '#{unexpected_target.name}' is not ready for scanning (status: unknown_status). Target must be validated successfully before running scans."
+        logs: "Scan failed: Target '#{unexpected_target.name}' is not ready for scanning (status: unknown_status). Target must be validated successfully before running scans.",
+        failure_code: "target_validation_failed",
+        failure_message: "Target '#{unexpected_target.name}' is not ready for scanning (status: unknown_status). Target must be validated successfully before running scans.",
+        failure_details: {}
       )
 
       service.call

@@ -72,11 +72,89 @@ class Report < ApplicationRecord
   DEBUG_STREAM_POLLING_STATUSES = (DEBUG_BROADCAST_ACTIVE_STATUSES + %w[pending]).freeze
 
   def self.ransackable_attributes(auth_object = nil)
-    [ "company_id", "name", "created_at", "id", "status", "target_id", "updated_at", "uuid", "asr" ]
+    [ "company_id", "failure_code", "name", "created_at", "id", "status", "target_id", "updated_at", "uuid", "asr" ]
   end
 
   def self.ransackable_associations(auth_object = nil)
     [ "company", "target", "scan" ]
+  end
+
+  def failed_with_reason?
+    failed? && (failure_code.present? || failure_message.present?)
+  end
+
+  def user_failure_message
+    return failure_message if failure_message.present?
+
+    case failure_code
+    when "provider_model_unavailable"
+      "The provider rejected the configured model as unavailable. Update the target model, " \
+        "revalidate the target, then rerun the scan."
+    when "provider_payment_required"
+      "The provider rejected the scan because billing or credits are required. Check the provider account, " \
+        "then rerun the scan."
+    when "provider_auth_failed"
+      "The provider rejected the scan because authentication failed. Check the target credentials, " \
+        "revalidate the target, then rerun the scan."
+    when "provider_rejected_request"
+      "The provider rejected the scan request. Review the target configuration, revalidate the target, " \
+        "then rerun the scan."
+    when "provider_rate_limited"
+      "The provider rate limited the scan. Wait or reduce concurrency, then rerun the scan."
+    when "provider_service_unavailable"
+      "The provider is temporarily unavailable or returned an upstream error. Wait for the provider to recover, " \
+        "revalidate the target, then rerun the scan."
+    when "target_validation_failed"
+      "The target is not ready for scanning. Revalidate the target, then rerun the scan."
+    when "garak_runtime_error"
+      "The scan runtime failed before results could be completed. Review the target configuration, then rerun the scan."
+    else
+      "The scan failed before results could be completed."
+    end
+  end
+
+  def failure_title
+    case failure_code
+    when "provider_model_unavailable"
+      "Provider model unavailable"
+    when "provider_payment_required"
+      "Provider billing required"
+    when "provider_auth_failed"
+      "Provider authentication failed"
+    when "provider_rejected_request"
+      "Provider rejected request"
+    when "provider_rate_limited"
+      "Provider rate limited"
+    when "provider_service_unavailable"
+      "Provider temporarily unavailable"
+    when "target_validation_failed"
+      "Target validation failed"
+    when "garak_runtime_error"
+      "Scan runtime failed"
+    else
+      "Scan failed"
+    end
+  end
+
+  def failure_action
+    case failure_code
+    when "provider_model_unavailable"
+      "Update the target model, revalidate the target, then rerun the scan."
+    when "provider_payment_required"
+      "Check provider billing or credits, then rerun the scan."
+    when "provider_auth_failed"
+      "Check API credentials, revalidate the target, then rerun the scan."
+    when "provider_rejected_request"
+      "Review the target configuration, revalidate the target, then rerun the scan."
+    when "provider_rate_limited"
+      "Wait or reduce scan concurrency, then rerun the scan."
+    when "provider_service_unavailable"
+      "Wait for the provider to recover, revalidate the target, then rerun the scan."
+    when "target_validation_failed"
+      "Fix target validation, then rerun the scan."
+    else
+      "Review the target configuration, then rerun the scan."
+    end
   end
 
   def logs

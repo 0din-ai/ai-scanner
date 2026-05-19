@@ -185,6 +185,99 @@ RSpec.describe Reports::Process, type: :service do
       end
     end
 
+    context 'when current-run logs contain terminal provider failure evidence' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let!(:raw_data) do
+        create(
+          :raw_report_data,
+          report: report,
+          jsonl_data: jsonl_content,
+          logs_data: 'OpenRouter terminal API status error: status_code=404 message="No endpoints found for openai/gpt-4o"'
+        )
+      end
+
+      before do
+        target.update!(model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o')
+      end
+
+      it 'marks completed-looking report data as failed with structured provider metadata' do
+        service.call
+
+        report.reload
+        expect(report.status).to eq('failed')
+        expect(report.failure_code).to eq('provider_model_unavailable')
+        expect(report.failure_message).to include('OpenRouter')
+        expect(report.failure_details).to include(
+          'provider' => 'OpenRouter',
+          'model' => 'openai/gpt-4o',
+          'status_code' => 404
+        )
+      end
+    end
+
+    context 'when a retry has no current failure logs' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: jsonl_content, logs_data: nil) }
+
+      before do
+        target.update!(model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o')
+        report.update!(
+          retry_count: 1,
+          status: :running,
+          failure_code: 'provider_service_unavailable',
+          failure_message: 'Old provider outage',
+          failure_details: { 'status_code' => 503 }
+        )
+        create(
+          :report_debug_log,
+          report: report,
+          logs: "Previous log\n[2026-04-27 12:00:00] Auto-retry 1: Requeued after interruption",
+          tail: 'OpenRouter terminal API status error: status_code=503 message="stale outage"'
+        )
+      end
+
+      it 'does not reclassify stale debug tail evidence and clears stale metadata' do
+        service.call
+
+        report.reload
+        expect(report.status).to eq('completed')
+        expect(report.failure_code).to be_nil
+        expect(report.failure_message).to be_nil
+        expect(report.failure_details).to eq({})
+      end
+    end
+
+    context 'when current logs explain an early failed report' do
+      let(:jsonl_without_evals) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ] }.to_json
+        ].join("\n")
+      end
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let!(:raw_data) do
+        create(
+          :raw_report_data,
+          report: report,
+          jsonl_data: jsonl_without_evals,
+          logs_data: 'OpenRouter terminal API status error: status_code=402 message="credits exhausted"'
+        )
+      end
+
+      before do
+        target.update!(model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o')
+      end
+
+      it 'persists provider failure metadata even when eval rows are absent' do
+        service.call
+
+        report.reload
+        expect(report.status).to eq('failed')
+        expect(report.failure_code).to eq('provider_payment_required')
+        expect(report.failure_details['status_code']).to eq(402)
+      end
+    end
+
     context 'when raw_report_data has only whitespace in jsonl_data' do
       # Note: Model validation prevents blank jsonl_data, so we test with
       # valid-looking but non-processable content
