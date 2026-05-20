@@ -73,6 +73,10 @@ module Reports
         report.failure_code = failure.code
         report.failure_message = failure.message
         report.failure_details = failure.details
+      elsif report.failed?
+        report.failure_code = "scan_incomplete_results"
+        report.failure_message = "The scan exited before producing a complete set of results."
+        report.failure_details = {}
       else
         clear_failure_metadata
       end
@@ -104,6 +108,7 @@ module Reports
       valid_lines = 0
       attempts_processed = false
       evals_processed = false
+      completion_processed = false
 
       jsonl_string.each_line do |line|
         line_number += 1
@@ -127,7 +132,7 @@ module Reports
           when "eval"
             evals_processed = true if process_eval(data)
           when "completion"
-            process_completion(data)
+            completion_processed = true if process_completion(data) == :processed
           else
             next
           end
@@ -146,22 +151,63 @@ module Reports
         end
       end
 
-      # Mark as completed only if we processed attempts AND evals AND created probe results.
-      # Having attempts but no evals indicates a malformed report (garak exited early).
-      # Having evals but no probe_results means all probes were unknown/skipped — treat as failed
-      # so operators see the drift between the runtime probe catalog and the database.
+      # Mark as completed only if the report has all result and timing rows.
+      # Having attempts/evals without completion means garak exited early after
+      # producing partial data; keep those probe results for diagnosis, but do
+      # not present the report as completed with an unknown duration.
       if !attempts_processed
         Rails.logger.warn "Report #{report.id}: No attempts found in report, marking as failed"
         report.status = :failed
       elsif !evals_processed
         Rails.logger.warn "Report #{report.id}: Attempts found but no eval results - scan may have been interrupted, marking as failed"
         report.status = :failed
-      elsif processed && valid_lines > 0 && @probe_results_saved_this_run
+      elsif !completion_processed
+        Rails.logger.warn "Report #{report.id}: Attempts and eval results found but no completion row - scan exited before completion, marking as failed"
+        report.status = :failed
+      elsif report.start_time.blank? || report.end_time.blank?
+        Rails.logger.warn "Report #{report.id}: Completion found but scan timing is incomplete, marking as failed"
+        report.status = :failed
+      elsif processed && valid_lines > 0
         report.status = :completed
       else
         Rails.logger.warn "Report #{report.id}: No probe results created despite processing lines, marking as failed"
         report.status = :failed
       end
+
+      finalize_failed_report_timing
+    end
+
+    def finalize_failed_report_timing
+      return unless report.failed?
+      return if report.end_time.present?
+      return if report.start_time.blank?
+
+      candidate = terminal_log_end_time
+      candidate = raw_data_updated_at if candidate.blank? || candidate < report.start_time
+      candidate = Time.current if candidate.blank? || candidate < report.start_time
+      return if candidate < report.start_time
+
+      report.end_time = candidate
+    end
+
+    def terminal_log_end_time
+      current_run_failure_logs.to_s.each_line.reverse_each do |line|
+        next unless line.include?("Garak scan completed")
+
+        timestamp = line.match(/\A(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:,\d+)?/)&.[](:timestamp)
+        next if timestamp.blank?
+
+        parsed = Time.zone.parse(timestamp)
+        return parsed if parsed
+      rescue ArgumentError
+        next
+      end
+
+      nil
+    end
+
+    def raw_data_updated_at
+      @raw_data&.updated_at
     end
 
     def save_detector_results
@@ -375,11 +421,17 @@ module Reports
       rescue ArgumentError, TypeError => e
         Rails.logger.warn("Report #{report.id}: invalid end_time '#{data['end_time']}': #{e.message}")
         report.end_time = nil
+        report.save! if report.end_time_changed?
+        return :rejected_invalid
       end
+
       report.save! if report.end_time_changed?
+      :processed
     end
 
     def send_to_output_server
+      return unless report.completed?
+
       OutputServers::Dispatcher.new(report).call
     end
   end

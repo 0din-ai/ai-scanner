@@ -201,6 +201,8 @@ RSpec.describe Reports::Process, type: :service do
       end
 
       it 'marks completed-looking report data as failed with structured provider metadata' do
+        expect_any_instance_of(OutputServers::Dispatcher).not_to receive(:call)
+
         service.call
 
         report.reload
@@ -275,6 +277,93 @@ RSpec.describe Reports::Process, type: :service do
         expect(report.status).to eq('failed')
         expect(report.failure_code).to eq('provider_payment_required')
         expect(report.failure_details['status_code']).to eq(402)
+      end
+    end
+
+    context 'when result rows are present but completion is missing' do
+      let(:jsonl_without_completion) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json
+        ].join("\n")
+      end
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let!(:raw_data) do
+        create(
+          :raw_report_data,
+          report: report,
+          jsonl_data: jsonl_without_completion,
+          logs_data: "2023-06-01 10:30:00,123 Garak scan completed\n"
+        )
+      end
+
+      it 'marks the report failed without losing partial probe results' do
+        expect_any_instance_of(OutputServers::Dispatcher).not_to receive(:call)
+
+        expect { service.call }.to change { ProbeResult.count }.by(1)
+
+        report.reload
+        expect(report.status).to eq('failed')
+        expect(report.failure_code).to eq('scan_incomplete_results')
+        expect(report.failure_message).to eq('The scan exited before producing a complete set of results.')
+        expect(report.start_time).to eq(Time.zone.parse('2023-06-01T10:00:00Z'))
+        expect(report.end_time).to eq(Time.zone.parse('2023-06-01 10:30:00'))
+      end
+    end
+
+    context 'when provider failure logs are present but completion is missing' do
+      let(:jsonl_without_completion) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json
+        ].join("\n")
+      end
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let!(:raw_data) do
+        create(
+          :raw_report_data,
+          report: report,
+          jsonl_data: jsonl_without_completion,
+          logs_data: "OpenRouter terminal API status error: status_code=402 message=\"credits exhausted\"\n2023-06-01 10:30:00,123 Garak scan completed\n"
+        )
+      end
+
+      before do
+        target.update!(model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o')
+      end
+
+      it 'preserves provider failure metadata and failed timing' do
+        service.call
+
+        report.reload
+        expect(report.status).to eq('failed')
+        expect(report.failure_code).to eq('provider_payment_required')
+        expect(report.failure_details['status_code']).to eq(402)
+        expect(report.end_time).to eq(Time.zone.parse('2023-06-01 10:30:00'))
+      end
+    end
+
+    context 'when completion is valid but start timing is missing' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:jsonl_without_start_time) do
+        [
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'attempt-1', prompt: 'Test prompt', outputs: [ 'Test output' ], notes: { score_percentage: 70 } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 3, total_evaluated: 10 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: jsonl_without_start_time, logs_data: nil) }
+
+      it 'marks the report failed instead of completed with incomplete timing' do
+        service.call
+
+        report.reload
+        expect(report.status).to eq('failed')
+        expect(report.failure_code).to eq('scan_incomplete_results')
+        expect(report.start_time).to be_nil
+        expect(report.end_time).to be_present
       end
     end
 
@@ -402,11 +491,13 @@ RSpec.describe Reports::Process, type: :service do
       end
       let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: bad_end_time_jsonl, logs_data: nil) }
 
-      it 'logs a warning and leaves end_time nil' do
+      it 'logs a warning and marks the report failed with fallback timing' do
         allow(Rails.logger).to receive(:warn).and_call_original
         service.call
         report.reload
-        expect(report.end_time).to be_nil
+        expect(report.status).to eq('failed')
+        expect(report.failure_code).to eq('scan_incomplete_results')
+        expect(report.end_time).to be_present
         expect(Rails.logger).to have_received(:warn).with(/invalid end_time/i)
       end
     end
