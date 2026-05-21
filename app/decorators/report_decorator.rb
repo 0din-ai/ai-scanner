@@ -1,6 +1,6 @@
 class ReportDecorator < SimpleDelegator
   def target_name
-    target.name
+    __getobj__.historical_target_name
   end
 
   def probe_results

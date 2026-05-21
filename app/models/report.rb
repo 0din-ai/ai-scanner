@@ -70,6 +70,7 @@ class Report < ApplicationRecord
   DEBUG_BROADCAST_ACTIVE_STATUSES = (BROADCAST_ACTIVE_STATUSES + %w[processing]).freeze
   DEBUG_STREAM_LIVE_TAIL_STATUSES = %w[running processing].freeze
   DEBUG_STREAM_POLLING_STATUSES = (DEBUG_BROADCAST_ACTIVE_STATUSES + %w[pending]).freeze
+  UNKNOWN_TARGET_NAME = "Unknown target".freeze
 
   def self.ransackable_attributes(auth_object = nil)
     [ "company_id", "failure_code", "name", "created_at", "id", "status", "target_id", "updated_at", "uuid", "asr" ]
@@ -77,6 +78,14 @@ class Report < ApplicationRecord
 
   def self.ransackable_associations(auth_object = nil)
     [ "company", "target", "scan" ]
+  end
+
+  def historical_target
+    historical_target_with_deleted
+  end
+
+  def historical_target_name
+    historical_target&.name || UNKNOWN_TARGET_NAME
   end
 
   def failed_with_reason?
@@ -249,6 +258,14 @@ class Report < ApplicationRecord
       end
     else
       build_report_debug_log
+    end
+  end
+
+  def historical_target_with_deleted
+    return if target_id.blank? || company_id.blank? || company.blank?
+
+    ActsAsTenant.with_tenant(company) do
+      Target.with_deleted.where(company_id: company_id).find_by(id: target_id)
     end
   end
 

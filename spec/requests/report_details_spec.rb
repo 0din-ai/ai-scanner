@@ -52,6 +52,16 @@ RSpec.describe "ReportDetails", type: :request do
 
         expect(response).to have_http_status(:ok)
       end
+
+      it "renders historical reports whose targets have been soft-deleted" do
+        target_name = report.target.name
+        ActsAsTenant.with_tenant(company) { report.target.mark_deleted! }
+
+        get report_detail_path(report, pdf: "true", pdf_token: pdf_token)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Report for #{target_name}")
+      end
     end
 
     context "with pdf=true but an invalid pdf_token" do

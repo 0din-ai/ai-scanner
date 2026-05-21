@@ -118,7 +118,7 @@ class GeneratePdfJob < ApplicationJob
     labels = {
       report_id: report.id,
       report_uuid: report.uuid,
-      target_name: report.target.name,
+      target_name: report.historical_target_name,
       scan_name: report.scan.name,
       pdf_generation_duration_ms: duration_ms,
       pdf_generation_success: success ? 1 : 0,

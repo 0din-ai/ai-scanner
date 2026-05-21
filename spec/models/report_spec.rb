@@ -65,6 +65,43 @@ RSpec.describe Report, type: :model do
     end
   end
 
+  describe '#historical_target' do
+    let(:company) { create(:company) }
+    let(:target) { create(:target, name: 'Archived Target', company: company) }
+    let(:scan) do
+      build(:scan, company: company).tap do |record|
+        record.targets << target
+        record.save!(validate: false)
+      end
+    end
+    let(:report) { create(:report, company: company, target: target, scan: scan) }
+
+    it 'resolves a soft-deleted target without exposing other deleted targets globally' do
+      ActsAsTenant.with_tenant(company) do
+        target.mark_deleted!
+        report.reload
+
+        expect(report.target).to be_nil
+        expect(report.historical_target).to eq(target)
+        expect(report.historical_target_name).to eq('Archived Target')
+      end
+    end
+
+    it 'does not resolve a target from another tenant' do
+      other_company = create(:company)
+      other_target = create(:target, name: 'Other Tenant Target', company: other_company)
+      ActsAsTenant.with_tenant(other_company) { other_target.mark_deleted! }
+      report.update_column(:target_id, other_target.id)
+
+      ActsAsTenant.with_tenant(company) do
+        report.reload
+
+        expect(report.historical_target).to be_nil
+        expect(report.historical_target_name).to eq(Report::UNKNOWN_TARGET_NAME)
+      end
+    end
+  end
+
   describe 'callbacks' do
     let(:target) { create(:target) }
     let(:scan) { create(:complete_scan) }

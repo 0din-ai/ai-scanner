@@ -76,6 +76,23 @@ RSpec.describe GeneratePdfJob, type: :job do
         )
       end
 
+      it "collects metrics with the historical target name when the target is soft-deleted" do
+        target_name = report.target.name
+        ActsAsTenant.with_tenant(company) { report.target.mark_deleted! }
+        allow(MonitoringService).to receive(:active?).and_return(true)
+        allow(MonitoringService).to receive(:set_labels)
+
+        described_class.new.perform(report.id, user.id)
+
+        expect(MonitoringService).to have_received(:set_labels).with(
+          hash_including(
+            report_id: report.id,
+            target_name: target_name,
+            pdf_generation_success: 1
+          )
+        )
+      end
+
       it "includes a signed download_url that PdfDownloadToken can verify" do
         captured = nil
         allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to) do |_stream, **opts|

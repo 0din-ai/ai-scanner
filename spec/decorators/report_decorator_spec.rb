@@ -1,14 +1,23 @@
 require 'rails_helper'
 
 RSpec.describe ReportDecorator, type: :decorator do
-  let(:target) { create(:target, name: 'Test Target') }
-  let(:scan) { create(:complete_scan) }
-  let(:report) { create(:report, target: target, scan: scan) }
+  let(:company) { create(:company) }
+  let(:target) { create(:target, name: 'Test Target', company: company) }
+  let(:scan) { create(:complete_scan, company: company) }
+  let(:report) { create(:report, company: company, target: target, scan: scan) }
   let(:decorated_report) { described_class.new(report) }
 
   describe '#target_name' do
     it 'returns the name of the target' do
       expect(decorated_report.target_name).to eq('Test Target')
+    end
+
+    it 'returns the historical target name when the target has been soft-deleted' do
+      target.mark_deleted!
+      report.reload
+
+      expect(report.target).to be_nil
+      expect(described_class.new(report).target_name).to eq('Test Target')
     end
   end
 
@@ -24,7 +33,7 @@ RSpec.describe ReportDecorator, type: :decorator do
 
     it 'includes probe and detector associations' do
       # Create a new instance for this test to avoid memoization issues
-      new_report = create(:report, target: target, scan: scan)
+      new_report = create(:report, company: company, target: target, scan: scan)
       new_probe = create(:probe, name: 'TestProbe')
       new_detector = create(:detector, name: 'TestDetector')
       create(:probe_result, report: new_report, probe: new_probe, detector: new_detector)
