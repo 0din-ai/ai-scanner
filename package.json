@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.57.0",
-    "cypress": "^15.9.0"
+    "cypress": "^15.15.0"
   },
   "scripts": {
     "build:css": "npx @tailwindcss/cli -i ./app/assets/stylesheets/application.css -o ./app/assets/builds/application.css --minify",
