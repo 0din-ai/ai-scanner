@@ -148,12 +148,19 @@
           <th class="py-3 pr-4 text-left text-sm font-medium text-contentSecondary w-1/4">Successful Targets (Last 90 Days)</th>
           <td class="py-3 text-sm text-contentPrimary">
             <% if @successful_targets_info.any? %>
-              <% target_links = @successful_targets_info.map do |info| %>
-                <% target = info[:target] %>
-                <% successful_report = info[:successful_report] %>
-                <%= link_to(target.name, target_path(target), class: "text-primary hover:underline") %>
-                (<%= link_to("view report", report_path(successful_report), class: "text-primary hover:underline") %>)
-              <% end %>
+              <%
+                target_links = @successful_targets_info.map do |info|
+                  target = info[:target]
+                  successful_report = info[:successful_report]
+
+                  safe_join([
+                    link_to(target.name, target_path(target), class: "text-primary hover:underline"),
+                    " (",
+                    link_to("view report", report_path(successful_report), class: "text-primary hover:underline"),
+                    ")"
+                  ])
+                end
+              %>
               <%= safe_join(target_links, ", ") %>
             <% else %>
               <span class="text-contentTertiary">—</span>

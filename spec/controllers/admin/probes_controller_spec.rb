@@ -102,6 +102,34 @@ RSpec.describe Admin::ProbesController, type: :controller do
       expect(response).to have_http_status(:success)
     end
 
+    it "renders successful target links without leaking ERB block return values" do
+      target_alpha = create(:target, :good, company: tier_4_company, name: "Target Alpha")
+      target_beta = create(:target, :good, company: tier_4_company, name: "Target Beta")
+
+      alpha_report = create(:report, :completed, company: tier_4_company, target: target_alpha)
+      beta_report = create(:report, :completed, company: tier_4_company, target: target_beta)
+      allow_any_instance_of(Probe).to receive(:successful_targets_last_90_days).and_return([
+        { target: target_alpha, successful_report: alpha_report },
+        { target: target_beta, successful_report: beta_report }
+      ])
+
+      get :show, params: { id: probe.id }
+
+      expect(response).to have_http_status(:success)
+      doc = Nokogiri::HTML(response.body)
+      row = doc.at_xpath("//th[normalize-space()='Successful Targets (Last 90 Days)']/parent::tr")
+      cell = row.at_css("td")
+
+      expect(cell.css("a").map { |link| link.text.squish }).to eq([
+        "Target Alpha",
+        "view report",
+        "Target Beta",
+        "view report"
+      ])
+      expect(cell.text.squish).to eq("Target Alpha (view report), Target Beta (view report)")
+      expect(cell.text).not_to include(") , )")
+    end
+
     it "renders valid attribution URLs as external links with noopener" do
       probe.update!(attribution: "0DIN by Mozilla - https://0din.ai")
 
