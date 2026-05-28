@@ -34,6 +34,7 @@ import logging
 
 from pathlib import Path
 
+from garak_plugin_cache_guard import install_plugin_cache_guard
 from db_notifier import (
     notify_report_running as db_notify_running,
     notify_report_ready as db_notify_ready,
@@ -97,6 +98,7 @@ def run_garak_scan(garak_params):
         else:
             params_list = list(garak_params)
 
+        install_plugin_cache_guard()
         sys.argv = ['garak'] + params_list
 
         print(f"Running Garak with parameters: {params_list}")
