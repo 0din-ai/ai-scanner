@@ -46,6 +46,33 @@ RSpec.describe Reports::FailureClassifier do
     expect(described_class.new(report, logs: logs).call).not_to be_failed
   end
 
+  it 'does not classify transient provider HTTP errors after a successful garak run' do
+    logs = <<~LOG
+      2026-05-27 19:52:28,598 - root - INFO - probe init: <garak.probes.0din.AcademicCredentials object>
+      2026-05-27 19:52:28,766 - httpx - INFO - HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+      2026-05-27 19:59:00,930 - httpx - INFO - HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+      2026-05-27 23:13:53,174 - __main__ - INFO - Garak scan completed - Report: example-report, Exit code: 0
+    LOG
+
+    result = described_class.new(report, logs: logs).call
+
+    expect(result.code).to be_nil
+    expect(result.message).to be_nil
+    expect(result.details).to eq({})
+  end
+
+  it 'uses provider error HTTP status evidence after earlier successful requests' do
+    logs = <<~LOG
+      HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+      HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+    LOG
+
+    result = described_class.new(report, logs: logs).call
+
+    expect(result.code).to eq('provider_rate_limited')
+    expect(result.details['status_code']).to eq(429)
+  end
+
   it 'redacts credentials from messages and details' do
     logs = 'OpenRouter terminal API status error: status_code=401 message="invalid api key sk-or-v1-secretvalue" body={"authorization":"Bearer abc123","api_key":"plainsecret"}'
 

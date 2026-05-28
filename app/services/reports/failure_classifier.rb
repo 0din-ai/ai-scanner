@@ -17,7 +17,6 @@ module Reports
 
     STATUS_CODE_PATTERN = /
       status_code\s*[=:]\s*(\d{3}) |
-      HTTP\/\d(?:\.\d)?\s+(\d{3}) |
       status\s*[=:]\s*(\d{3})
     /ix
     PROVIDER_FAILURE_STATUS_CODES = ([ 401, 402, 403, 404, 422, 429 ] + (500..599).to_a).freeze
@@ -190,7 +189,13 @@ module Reports
     end
 
     def http_provider_error?
+      return false if successful_garak_completion?
+
       evidence_text.match?(HTTP_PROVIDER_STATUS_PATTERN) && evidence_text.match?(HTTP_PROVIDER_HINT_PATTERN)
+    end
+
+    def successful_garak_completion?
+      evidence_text.match?(/Garak scan completed .*Exit code:\s*0/i)
     end
 
     def model_unavailable_text?
@@ -203,10 +208,17 @@ module Reports
     end
 
     def status_code
-      @status_code ||= begin
-        match = evidence_text.match(STATUS_CODE_PATTERN)
-        match&.captures&.compact&.first&.to_i
-      end
+      @status_code ||= explicit_status_code || http_provider_status_code
+    end
+
+    def explicit_status_code
+      match = evidence_text.match(STATUS_CODE_PATTERN)
+      match&.captures&.compact&.first&.to_i
+    end
+
+    def http_provider_status_code
+      match = evidence_text.match(HTTP_PROVIDER_STATUS_PATTERN)
+      match&.[](1)&.to_i
     end
 
     def provider
