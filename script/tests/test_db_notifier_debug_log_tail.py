@@ -5,6 +5,7 @@ Tests for JournalSyncThread live execution log tail syncing.
 
 import importlib
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -387,6 +388,66 @@ class TestJournalSyncDebugLogTail(unittest.TestCase):
         self.assertEqual(params[0], "first line\nnul stripped\n")
         self.assertIsNotNone(params[1])
         self.assertEqual(params[2], 123)
+
+    def test_notify_report_ready_from_synced_appends_authoritative_exit_marker(self):
+        # The async scan log is written by Ruby's RunCommand reader threads, so the
+        # "Garak scan completed ... Exit code: 0" line may not be flushed to the file
+        # before this process reads it. When the current-run exit_code is known it must
+        # be appended so downstream classification sees the true clean exit.
+        self.log_path.write_text("probe output without completion marker\n", encoding="utf-8")
+        cursor = RecordingCursor(report_id=123)
+        conn = RecordingConnection(cursor)
+
+        with self._patch_pooled_connection(conn), \
+             patch.object(db_notifier, "get_log_file_path", return_value=self.log_path), \
+             patch.object(db_notifier, "_enqueue_process_report_job", return_value="job-id"), \
+             patch.object(db_notifier, "cleanup_scan_files"):
+            self.assertTrue(
+                db_notifier.notify_report_ready_from_synced("report-uuid", exit_code=0)
+            )
+
+        logs_data = self._sql_calls_containing(cursor, "UPDATE raw_report_data")[0][1][0]
+        self.assertIn("probe output without completion marker", logs_data)
+        self.assertRegex(logs_data, r"Garak scan completed.*Exit code:\s*0")
+
+    def test_notify_report_ready_from_synced_marker_reflects_failing_exit(self):
+        # A stale clean exit from a prior attempt must not win: the appended marker carries
+        # the real current-run exit code, and last-match-wins keeps the report failed.
+        self.log_path.write_text(
+            "Garak scan completed - Report: old, Exit code: 0\n"
+            "Traceback (most recent call last): boom\n",
+            encoding="utf-8",
+        )
+        cursor = RecordingCursor(report_id=123)
+        conn = RecordingConnection(cursor)
+
+        with self._patch_pooled_connection(conn), \
+             patch.object(db_notifier, "get_log_file_path", return_value=self.log_path), \
+             patch.object(db_notifier, "_enqueue_process_report_job", return_value="job-id"), \
+             patch.object(db_notifier, "cleanup_scan_files"):
+            self.assertTrue(
+                db_notifier.notify_report_ready_from_synced("report-uuid", exit_code=1)
+            )
+
+        logs_data = self._sql_calls_containing(cursor, "UPDATE raw_report_data")[0][1][0]
+        exits = re.findall(r"Garak scan completed.*?Exit code:\s*(\d+)", logs_data)
+        self.assertEqual(exits[-1], "1")
+
+    def test_notify_report_ready_from_synced_omits_marker_without_exit_code(self):
+        # Backward compatible: callers that do not pass an exit_code get no synthetic marker.
+        self.log_path.write_text("plain logs\n", encoding="utf-8")
+        cursor = RecordingCursor(report_id=123)
+        conn = RecordingConnection(cursor)
+
+        with self._patch_pooled_connection(conn), \
+             patch.object(db_notifier, "get_log_file_path", return_value=self.log_path), \
+             patch.object(db_notifier, "_enqueue_process_report_job", return_value="job-id"), \
+             patch.object(db_notifier, "cleanup_scan_files"):
+            self.assertTrue(db_notifier.notify_report_ready_from_synced("report-uuid"))
+
+        logs_data = self._sql_calls_containing(cursor, "UPDATE raw_report_data")[0][1][0]
+        self.assertEqual(logs_data, "plain logs\n")
+        self.assertNotIn("Garak scan completed", logs_data)
 
 
 if __name__ == "__main__":

@@ -1298,7 +1298,30 @@ def _enqueue_process_report_job(report_id: int, queue_conn) -> int:
     return job_id
 
 
-def notify_report_ready(report_uuid: str, prefix: str = "") -> bool:
+def _append_authoritative_completion_marker(
+    logs_data: Optional[str], report_uuid: str, exit_code: Optional[int]
+) -> Optional[str]:
+    """Append a canonical garak-completion marker reflecting the current run's exit code.
+
+    The scan log is captured by Ruby's RunCommand reader threads, so the
+    "Garak scan completed ... Exit code: N" line run_garak.py emits may not be flushed
+    to the log file before this process reads it back. Appending the marker from the
+    exit_code we already hold guarantees Reports::FailureClassifier.cleanly_completed?
+    sees the true current-run exit (it reads the LAST match) — free of that flush race
+    and of stale clean-exit lines left by earlier retry attempts.
+
+    When exit_code is unknown (None), logs_data is returned unchanged.
+    """
+    if exit_code is None:
+        return logs_data
+    marker = f"Garak scan completed - Report: {report_uuid}, Exit code: {exit_code}"
+    if not logs_data:
+        return marker + "\n"
+    separator = "" if logs_data.endswith("\n") else "\n"
+    return f"{logs_data}{separator}{marker}\n"
+
+
+def notify_report_ready(report_uuid: str, prefix: str = "", exit_code: Optional[int] = None) -> bool:
     """
     Store report data in database and enqueue processing job using pooled connections.
 
@@ -1371,6 +1394,8 @@ def notify_report_ready(report_uuid: str, prefix: str = "") -> bool:
     except Exception as e:
         logger.error(f"Error reading report files: {e}")
         return False
+
+    logs_data = _append_authoritative_completion_marker(logs_data, report_uuid, exit_code)
 
     # Prepend prefix from previous interrupted run (resumed scans)
     if prefix and jsonl_data:
@@ -1471,7 +1496,7 @@ def notify_report_ready(report_uuid: str, prefix: str = "") -> bool:
         return False
 
 
-def notify_report_ready_from_synced(report_uuid: str) -> bool:
+def notify_report_ready_from_synced(report_uuid: str, exit_code: Optional[int] = None) -> bool:
     """
     Enqueue ProcessReportJob using already-synced raw_report_data.
 
@@ -1506,6 +1531,8 @@ def notify_report_ready_from_synced(report_uuid: str) -> bool:
             )
         except Exception as e:
             logger.warning(f"Failed to read log file: {e}")
+
+    logs_data = _append_authoritative_completion_marker(logs_data, report_uuid, exit_code)
 
     try:
         with pooled_connection("primary") as primary_conn, \

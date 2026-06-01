@@ -132,10 +132,10 @@ def notify_report_running(report_uuid, pid):
         return False
 
 
-def notify_report_ready(report_uuid, prefix=""):
+def notify_report_ready(report_uuid, prefix="", exit_code=None):
     """Store report data in database and enqueue processing job."""
     try:
-        result = db_notify_ready(report_uuid, prefix=prefix)
+        result = db_notify_ready(report_uuid, prefix=prefix, exit_code=exit_code)
         if result:
             print(f"Report {report_uuid} data stored and job enqueued")
         else:
@@ -146,10 +146,10 @@ def notify_report_ready(report_uuid, prefix=""):
         return False
 
 
-def notify_report_ready_from_synced(report_uuid):
+def notify_report_ready_from_synced(report_uuid, exit_code=None):
     """Enqueue processing job using already-synced raw_report_data."""
     try:
-        result = db_notify_ready_from_synced(report_uuid)
+        result = db_notify_ready_from_synced(report_uuid, exit_code=exit_code)
         if result:
             print(f"Report {report_uuid} job enqueued (from synced data)")
         else:
@@ -244,7 +244,7 @@ def main():
 
             if sync_clean:
                 # Use synced variant — JSONL already in raw_report_data, just add logs + enqueue job
-                if not notify_report_ready_from_synced(report_uuid):
+                if not notify_report_ready_from_synced(report_uuid, exit_code=exit_code):
                     logger.error(f"Failed to enqueue ProcessReportJob for {report_uuid}")
                     exit_code = 1
             else:
@@ -254,7 +254,7 @@ def main():
                     f"JournalSync did not stop cleanly for {report_uuid}, "
                     f"falling back to full JSONL read from disk"
                 )
-                if not notify_report_ready(report_uuid, prefix=prefix):
+                if not notify_report_ready(report_uuid, prefix=prefix, exit_code=exit_code):
                     logger.error(f"Failed to enqueue ProcessReportJob for {report_uuid}")
                     exit_code = 1
 
