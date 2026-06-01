@@ -210,7 +210,7 @@ module Reports
     end
 
     def successful_garak_completion?
-      evidence_text.match?(/Garak scan completed .*Exit code:\s*0/i)
+      self.class.cleanly_completed?(evidence_text)
     end
 
     def model_unavailable_text?
