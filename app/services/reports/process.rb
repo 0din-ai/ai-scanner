@@ -68,7 +68,7 @@ module Reports
 
     def apply_failure_metadata
       failure = FailureClassifier.new(report, logs: current_run_failure_logs).call
-      if failure.failed?
+      if failure.failed? && !completed_scan_with_clean_exit?
         report.status = :failed
         report.failure_code = failure.code
         report.failure_message = failure.message
@@ -80,6 +80,14 @@ module Reports
       else
         clear_failure_metadata
       end
+    end
+
+    # A report whose results are complete (process_jsonl_data set :completed) AND whose
+    # run log shows a clean garak completion must not be turned into a failure by trailing
+    # log noise (a post-scan report-digest error, or a transient provider status garak
+    # retried past). Genuine failures (incomplete results, or a non-clean exit) are unaffected.
+    def completed_scan_with_clean_exit?
+      report.completed? && Reports::FailureClassifier.cleanly_completed?(current_run_failure_logs)
     end
 
     def current_run_failure_logs

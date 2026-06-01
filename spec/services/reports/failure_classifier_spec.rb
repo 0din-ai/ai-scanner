@@ -95,4 +95,31 @@ RSpec.describe Reports::FailureClassifier do
 
     expect(described_class.new(report, logs: logs).call.code).to eq('garak_runtime_error')
   end
+
+  it 'does not classify a post-completion digest error after a clean exit' do
+    logs = <<~LOG
+      2026-05-27 23:13:53,174 - __main__ - INFO - Garak scan completed - Report: example-report, Exit code: 0
+      Traceback (most recent call last):
+        File "report_digest.py", line 120, in _get_probe_info
+      KeyError: 'description'
+    LOG
+
+    result = described_class.new(report, logs: logs).call
+
+    expect(result).not_to be_failed
+    expect(result.code).to be_nil
+  end
+
+  it 'classifies a runtime failure when the last exit code is non-zero despite an earlier clean exit' do
+    logs = <<~LOG
+      2026-05-27 22:00:00,000 - __main__ - INFO - Garak scan completed - Report: earlier-run, Exit code: 0
+      2026-05-27 23:00:00,000 - root - INFO - probe init
+      Traceback (most recent call last):
+        File "garak/harnesses/base.py", line 80, in run
+      RuntimeError: garak failed
+      2026-05-27 23:13:53,174 - __main__ - INFO - Garak scan completed - Report: current-run, Exit code: 1
+    LOG
+
+    expect(described_class.new(report, logs: logs).call.code).to eq('garak_runtime_error')
+  end
 end

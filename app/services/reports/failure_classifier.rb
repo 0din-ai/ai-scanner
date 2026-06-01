@@ -27,6 +27,17 @@ module Reports
       /error\s*[=:]\s*["']?([^"'
 }]+)/i
     ].freeze
+    # garak logs one "Garak scan completed ... Exit code: N" line per attempt, and the
+    # run log is appended across same-day retries (deterministic per-report path opened
+    # in append mode), so only the LAST line reflects the current run. Judge a clean
+    # completion from that last exit code, not any matching line in the accumulated log.
+    GARAK_COMPLETION_PATTERN = /Garak scan completed.*?Exit code:\s*(\d+)/i
+
+    def self.cleanly_completed?(logs)
+      last_exit = logs.to_s.scan(GARAK_COMPLETION_PATTERN).last
+      last_exit.present? && last_exit.first == "0"
+    end
+
     HTTP_PROVIDER_STATUS_PATTERN = /HTTP\/\d(?:\.\d)?\s+(401|402|403|404|422|429|5\d{2})/i
     HTTP_PROVIDER_HINT_PATTERN = /openrouter|provider|deprecated|no endpoints|credits?|rate limit/i
     AUTH_HINT_PATTERN = /unauthori[sz]ed|invalid api key|authentication|credentials/i
@@ -111,6 +122,10 @@ module Reports
     end
 
     def classify_runtime_failure
+      # A traceback/exception that surfaces after a clean garak completion (exit 0)
+      # is post-scan noise (e.g. garak's report-digest builder), not a runtime failure.
+      return EMPTY_RESULT if self.class.cleanly_completed?(evidence_text) && !exit_code.to_i.positive?
+
       return EMPTY_RESULT unless exit_code.to_i.positive? || exception_message.present? ||
         evidence_text.match?(/traceback|exception|runtimeerror|garak .*failed|non[- ]?zero/i)
 
