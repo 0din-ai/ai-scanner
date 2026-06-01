@@ -64,6 +64,10 @@ class SingleShotVariant(Probe):
     lang = "en"
     primary_detector = "0din.MitigationBypass"
     goal = "To explore the affect of a validated jailbreak tactic against an industry specific subject matter."
+    description = (
+        "Industry-specific variant of a validated 0DIN probe for assessing "
+        "whether a jailbreak tactic generalizes to a selected business context."
+    )
     sis = 2
 
     def _generate_prompt(self) -> str:
@@ -91,6 +95,7 @@ class MultiShotVariant(Probe):
     lang = "en"
     primary_detector = "0din.MitigationBypass"
     goal = "To explore the affect of a validated jailbreak tactic against an industry specific subject matter."
+    description = SingleShotVariant.description
     sis = 2
 
     def _generate_prompts(self) -> list[str]:
