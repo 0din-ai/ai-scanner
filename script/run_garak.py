@@ -31,6 +31,7 @@ import sys
 import shlex
 import signal
 import logging
+import traceback
 
 from pathlib import Path
 
@@ -114,6 +115,7 @@ def run_garak_scan(garak_params):
         return 1
     except Exception as e:
         print(f"Error running Garak scan: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return 1
 
 def notify_report_running(report_uuid, pid):
