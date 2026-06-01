@@ -126,7 +126,12 @@ module Reports
       # is post-scan noise (e.g. garak's report-digest builder), not a runtime failure.
       return EMPTY_RESULT if self.class.cleanly_completed?(evidence_text) && !exit_code.to_i.positive?
 
-      return EMPTY_RESULT unless exit_code.to_i.positive? || exception_message.present? ||
+      # A nonzero last completion marker is an authoritative current-run failure even
+      # without a traceback: db_notifier appends the real garak exit code to the logs,
+      # so an exit != 0 means garak itself signalled failure (the digest crash exits 0,
+      # so this never re-fails a cleanly-completed scan).
+      return EMPTY_RESULT unless exit_code.to_i.positive? || nonzero_garak_exit? ||
+        exception_message.present? ||
         evidence_text.match?(/traceback|exception|runtimeerror|garak .*failed|non[- ]?zero/i)
 
       build_result("garak_runtime_error")
@@ -146,7 +151,7 @@ module Reports
         "model" => model,
         "status_code" => status_code,
         "provider_message" => provider_message,
-        "exit_code" => exit_code,
+        "exit_code" => effective_exit_code,
         "exception_message" => exception_message
       }
 
@@ -211,6 +216,26 @@ module Reports
 
     def successful_garak_completion?
       self.class.cleanly_completed?(evidence_text)
+    end
+
+    # Exit code from the LAST "Garak scan completed ... Exit code: N" marker in the
+    # accumulated log, or nil when no marker is present. Same parse as cleanly_completed?
+    # (last match wins across same-day retry logs).
+    def last_marker_exit_code
+      return @last_marker_exit_code if defined?(@last_marker_exit_code)
+
+      match = evidence_text.scan(GARAK_COMPLETION_PATTERN).last
+      @last_marker_exit_code = match&.first&.to_i
+    end
+
+    def nonzero_garak_exit?
+      last_marker_exit_code.to_i.positive?
+    end
+
+    # The explicit constructor exit code is authoritative; otherwise fall back to a
+    # nonzero marker exit so the persisted failure detail matches the classification.
+    def effective_exit_code
+      exit_code || (nonzero_garak_exit? ? last_marker_exit_code : nil)
     end
 
     def model_unavailable_text?

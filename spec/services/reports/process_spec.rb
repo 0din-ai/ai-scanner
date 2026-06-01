@@ -239,6 +239,26 @@ RSpec.describe Reports::Process, type: :service do
       end
     end
 
+    context 'when completed results carry a current non-zero exit without a traceback' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let!(:raw_data) do
+        create(
+          :raw_report_data,
+          report: report,
+          jsonl_data: jsonl_content,
+          logs_data: "2023-06-01 10:30:00,123 - __main__ - INFO - Garak scan completed - Report: test, Exit code: 1\n"
+        )
+      end
+
+      it 'marks the report failed as a garak runtime error' do
+        service.call
+
+        report.reload
+        expect(report.status).to eq('failed')
+        expect(report.failure_code).to eq('garak_runtime_error')
+      end
+    end
+
     context 'when completed results carry a current non-zero exit despite an earlier clean exit' do
       let!(:probe) { create(:probe, name: 'TestProbe') }
       let!(:raw_data) do

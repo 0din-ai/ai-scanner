@@ -122,4 +122,15 @@ RSpec.describe Reports::FailureClassifier do
 
     expect(described_class.new(report, logs: logs).call.code).to eq('garak_runtime_error')
   end
+
+  it 'classifies a nonzero exit marker as a runtime failure even without a traceback' do
+    logs = <<~LOG
+      2026-05-27 23:10:00,000 - root - INFO - run complete, ending
+      2026-05-27 23:13:53,174 - __main__ - INFO - Garak scan completed - Report: current-run, Exit code: 1
+    LOG
+
+    result = described_class.new(report, logs: logs).call
+    expect(result.code).to eq('garak_runtime_error')
+    expect(result.details['exit_code']).to eq(1)
+  end
 end
