@@ -133,4 +133,22 @@ RSpec.describe Reports::FailureClassifier do
     expect(result.code).to eq('garak_runtime_error')
     expect(result.details['exit_code']).to eq(1)
   end
+
+  describe ".sanitize_text" do
+    it "redacts a Cookie header value" do
+      expect(described_class.sanitize_text("Cookie: session=abc123; theme=dark")).not_to include("session=abc123")
+    end
+    it "fully redacts a Basic auth credential" do
+      expect(described_class.sanitize_text("Authorization: Basic dXNlcjpwYXNzd29yZA==")).not_to include("dXNlcjpwYXNzd29yZA")
+    end
+    it "redacts a custom auth-ish header value" do
+      expect(described_class.sanitize_text("X-Api-Token: super-secret-value")).not_to include("super-secret-value")
+    end
+    it "redacts JSON-quoted secret values" do
+      sanitized = described_class.sanitize_text('{"api_key":"plainsecret","token": "abc123","password":"hunter2"}')
+      expect(sanitized).not_to include("plainsecret")
+      expect(sanitized).not_to include("abc123")
+      expect(sanitized).not_to include("hunter2")
+    end
+  end
 end

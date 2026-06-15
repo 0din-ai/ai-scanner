@@ -335,6 +335,61 @@ RSpec.describe BrowserAutomation::PlaywrightService do
       expect(data_content["container_selector"]).to eq(".chat-messages")
       expect(data_content["send_selector"]).to eq("#send-btn")
     end
+
+    context "auth injection" do
+      it "passes auth cookies, headers, and storage_state via the JSON data file" do
+        script_content = nil
+        data_content = nil
+        allow(Open3).to receive(:capture3) do |env, _command, script_path|
+          script_content = File.read(script_path)
+          data_content = JSON.parse(File.read(env["PLAYWRIGHT_DATA_PATH"]))
+          [ { "success" => true, "errors" => [], "response_detected" => true }.to_json, "", double(success?: true) ]
+        end
+        auth = {
+          "cookies" => [ { "name" => "session", "value" => "secret-cookie", "domain" => "example.com" } ],
+          "headers" => { "Authorization" => "Bearer secret-token" },
+          "storage_state" => { "cookies" => [], "origins" => [] }
+        }
+        service.validate_webchat_config(url, config.merge(auth: auth))
+        expect(data_content.dig("auth", "cookies", 0, "value")).to eq("secret-cookie")
+        expect(data_content.dig("auth", "headers", "Authorization")).to eq("Bearer secret-token")
+        expect(data_content.dig("auth", "storage_state")).to eq({ "cookies" => [], "origins" => [] })
+        expect(script_content).to include("addCookies")
+        expect(script_content).not_to include("secret-cookie")
+        expect(script_content).not_to include("secret-token")
+      end
+
+      it "strips a reserved Host header and drops malformed/nil-value cookies from auth" do
+        data_content = nil
+        allow(Open3).to receive(:capture3) do |env, _c, _s|
+          data_content = JSON.parse(File.read(env["PLAYWRIGHT_DATA_PATH"]))
+          [ { "success" => true, "errors" => [], "response_detected" => true }.to_json, "", double(success?: true) ]
+        end
+        service.validate_webchat_config(url, config.merge(auth: {
+          "headers" => { "Host" => "evil.com", "X-Api" => "ok" },
+          "cookies" => [ { "name" => "s", "value" => nil, "domain" => "e.com" }, { "name" => "ok", "value" => "v", "domain" => "e.com" } ]
+        }))
+        expect(data_content.dig("auth", "headers")).to eq({ "X-Api" => "ok" })
+        expect(data_content.dig("auth", "cookies").length).to eq(1)
+        expect(data_content.dig("auth", "cookies", 0, "name")).to eq("ok")
+      end
+
+      it "ignores a non-hash auth instead of raising" do
+        allow(Open3).to receive(:capture3) do |env, _c, _s|
+          @d = JSON.parse(File.read(env["PLAYWRIGHT_DATA_PATH"]))
+          [ { "success" => true, "errors" => [], "response_detected" => true }.to_json, "", double(success?: true) ]
+        end
+        expect { service.validate_webchat_config(url, config.merge(auth: "nope")) }.not_to raise_error
+        expect(@d["auth"]).to be_nil
+      end
+
+      it "redacts secrets from logged playwright output on failure" do
+        allow(Open3).to receive(:capture3).and_return([ "", "boom Authorization: Bearer abcdef123456", double(success?: false) ])
+        allow(Rails.logger).to receive(:error)
+        result = service.send(:execute_playwright_script, "console.log(1)")
+        expect(result["error"]).not_to include("abcdef123456")
+      end
+    end
   end
 
   describe "#extract_page_structure" do
@@ -434,6 +489,24 @@ RSpec.describe BrowserAutomation::PlaywrightService do
       expect(script_content).not_to include("'https://example.com/chat'")
       expect(data_content["url"]).to eq("https://example.com/chat")
       expect(data_content["user_agent"]).to eq("CustomAgent/1.0")
+    end
+
+    context "auth injection" do
+      it "passes auth cookies via the JSON data file and injects addCookies into the script" do
+        script_content = nil
+        data_content = nil
+        allow(Open3).to receive(:capture3) do |env, _command, script_path|
+          script_content = File.read(script_path)
+          data_content = JSON.parse(File.read(env["PLAYWRIGHT_DATA_PATH"]))
+          [ { "success" => true, "data" => { "html" => {}, "metadata" => {}, "screenshot" => "" } }.to_json, "", double(success?: true) ]
+        end
+        service.extract_page_structure(url, auth: {
+          "cookies" => [ { "name" => "tok", "value" => "secret-value", "domain" => "example.com" } ]
+        })
+        expect(data_content.dig("auth", "cookies", 0, "value")).to eq("secret-value")
+        expect(script_content).to include("addCookies")
+        expect(script_content).not_to include("secret-value")
+      end
     end
   end
 

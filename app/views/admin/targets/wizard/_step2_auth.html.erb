@@ -1,0 +1,74 @@
+<%# Collapsible Authentication section for login-gated webchat targets. %>
+<div class="border-t border-borderPrimary pt-6 mt-2 mb-4" data-controller="toggle webchat-auth">
+  <button type="button"
+          class="flex items-center gap-2 text-sm font-medium text-contentSecondary mb-4 hover:text-contentPrimary transition-colors cursor-pointer"
+          data-action="click->toggle#toggle">
+    <span class="icon icon-sm icon-chevron-down transition-transform duration-200" data-toggle-target="icon"></span>
+    <span class="icon icon-sm icon-lock text-contentSecondary"></span>
+    Authentication
+    <span class="text-xs text-contentTertiary">(optional)</span>
+  </button>
+
+  <div class="hidden space-y-6" data-toggle-target="content">
+    <p class="text-sm text-contentSecondary">
+      Attach cookies, headers, or a Playwright storageState so login-gated chats can be validated and scanned.
+      These values are encrypted at rest and scrubbed from logs.
+    </p>
+
+    <%# Cookies %>
+    <div>
+      <label class="block text-sm font-medium text-contentSecondary mb-2">Cookies</label>
+      <div data-webchat-auth-target="cookieRows" class="space-y-2"></div>
+      <button type="button" class="btn-base btn-xs btn-default-gray mt-2" data-action="click->webchat-auth#addCookieRow">
+        <span class="icon icon-xs icon-plus"></span> Add cookie
+      </button>
+    </div>
+
+    <%# Headers %>
+    <div>
+      <label class="block text-sm font-medium text-contentSecondary mb-2">Headers</label>
+      <div data-webchat-auth-target="headerRows" class="space-y-2"></div>
+      <button type="button" class="btn-base btn-xs btn-default-gray mt-2" data-action="click->webchat-auth#addHeaderRow">
+        <span class="icon icon-xs icon-plus"></span> Add header
+      </button>
+    </div>
+
+    <%# storageState %>
+    <div>
+      <label class="block text-sm font-medium text-contentSecondary mb-2">Storage State (JSON)</label>
+      <textarea rows="4" class="input-textarea font-mono"
+                placeholder='{"cookies": [], "origins": []}'
+                data-webchat-auth-target="storageState"
+                data-action="input->webchat-auth#serialize"></textarea>
+      <p class="mt-1 text-sm text-contentSecondary">Paste a Playwright storageState JSON object.</p>
+    </div>
+  </div>
+
+  <%# Row templates (cloned by the controller). %>
+  <template data-webchat-auth-target="cookieTemplate">
+    <div class="flex items-center gap-2" data-auth-row>
+      <input type="text" placeholder="name" class="input-base" data-field="name" data-action="input->webchat-auth#serialize">
+      <input type="password" placeholder="value" class="input-base" data-field="value" data-action="input->webchat-auth#serialize">
+      <button type="button" class="btn-base btn-xs btn-default-gray" title="Show/hide value" data-action="click->webchat-auth#toggleVisibility">
+        <span class="icon icon-xs icon-lock"></span>
+      </button>
+      <input type="text" placeholder="domain" class="input-base" data-field="domain" data-action="input->webchat-auth#serialize">
+      <button type="button" class="btn-base btn-xs btn-default-red" data-action="click->webchat-auth#removeRow">
+        <span class="icon icon-xs icon-trash"></span>
+      </button>
+    </div>
+  </template>
+
+  <template data-webchat-auth-target="headerTemplate">
+    <div class="flex items-center gap-2" data-auth-row>
+      <input type="text" placeholder="header name" class="input-base" data-field="key" data-action="input->webchat-auth#serialize">
+      <input type="password" placeholder="value" class="input-base" data-field="value" data-action="input->webchat-auth#serialize">
+      <button type="button" class="btn-base btn-xs btn-default-gray" title="Show/hide value" data-action="click->webchat-auth#toggleVisibility">
+        <span class="icon icon-xs icon-lock"></span>
+      </button>
+      <button type="button" class="btn-base btn-xs btn-default-red" data-action="click->webchat-auth#removeRow">
+        <span class="icon icon-xs icon-trash"></span>
+      </button>
+    </div>
+  </template>
+</div>

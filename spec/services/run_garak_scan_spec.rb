@@ -453,6 +453,48 @@ RSpec.describe RunGarakScan, type: :service do
         }.to raise_error(StandardError, 'Disk full')
       end
     end
+
+    describe '#call launch-failure cleanup' do
+      it 'removes the web config file if the scan process fails to launch' do
+        allow(service).to receive(:call).and_call_original
+        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true))
+        allow(service).to receive(:all_probes_completed?).and_return(false)
+        allow(service).to receive(:build_argv).and_return([ 'echo' ])
+        allow(service).to receive(:build_env).and_return({})
+        allow(service).to receive(:scan_log_path).and_return('/tmp/test.log')
+        allow(service).to receive(:log_scan_debug_info)
+        allow(MonitoringService).to receive(:active?).and_return(false)
+        allow_any_instance_of(RunCommand).to receive(:call_async).and_raise(StandardError, 'launch failed')
+
+        path = described_class::CONFIG_PATH.join("#{webchat_report.uuid}_web.json")
+        File.write(path, '{}')
+
+        expect { service.call }.to raise_error(StandardError, 'launch failed')
+        expect(File.exist?(path)).to be false
+      end
+
+      it 'removes the web config file when the scan process exits immediately (ImmediateExitError)' do
+        allow(service).to receive(:call).and_call_original
+        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true))
+        allow(service).to receive(:all_probes_completed?).and_return(false)
+        allow(service).to receive(:build_argv).and_return([ 'echo' ])
+        allow(service).to receive(:build_env).and_return({})
+        allow(service).to receive(:scan_log_path).and_return('/tmp/test.log')
+        allow(service).to receive(:log_scan_debug_info)
+        allow(service).to receive(:read_log_tail).and_return(nil)
+        allow(webchat_report).to receive(:update)
+        allow(MonitoringService).to receive(:active?).and_return(false)
+        allow_any_instance_of(RunCommand).to receive(:call_async).and_raise(
+          RunCommand::ImmediateExitError.new(1, 'process died immediately')
+        )
+
+        path = described_class::CONFIG_PATH.join("#{webchat_report.uuid}_web.json")
+        File.write(path, '{}')
+
+        service.call
+        expect(File.exist?(path)).to be false
+      end
+    end
   end
 
   describe 'scan resumption' do

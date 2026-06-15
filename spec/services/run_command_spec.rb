@@ -416,4 +416,13 @@ RSpec.describe RunCommand do
       expect(result).to include(";error=timeout")
     end
   end
+
+  describe "#sanitize_output" do
+    it "redacts every pair in a multi-cookie header line" do
+      cmd = described_class.new([ "echo" ])
+      out = cmd.send(:sanitize_output, "Cookie: a=secret1; b=secret2", truncate: false)
+      expect(out).not_to include("secret1")
+      expect(out).not_to include("secret2")
+    end
+  end
 end

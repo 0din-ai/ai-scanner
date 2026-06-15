@@ -48,8 +48,11 @@ module Reports
     /ix
     SECRET_PATTERNS = [
       [ /(Bearer\s+)[A-Za-z0-9._~+\-\/=]+/i, '\1[REDACTED]' ],
-      [ /((?:api[_-]?key|token|secret|password|authorization)["']?\s*[:=]\s*)["']?[^"'\s,}]+/i, '\1[REDACTED]' ],
-      [ /sk-(?:or-v1-)?[A-Za-z0-9_\-]{8,}/i, "[REDACTED]" ]
+      [ /((?:Basic|Digest|NTLM|Negotiate)\s+)[A-Za-z0-9._~+\-\/=]+/i, '\1[REDACTED]' ],
+      [ /((?:api[_-]?key|token|secret|password|authorization)["']?\s*[=:]\s*)["']?[^"'\s,}]+/i, '\1[REDACTED]' ],
+      [ /\bsk-(?:or-v1-)?[A-Za-z0-9_\-]{8,}\b/i, "[REDACTED]" ],
+      [ /((?:set-)?cookie\s*:\s*)[^\n]+/i, '\1[REDACTED]' ],
+      [ /(x-[\w-]*(?:key|token|auth|secret|cookie)[\w-]*\s*[=:]\s*)["']?[^"'\s,}]+/i, '\1[REDACTED]' ]
     ].freeze
 
     def initialize(report, logs: nil, exit_code: nil, exception_message: nil)

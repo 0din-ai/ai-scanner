@@ -12,7 +12,8 @@ class RunCommand
   PROCESS_START_DETECTION_DELAY = 0.5
   REDACTED = "[REDACTED]"
   SENSITIVE_FLAG_NAME = /\b(api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|credential|authorization|bearer)\b/i
-  SENSITIVE_OUTPUT_PATTERN = /((?:api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|credential|bearer|authorization|database[_-]?url|redis[_-]?url|secret[_-]?key[_-]?base)["']?\s*[=:]\s*["']?(?:(?:bearer|basic|splunk|negotiate|digest|token|bot)\s+)?)[^\s"',}\]&;]+/i
+  SENSITIVE_OUTPUT_PATTERN = /((?:api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|credential|bearer|authorization|cookie|set[_-]?cookie|database[_-]?url|redis[_-]?url|secret[_-]?key[_-]?base)["']?\s*[=:]\s*["']?(?:(?:bearer|basic|splunk|negotiate|digest|token|bot)\s+)?)[^\s"',}\]&;]+/i
+  COOKIE_OUTPUT_PATTERN = /((?:set-)?cookie["']?\s*[=:]\s*).*/i
 
   attr_reader :command, :env
 
@@ -116,6 +117,7 @@ class RunCommand
   def sanitize_output(text, truncate: true)
     return "" if text.nil? || text.empty?
     sanitized = text.gsub(SENSITIVE_OUTPUT_PATTERN, "\\1#{REDACTED}")
+                    .gsub(COOKIE_OUTPUT_PATTERN, "\\1#{REDACTED}")
     return sanitized unless truncate
     sanitized.length > 500 ? "#{sanitized[0..497]}..." : sanitized
   end

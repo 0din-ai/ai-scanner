@@ -323,6 +323,47 @@ RSpec.describe AutoDetectWebchatSelectors do
     end
   end
 
+  describe "auth forwarding" do
+    let(:auth) { { "headers" => { "Authorization" => "Bearer x" } } }
+
+    before do
+      allow(detection_service).to receive(:detect_selectors).and_return(
+        selectors: { "input_field" => "#i", "response_container" => "#r", "response_text" => "" }
+      )
+    end
+
+    it "forwards auth to extract_page_structure and validate_webchat_config" do
+      expect(playwright_service).to receive(:extract_page_structure)
+        .with(url, hash_including(auth: auth)).and_return({ "screenshot" => "x" })
+      expect(playwright_service).to receive(:validate_webchat_config) do |_url, cfg|
+        expect(cfg[:auth]).to eq(auth)
+        { success: true, response_detected: true, errors: [] }
+      end
+
+      described_class.new(url, session_id: nil, auth: auth).call
+    end
+
+    it "sanitizes secrets from auto-detect failure logs" do
+      allow(playwright_service).to receive(:extract_page_structure).and_return(page_data)
+      allow(detection_service).to receive(:detect_selectors).and_return(
+        selectors: { "input_field" => "#i", "response_container" => "#r", "response_text" => "" }
+      )
+      allow(playwright_service).to receive(:validate_webchat_config).and_return(
+        success: false, response_detected: false, errors: [ "browser error Bearer secret-token-123" ]
+      )
+
+      logged = []
+      allow(Rails.logger).to receive(:warn) { |m| logged << m }
+      allow(Rails.logger).to receive(:error) { |m| logged << m }
+      allow(Rails.logger).to receive(:info)
+
+      described_class.new(url, session_id: nil, auth: { "headers" => { "Authorization" => "Bearer secret-token-123" } }).call
+
+      expect(logged.join("\n")).not_to include("secret-token-123")
+      expect(logged.join("\n")).to include("[REDACTED]")
+    end
+  end
+
   describe "#progress_for_step" do
     it "returns correct progress for static steps" do
       expect(service.send(:progress_for_step, :launching)).to eq(10)

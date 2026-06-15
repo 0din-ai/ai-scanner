@@ -44,9 +44,25 @@ class RunGarakScan
       report.update(status: :starting) unless report.starting?
       execute_scan
     end
+  rescue StandardError
+    # The garak process never took ownership of the credential file (launch failure
+    # or a crash during module import/arg parsing), so the Python-side cleanup will
+    # never run. Remove the web config file (cookies/headers/storageState) here
+    # instead of orphaning it on disk, then re-raise so the caller marks the report failed.
+    remove_web_config_file
+    raise
   end
 
   private
+
+  # Deletes the per-scan web config file written by temp_web_config_file_path.
+  # Safe no-op for API targets (no such file) or when it was never created.
+  def remove_web_config_file
+    path = CONFIG_PATH.join("#{report.uuid}_web.json")
+    File.delete(path) if File.exist?(path)
+  rescue StandardError => e
+    Rails.logger.warn("[RunGarakScan] failed to remove web config file for #{report.uuid}: #{e.message}")
+  end
 
   def execute_scan
     ActsAsTenant.with_tenant(report.company) do
@@ -56,6 +72,7 @@ class RunGarakScan
       log_scan_debug_info(argv)
       RunCommand.new(argv, env: env).call_async(log_file: log_path)
     rescue RunCommand::ImmediateExitError => e
+      remove_web_config_file
       Rails.logger.error("Scan process failed to start for report #{report.uuid}: #{e.message}")
       stderr_tail = read_log_tail
       message = "Scan process failed to start (exit status #{e.exit_status})."

@@ -58,7 +58,7 @@ REPORTS_PATH = HOME_DIR / ".local" / "share" / "garak" / "garak_runs"
 LOGS_PATH = PROJECT_ROOT / "storage" / "logs"
 
 # In container: /rails/storage/config/
-# Config files: {uuid}.json, {uuid}.yml, {uuid}_web.json
+# Config files: {uuid}.json, {uuid}.yml, {uuid}_web.json (credentials — always deleted)
 CONFIG_PATH = PROJECT_ROOT / "storage" / "config"
 
 # Status enum values (matching Rails RawReportData model)
@@ -156,7 +156,11 @@ def cleanup_scan_files(report_uuid: str, preserve_config_on_debug: bool = True) 
     This function deletes:
     - JSONL report file: {uuid}.report.jsonl
     - Log file: {uuid}.log
-    - Config files (unless debug mode): {uuid}.json, {uuid}.yml, {uuid}_web.json
+    - Credential file (always, even in debug mode): {uuid}_web.json
+    - Config files (unless debug mode): {uuid}.json, {uuid}.yml
+
+    Note: {uuid}_web.json is ALWAYS deleted regardless of debug mode because it
+    contains auth credentials (cookies, headers, storageState).
 
     Similar to Ruby's ensure block, this uses try/finally pattern to ensure
     cleanup runs regardless of errors. Individual file deletion errors are
@@ -175,17 +179,17 @@ def cleanup_scan_files(report_uuid: str, preserve_config_on_debug: bool = True) 
     # Get log file path (uses LOG_FILE_PATH env var if set by Ruby)
     log_file_path = get_log_file_path(report_uuid)
 
-    # Files to always delete
+    # Files to always delete — including _web.json which carries auth credentials
     files_to_delete = [
         REPORTS_PATH / f"{report_uuid}.report.jsonl",
         log_file_path,
+        CONFIG_PATH / f"{report_uuid}_web.json",
     ]
 
     # Config files - only delete if not in debug mode
     config_files = [
         CONFIG_PATH / f"{report_uuid}.json",
         CONFIG_PATH / f"{report_uuid}.yml",
-        CONFIG_PATH / f"{report_uuid}_web.json",
     ]
 
     if debug_mode:

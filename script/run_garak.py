@@ -46,9 +46,21 @@ from db_notifier import (
     HeartbeatThread,
     JournalSyncThread,
     REPORTS_PATH,
+    CONFIG_PATH,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def remove_web_config_file(report_uuid):
+    """Delete the credential-bearing web config file (cookies/headers/storageState)."""
+    try:
+        (CONFIG_PATH / f"{report_uuid}_web.json").unlink(missing_ok=True)
+    except Exception as e:
+        logger.error(
+            f"SECURITY: failed to delete credential web config file for {report_uuid}: {e}"
+        )
+
 
 # Global variables for signal handler cleanup
 current_report_uuid = None
@@ -86,6 +98,7 @@ def signal_handler(signum, frame):
         current_heartbeat.stop()
     if current_report_uuid:
         notify_report_stopped(current_report_uuid)
+        remove_web_config_file(current_report_uuid)
     sys.exit(1)
 
 signal.signal(signal.SIGTERM, signal_handler)
@@ -274,6 +287,7 @@ def main():
             current_heartbeat = None
         if not is_validation:
             notify_report_stopped(report_uuid)
+        remove_web_config_file(report_uuid)
 
     sys.exit(exit_code)
 

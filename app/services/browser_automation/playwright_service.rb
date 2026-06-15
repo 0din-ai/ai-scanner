@@ -162,7 +162,8 @@ module BrowserAutomation
         input_selector: input_selector,
         container_selector: container_selector,
         send_selector: (send_selector.present? && send_selector != "null") ? send_selector : nil,
-        test_message: test_message
+        test_message: test_message,
+        auth: auth_payload(config[:auth] || config["auth"])
       }
 
       script = <<~JS
@@ -176,9 +177,15 @@ module BrowserAutomation
           });
 
           try {
+            const __auth = __data.auth || {};
             const context = await browser.newContext({
-              viewport: { width: 1920, height: 1080 }
+              viewport: { width: 1920, height: 1080 },
+              ...(__auth.storage_state ? { storageState: __auth.storage_state } : {}),
+              extraHTTPHeaders: Object.assign({}, __auth.headers || {})
             });
+            if (Array.isArray(__auth.cookies) && __auth.cookies.length) {
+              await context.addCookies(__auth.cookies);
+            }
             const page = await context.newPage();
 
             await page.goto(__data.url, {
@@ -337,7 +344,8 @@ module BrowserAutomation
       validate_url_safety!(url)
       data = {
         url: url,
-        user_agent: options[:user_agent] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        user_agent: options[:user_agent] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        auth: auth_payload(options[:auth])
       }
 
       script = <<~JS
@@ -351,10 +359,16 @@ module BrowserAutomation
           });
 
           try {
+            const __auth = __data.auth || {};
             const context = await browser.newContext({
               viewport: { width: #{(options[:width] || 1920).to_i}, height: #{(options[:height] || 1080).to_i} },
-              userAgent: __data.user_agent
+              userAgent: __data.user_agent,
+              ...(__auth.storage_state ? { storageState: __auth.storage_state } : {}),
+              extraHTTPHeaders: Object.assign({}, __auth.headers || {})
             });
+            if (Array.isArray(__auth.cookies) && __auth.cookies.length) {
+              await context.addCookies(__auth.cookies);
+            }
             const page = await context.newPage();
 
             await page.goto(__data.url, {
@@ -567,6 +581,50 @@ module BrowserAutomation
       raise ArgumentError, "SSRF protection: #{result.error}" unless result.safe?
     end
 
+    # Build the auth slice of the Playwright `data` payload. Whitelists known keys
+    # (defensive filter) and never reaches the script string, so values stay out of logs.
+    def auth_payload(auth)
+      return nil unless auth.is_a?(Hash)
+
+      auth = auth.deep_stringify_keys
+      cookies = Array(auth["cookies"]).filter_map { |c| normalize_cookie(c) }
+      headers = sanitize_headers(auth["headers"])
+
+      payload = {}
+      payload["cookies"] = cookies if cookies.any?
+      payload["headers"] = headers if headers.any?
+      payload["storage_state"] = auth["storage_state"] if auth["storage_state"].is_a?(Hash)
+      payload.presence
+    end
+
+    def normalize_cookie(cookie)
+      return nil unless cookie.is_a?(Hash)
+
+      c = cookie.deep_stringify_keys.slice(
+        "name", "value", "url", "domain", "path", "secure", "httpOnly", "sameSite", "expires"
+      )
+      return nil unless c["name"].is_a?(String) && !c["name"].strip.empty? && c["value"].is_a?(String)
+
+      c["path"] ||= "/" if c["domain"].present?
+      c["sameSite"] = c["sameSite"].to_s.capitalize if c["sameSite"].present?
+      c
+    end
+
+    # Drop the reserved Host header and coerce values to strings.
+    def sanitize_headers(headers)
+      return {} unless headers.is_a?(Hash)
+
+      headers.deep_stringify_keys
+             .reject { |k, _| k.casecmp?("host") }
+             .transform_values(&:to_s)
+    end
+
+    # Defense-in-depth: scrub secrets from any subprocess stdout/stderr before it
+    # reaches Rails.logger or a returned error hash.
+    def redact_for_log(text)
+      Reports::FailureClassifier.sanitize_text(text.to_s)
+    end
+
     def execute_playwright_script(script, data: nil)
       @mutex.synchronize do
         data_file = nil
@@ -601,18 +659,18 @@ module BrowserAutomation
             if result
               result
             else
-              Rails.logger.error "No JSON found in Playwright output: #{output}"
-              Rails.logger.error "Playwright stderr: #{error}" if error && !error.empty?
-              { "error" => "No JSON found in output (stdout/stderr attached)", "stdout" => output.to_s[0, 4000], "stderr" => error.to_s[0, 4000] }
+              Rails.logger.error "No JSON found in Playwright output: #{redact_for_log(output)}"
+              Rails.logger.error "Playwright stderr: #{redact_for_log(error)}" if error && !error.empty?
+              { "error" => "No JSON found in output (stdout/stderr attached)", "stdout" => redact_for_log(output.to_s[0, 4000]), "stderr" => redact_for_log(error.to_s[0, 4000]) }
             end
           else
             result = extract_json.call(error)
             if result
               result
             else
-              Rails.logger.error "Playwright script error: #{error}"
-              Rails.logger.error "Playwright output: #{output}" if output && !output.empty?
-              { "error" => (error.nil? || error.empty?) ? "Script failed with no error message" : error }
+              Rails.logger.error "Playwright script error: #{redact_for_log(error)}"
+              Rails.logger.error "Playwright output: #{redact_for_log(output)}" if output && !output.empty?
+              { "error" => (error.nil? || error.empty?) ? "Script failed with no error message" : redact_for_log(error) }
             end
           end
         ensure

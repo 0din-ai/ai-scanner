@@ -951,6 +951,402 @@ function testThreatVariantsController() {
   assert.equal(cb2.checked, false)
 }
 
+function loadWebchatAuthController() {
+  const transformed = loadControllerSource(
+    "webchat_auth_controller.js",
+    "WebchatAuthController"
+  )
+
+  const context = {
+    Controller: class {},
+    Event: class {
+      constructor(type, init = {}) {
+        this.type = type
+        this.bubbles = !!init.bubbles
+      }
+    },
+    document: {
+      querySelector() { return null }
+    }
+  }
+
+  const ControllerClass = vm.runInNewContext(
+    `${transformed}\nWebchatAuthController`,
+    context
+  )
+
+  return { ControllerClass }
+}
+
+function testWebchatAuthController() {
+  const { ControllerClass } = loadWebchatAuthController()
+
+  // 1. builds auth payload from rows
+  {
+    const controller = new ControllerClass()
+    const auth = controller.buildAuthPayload(
+      [{ name: "session", value: "v", domain: "example.com" }],
+      [{ key: "Authorization", value: "Bearer x" }],
+      '{"cookies":[],"origins":[]}'
+    )
+    // JSON round-trip to avoid vm-realm prototype mismatch in deepEqual
+    assert.deepEqual(JSON.parse(JSON.stringify(auth.cookies)), [{ name: "session", value: "v", domain: "example.com" }])
+    assert.deepEqual(JSON.parse(JSON.stringify(auth.headers)), { Authorization: "Bearer x" })
+    assert.deepEqual(JSON.parse(JSON.stringify(auth.storage_state)), { cookies: [], origins: [] })
+  }
+
+  // 2. returns null for empty section
+  {
+    const controller = new ControllerClass()
+    assert.equal(controller.buildAuthPayload([], [], ""), null)
+  }
+
+  // 3. merges auth into existing web_config JSON
+  {
+    const controller = new ControllerClass()
+    const merged = controller.mergeAuthIntoConfig(
+      JSON.stringify({ url: "https://x", selectors: {} }),
+      { headers: { Authorization: "Bearer x" } }
+    )
+    const parsed = JSON.parse(merged)
+    assert.equal(parsed.url, "https://x")
+    assert.deepEqual(parsed.auth, { headers: { Authorization: "Bearer x" } })
+  }
+
+  // 4. drops the auth key when payload is null
+  {
+    const controller = new ControllerClass()
+    const merged = controller.mergeAuthIntoConfig(
+      JSON.stringify({ url: "https://x", auth: { headers: {} } }),
+      null
+    )
+    assert.equal("auth" in JSON.parse(merged), false)
+  }
+
+  // 5. serializes DOM rows into the web_config auth block
+  {
+    const controller = new ControllerClass()
+    controller.hasCookieRowsTarget = true
+    controller.cookieRowsTarget = {
+      querySelectorAll: () => [
+        {
+          querySelector: (sel) => ({
+            value: sel.includes("name") ? "session" : sel.includes("domain") ? "example.com" : "v"
+          })
+        }
+      ]
+    }
+    controller.hasHeaderRowsTarget = false
+    controller.hasStorageStateTarget = false
+
+    let dispatched = false
+    controller.webConfigField = {
+      value: JSON.stringify({ url: "https://x", selectors: {} }),
+      dispatchEvent() { dispatched = true }
+    }
+
+    controller.serialize()
+
+    const parsed = JSON.parse(controller.webConfigField.value)
+    assert.equal(parsed.url, "https://x")
+    assert.deepEqual(parsed.auth.cookies[0], { name: "session", value: "v", domain: "example.com" })
+    assert.equal(dispatched, true)
+  }
+
+  // 6. appends a cookie row and re-serializes
+  {
+    const controller = new ControllerClass()
+    const rows = []
+    const fakeRow = { querySelector: () => ({ value: "" }) }
+    controller.cookieTemplateTarget = { content: { firstElementChild: { cloneNode: () => fakeRow } } }
+    controller.cookieRowsTarget = { appendChild: (n) => rows.push(n), querySelectorAll: () => rows }
+    controller.hasCookieRowsTarget = true
+    controller.hasHeaderRowsTarget = false
+    controller.hasStorageStateTarget = false
+    controller.webConfigField = { value: "{}", dispatchEvent() {} }
+
+    controller.addCookieRow()
+
+    assert.equal(rows.length, 1)
+  }
+
+  // 7. removes a row and re-serializes
+  {
+    const controller = new ControllerClass()
+    let removed = false
+    const row = { remove: () => { removed = true } }
+    controller.hasCookieRowsTarget = false
+    controller.hasHeaderRowsTarget = false
+    controller.hasStorageStateTarget = false
+    controller.webConfigField = { value: "{}", dispatchEvent() {} }
+
+    controller.removeRow({ target: { closest: () => row } })
+
+    assert.equal(removed, true)
+  }
+
+  // 8. toggles a value field between password and text
+  {
+    const controller = new ControllerClass()
+    const input = { type: "password" }
+    const row = { querySelector: () => input }
+
+    controller.toggleVisibility({ target: { closest: () => row } })
+
+    assert.equal(input.type, "text")
+  }
+
+  // 9. hydrates rows from existing web_config auth
+  {
+    const controller = new ControllerClass()
+    const cookieRows = []
+    const headerRows = []
+    const mkRow = () => {
+      const fields = {}
+      return {
+        dataset: {},
+        querySelector: (sel) => {
+          const m = sel.match(/data-field="(\w+)"/)
+          const f = m[1]
+          return (fields[f] || (fields[f] = { value: "" }))
+        },
+        _fields: fields
+      }
+    }
+    controller.hasCookieTemplateTarget = true
+    controller.cookieTemplateTarget = { content: { firstElementChild: { cloneNode: () => mkRow() } } }
+    controller.hasCookieRowsTarget = true
+    controller.cookieRowsTarget = { appendChild: (r) => cookieRows.push(r) }
+    controller.hasHeaderTemplateTarget = true
+    controller.headerTemplateTarget = { content: { firstElementChild: { cloneNode: () => mkRow() } } }
+    controller.hasHeaderRowsTarget = true
+    controller.headerRowsTarget = { appendChild: (r) => headerRows.push(r) }
+    controller.hasStorageStateTarget = true
+    controller.storageStateTarget = { value: "" }
+    controller.webConfigField = {
+      value: JSON.stringify({
+        url: "https://x",
+        auth: {
+          cookies: [{ name: "session", value: "v", domain: "example.com" }],
+          headers: { Authorization: "Bearer x" },
+          storage_state: { cookies: [] }
+        }
+      })
+    }
+
+    controller.populateFromAuth()
+
+    assert.equal(cookieRows.length, 1)
+    assert.equal(cookieRows[0]._fields.name.value, "session")
+    assert.equal(cookieRows[0]._fields.value.value, "v")
+    assert.equal(cookieRows[0]._fields.domain.value, "example.com")
+    assert.equal(headerRows.length, 1)
+    assert.equal(headerRows[0]._fields.key.value, "Authorization")
+    assert.equal(headerRows[0]._fields.value.value, "Bearer x")
+    assert.ok(controller.storageStateTarget.value.includes("cookies"))
+  }
+
+  // 10. hydrates nothing when there is no auth
+  {
+    const controller = new ControllerClass()
+    const cookieRows = []
+    controller.hasCookieTemplateTarget = true
+    controller.cookieTemplateTarget = { content: { firstElementChild: { cloneNode: () => ({ dataset: {}, querySelector: () => ({ value: "" }) }) } } }
+    controller.hasCookieRowsTarget = true
+    controller.cookieRowsTarget = { appendChild: (r) => cookieRows.push(r) }
+    controller.hasHeaderRowsTarget = false
+    controller.hasStorageStateTarget = false
+    controller.webConfigField = { value: JSON.stringify({ url: "https://x" }) }
+
+    controller.populateFromAuth()
+
+    assert.equal(cookieRows.length, 0)
+  }
+
+  // 11. round-trips advanced cookie fields through edit
+  {
+    const controller = new ControllerClass()
+    const fields = { name: { value: "session" }, value: { value: "v" }, domain: { value: "" } }
+    const row = {
+      dataset: { cookieExtra: JSON.stringify({ url: "https://x/app", secure: true, sameSite: "Lax", path: "/app" }) },
+      querySelector: (sel) => fields[sel.match(/data-field="(\w+)"/)[1]]
+    }
+    controller.hasCookieRowsTarget = true
+    controller.cookieRowsTarget = { querySelectorAll: () => [row] }
+
+    const cookie = controller.readCookieRows()[0]
+    assert.equal(cookie.url, "https://x/app")
+    assert.equal(cookie.secure, true)
+    assert.equal(cookie.sameSite, "Lax")
+    assert.equal(cookie.path, "/app")
+    assert.equal(cookie.name, "session")
+    assert.equal(cookie.value, "v")
+    assert.equal(cookie.domain, undefined)
+  }
+
+  // 12. prefers a typed domain over a stashed url
+  {
+    const controller = new ControllerClass()
+    const fields = { name: { value: "s" }, value: { value: "v" }, domain: { value: "example.com" } }
+    const row = {
+      dataset: { cookieExtra: JSON.stringify({ url: "https://x/" }) },
+      querySelector: (sel) => fields[sel.match(/data-field="(\w+)"/)[1]]
+    }
+    controller.hasCookieRowsTarget = true
+    controller.cookieRowsTarget = { querySelectorAll: () => [row] }
+
+    const c = controller.readCookieRows()[0]
+    assert.equal(c.domain, "example.com")
+    assert.equal("url" in c, false)
+  }
+
+  // 13. stashes advanced cookie fields on hydrate
+  {
+    const controller = new ControllerClass()
+    const rows = []
+    const mkRow = () => {
+      const fields = {}
+      return {
+        dataset: {},
+        querySelector: (sel) => {
+          const f = sel.match(/data-field="(\w+)"/)[1]
+          return (fields[f] || (fields[f] = { value: "" }))
+        }
+      }
+    }
+    controller.hasCookieTemplateTarget = true
+    controller.cookieTemplateTarget = { content: { firstElementChild: { cloneNode: () => mkRow() } } }
+    controller.hasCookieRowsTarget = true
+    controller.cookieRowsTarget = { appendChild: (r) => rows.push(r) }
+    controller.hasHeaderTemplateTarget = false
+    controller.hasHeaderRowsTarget = false
+    controller.hasStorageStateTarget = false
+    controller.webConfigField = {
+      value: JSON.stringify({ auth: { cookies: [{ name: "s", value: "v", domain: "e.com", secure: true, sameSite: "Lax" }] } })
+    }
+
+    controller.populateFromAuth()
+
+    assert.equal(rows.length, 1)
+    const extra = JSON.parse(rows[0].dataset.cookieExtra)
+    assert.equal(extra.secure, true)
+    assert.equal(extra.sameSite, "Lax")
+    assert.equal("name" in extra, false)
+  }
+
+  // 14. keeps invalid storageState so the server can reject it
+  {
+    const controller = new ControllerClass()
+    assert.equal(controller.buildAuthPayload([], [], "{ not valid json").storage_state, "{ not valid json")
+    assert.equal(controller.buildAuthPayload([], [], "42").storage_state, "42")
+  }
+
+  // 15. keeps a cookie with an empty-string value
+  {
+    const controller = new ControllerClass()
+    const auth = controller.buildAuthPayload([{ name: "flag", value: "", domain: "e.com" }], [], "")
+    assert.equal(auth.cookies.length, 1)
+    assert.equal(auth.cookies[0].name, "flag")
+    assert.equal(auth.cookies[0].value, "")
+  }
+}
+
+function loadTargetWizardController() {
+  const transformed = loadControllerSource(
+    "target_wizard_controller.js",
+    "TargetWizardController"
+  )
+
+  const context = {
+    Controller: class {},
+    console: { warn() {} },
+    document: { querySelector() { return null } },
+    window: { scrollTo() {} },
+  }
+
+  const ControllerClass = vm.runInNewContext(
+    `${transformed}\nTargetWizardController`,
+    context
+  )
+
+  return { ControllerClass, context }
+}
+
+function testTargetWizardRedactAuth() {
+  const { ControllerClass } = loadTargetWizardController()
+  const c = new ControllerClass()
+
+  // passthrough when no auth key
+  assert.deepEqual(JSON.parse(JSON.stringify(c.redactAuthForReview({ url: "x" }))), { url: "x" })
+
+  // redacts cookies/headers/storage_state to non-secret summaries
+  const out = JSON.parse(JSON.stringify(c.redactAuthForReview({
+    url: "https://x",
+    selectors: {},
+    auth: {
+      cookies: [{ name: "s", value: "secret-cookie" }],
+      headers: { Authorization: "Bearer secret-token" },
+      storage_state: { cookies: [] },
+    },
+  })))
+  assert.equal(out.url, "https://x")
+  assert.equal(JSON.stringify(out).includes("secret-cookie"), false)
+  assert.equal(JSON.stringify(out).includes("secret-token"), false)
+  assert.equal(out.auth.cookies, "1 cookie(s) [hidden]")
+  assert.equal(out.auth.headers, "1 header(s) [hidden]")
+  assert.equal(out.auth.storage_state, "[hidden]")
+
+  // empty cookies array — passthrough (no redaction when length === 0)
+  const outEmpty = JSON.parse(JSON.stringify(c.redactAuthForReview({
+    url: "x",
+    auth: { cookies: [], headers: {}, storage_state: null },
+  })))
+  assert.deepEqual(outEmpty.auth, {})
+
+  // missing auth key — passthrough unchanged
+  const cfg = { url: "https://x", selectors: { input_field: "#i" } }
+  assert.deepEqual(JSON.parse(JSON.stringify(c.redactAuthForReview(cfg))), cfg)
+}
+
+function loadWebchatAutoDetectController() {
+  const raw = readFileSync(
+    new URL("../../app/javascript/controllers/webchat_auto_detect_controller.js", import.meta.url),
+    "utf8"
+  )
+  const transformed = raw
+    .replace(/^import .*\n/gm, "")
+    .replace("export default class extends Controller", "class WebchatAutoDetectController extends Controller")
+  const context = {
+    Controller: class {},
+    consumer: {},
+    document: { querySelector() { return null } },
+    console: { log() {}, warn() {} },
+  }
+  const ControllerClass = vm.runInNewContext(`${transformed}\nWebchatAutoDetectController`, context)
+  return { ControllerClass, context }
+}
+
+function testWebchatAutoDetectCurrentAuth() {
+  const { ControllerClass } = loadWebchatAutoDetectController()
+
+  const withAuth = new ControllerClass()
+  withAuth.configTextarea = {
+    value: JSON.stringify({ url: "https://x", auth: { headers: { Authorization: "Bearer x" } } }),
+  }
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(withAuth.currentAuth())),
+    { headers: { Authorization: "Bearer x" } }
+  )
+
+  const withoutAuth = new ControllerClass()
+  withoutAuth.configTextarea = { value: JSON.stringify({ url: "https://x" }) }
+  assert.equal(withoutAuth.currentAuth(), null)
+
+  const malformed = new ControllerClass()
+  malformed.configTextarea = { value: "{not json" }
+  assert.equal(malformed.currentAuth(), null)
+}
+
 await testDebugStreamLeaseController()
 testActivityStreamController()
 testDebugTabsController()
@@ -959,4 +1355,7 @@ testReportRedesignedController()
 testReportRedesignedControllerListenerCleanup()
 testLogViewerController()
 testThreatVariantsController()
+testWebchatAuthController()
+testTargetWizardRedactAuth()
+testWebchatAutoDetectCurrentAuth()
 console.log("JavaScript controller tests passed")

@@ -21,9 +21,10 @@ class AutoDetectWebchatSelectors
   SUCCESS_STEPS = [ :success ].freeze
   ERROR_STEPS = [ :error ].freeze
 
-  def initialize(url, session_id: nil)
+  def initialize(url, session_id: nil, auth: nil)
     @url = url
     @session_id = session_id
+    @auth = auth
     @current_progress = 0  # Track current progress for error states
   end
 
@@ -33,7 +34,7 @@ class AutoDetectWebchatSelectors
 
     # Step 1: Extract page structure (Phase 2 implementation)
     playwright_service = BrowserAutomation::PlaywrightService.instance
-    @page_data = playwright_service.extract_page_structure(url, wait_time: PAGE_EXTRACTION_WAIT_MS)
+    @page_data = playwright_service.extract_page_structure(url, wait_time: PAGE_EXTRACTION_WAIT_MS, auth: @auth)
 
     unless @page_data
       Rails.logger.error("Page load failed for #{url}")
@@ -63,7 +64,7 @@ class AutoDetectWebchatSelectors
       )
 
       unless result && result[:selectors]
-        Rails.logger.error("Detection service returned invalid result on attempt #{attempt}: #{result.inspect}")
+        Rails.logger.error("Detection service returned invalid result on attempt #{attempt}: #{sanitize(result.inspect)}")
         broadcast("error", build_error_message(:exception), @current_progress)
         cleanup_broadcast
         return nil
@@ -82,7 +83,7 @@ class AutoDetectWebchatSelectors
           screenshot: @page_data["screenshot"]
         }
       else
-        Rails.logger.warn("Detection attempt #{attempt} failed: #{validation[:errors]}")
+        Rails.logger.warn("Detection attempt #{attempt} failed: #{sanitize(validation[:errors].to_s)}")
         broadcast("retry", "⚠️ Validation failed. Retrying with different selectors...", progress_for_step(:retry, attempt))
         previous_errors = validation[:errors]
         attempt += 1
@@ -94,8 +95,8 @@ class AutoDetectWebchatSelectors
     cleanup_broadcast  # Signal WebSocket to close
     nil
   rescue StandardError => e
-    Rails.logger.error("Auto-detection failed: #{e.message}")
-    Rails.logger.error(e.backtrace.join("\n"))
+    Rails.logger.error("Auto-detection failed: #{sanitize(e.message)}")
+    Rails.logger.error(sanitize(e.backtrace.join("\n")))
     broadcast("error", build_error_message(:exception), @current_progress)
     cleanup_broadcast  # Signal WebSocket to close
     nil
@@ -192,9 +193,14 @@ class AutoDetectWebchatSelectors
       wait_times: {
         page_load: VALIDATION_PAGE_LOAD_MS,
         response: VALIDATION_RESPONSE_MS
-      }
+      },
+      auth: @auth
     }
 
     service.validate_webchat_config(url, config)
+  end
+
+  def sanitize(text)
+    Reports::FailureClassifier.sanitize_text(text.to_s)
   end
 end

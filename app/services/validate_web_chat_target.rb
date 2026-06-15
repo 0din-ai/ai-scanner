@@ -17,8 +17,8 @@ class ValidateWebChatTarget
     begin
       validate_web_chat
     rescue StandardError => e
-      Rails.logger.error("Validation failed for target #{target.id}: #{e.message}")
-      target.update(status: :bad, validation_text: "Validation failed: #{e.message}")
+      Rails.logger.error("Validation failed for target #{target.id}: #{sanitize(e.message)}")
+      target.update(status: :bad, validation_text: sanitize("Validation failed: #{e.message}"))
     end
   end
 
@@ -34,6 +34,7 @@ class ValidateWebChatTarget
 
     url = config["url"]
     selectors = config["selectors"] || {}
+    auth = config["auth"]
 
     unless valid_url?(url)
       target.update(status: :bad, validation_text: "Web chat validation failed: Invalid URL format")
@@ -50,15 +51,15 @@ class ValidateWebChatTarget
       return
     end
 
-    perform_interaction_test(url, selectors)
+    perform_interaction_test(url, selectors, auth)
   rescue StandardError => e
     target.update(
       status: :bad,
-      validation_text: "Web chat validation error: #{e.message}"
+      validation_text: sanitize("Web chat validation error: #{e.message}")
     )
   end
 
-  def perform_interaction_test(url, selectors)
+  def perform_interaction_test(url, selectors, auth = nil)
     service = BrowserAutomation::PlaywrightService.instance
 
     # Build config for PlaywrightService (Phase 2 smart waits)
@@ -71,7 +72,8 @@ class ValidateWebChatTarget
       wait_times: {
         page_load: 30000,
         response: 5000
-      }
+      },
+      auth: auth
     }
 
     # Use existing Phase 2 validation (smart waits, 100% success rate)
@@ -93,8 +95,8 @@ class ValidateWebChatTarget
     else
       target.update(
         status: :bad,
-        validation_text: "Web chat validation failed: #{result[:errors].join(', ')}. " \
-                        "The selectors may be incorrect or the chat interface may have changed."
+        validation_text: sanitize("Web chat validation failed: #{result[:errors].join(', ')}. " \
+                        "The selectors may be incorrect or the chat interface may have changed.")
       )
     end
   rescue StandardError => e
@@ -102,12 +104,16 @@ class ValidateWebChatTarget
     Rails.logger.error e.backtrace.join("\n")
     target.update(
       status: :bad,
-      validation_text: "Error testing web chat interaction: #{e.message}"
+      validation_text: sanitize("Error testing web chat interaction: #{e.message}")
     )
   end
 
   def valid_url?(url)
     result = UrlSafetyValidator.safe_url?(url, allow_localhost: UrlSafetyValidator.allow_localhost?)
     result.safe?
+  end
+
+  def sanitize(text)
+    Reports::FailureClassifier.sanitize_text(text)
   end
 end

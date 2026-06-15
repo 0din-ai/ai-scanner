@@ -700,5 +700,64 @@ RSpec.describe Target, type: :model do
         expect(target).to be_valid
       end
     end
+
+    context "with auth block" do
+      before do
+        allow(UrlSafetyValidator).to receive(:resolve_addresses).and_return([ "93.184.216.34" ])
+      end
+
+      def webchat_with_auth(auth)
+        build(:target, target_type: :webchat, web_config: {
+          "url" => "https://example.com/chat",
+          "selectors" => { "input_field" => "#input", "response_container" => "#response" },
+          "auth" => auth
+        })
+      end
+
+      it "accepts a valid auth block" do
+        target = webchat_with_auth(
+          "cookies" => [ { "name" => "s", "value" => "v", "domain" => "example.com" } ],
+          "headers" => { "Authorization" => "Bearer x" }
+        )
+        expect(target).to be_valid
+      end
+
+      it "rejects a malformed cookie" do
+        target = webchat_with_auth("cookies" => [ { "value" => "v" } ])
+        expect(target).not_to be_valid
+        expect(target.errors[:web_config]).to include(/auth\.cookies\[0\]\.name is required/)
+      end
+
+      it "rejects an unsupported auth key" do
+        target = webchat_with_auth("token" => "x")
+        expect(target).not_to be_valid
+        expect(target.errors[:web_config]).to include(/unsupported key/)
+      end
+
+      it "strips a reserved Host header from auth before persisting" do
+        target = webchat_with_auth("headers" => { "Host" => "evil.com", "X-Api" => "ok" })
+        expect(target).to be_valid
+        expect(JSON.parse(target.web_config).dig("auth", "headers")).to eq({ "X-Api" => "ok" })
+      end
+
+      it "drops the auth.headers key when Host was the only header" do
+        target = webchat_with_auth("headers" => { "Host" => "evil.com" })
+        target.valid?
+        expect(JSON.parse(target.web_config).dig("auth", "headers")).to be_nil
+      end
+
+      it "does not raise when auth is a non-object and lets the validator report it" do
+        target = webchat_with_auth("not-an-object")
+        expect { target.valid? }.not_to raise_error
+        expect(target).not_to be_valid
+        expect(target.errors[:web_config]).to include("auth must be an object")
+      end
+
+      it "does not raise when auth is an array" do
+        target = webchat_with_auth([ "x" ])
+        expect { target.valid? }.not_to raise_error
+        expect(target).not_to be_valid
+      end
+    end
   end
 end

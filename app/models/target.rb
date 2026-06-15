@@ -39,6 +39,7 @@ class Target < ApplicationRecord
   validate :web_config_is_valid, if: :webchat?
 
   before_validation :set_defaults_for_webchat
+  before_validation :strip_reserved_auth_headers, if: :webchat?
 
   has_many :environment_variables, dependent: :destroy
   has_many :reports, dependent: :destroy
@@ -155,6 +156,22 @@ class Target < ApplicationRecord
     validate_target! if config_changed
   end
 
+  def strip_reserved_auth_headers
+    config = parsed_web_config
+    auth = config["auth"] if config.is_a?(Hash)
+    return unless auth.is_a?(Hash)
+
+    headers = auth["headers"]
+    return unless headers.is_a?(Hash)
+
+    reserved = headers.keys.select { |k| k.to_s.casecmp?("host") }
+    return if reserved.empty?
+
+    reserved.each { |k| headers.delete(k) }
+    auth.delete("headers") if headers.empty?
+    self.web_config = config
+  end
+
   def json_config_is_valid_json
     JSON.parse(json_config)
   rescue JSON::ParserError => e
@@ -190,6 +207,11 @@ class Target < ApplicationRecord
 
     if selectors["response_container"].blank?
       errors.add(:web_config, "selectors must include 'response_container' (CSS selector for chat response area)")
+    end
+
+    auth = config["auth"]
+    if auth.present?
+      WebConfig::AuthValidator.new(auth).errors.each { |msg| errors.add(:web_config, msg) }
     end
 
     # Optional fields: send_button, response_text, wait_times, detection, browser_options

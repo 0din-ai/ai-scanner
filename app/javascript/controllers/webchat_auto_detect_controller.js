@@ -47,6 +47,15 @@ export default class extends Controller {
     }
   }
 
+  currentAuth() {
+    try {
+      const config = JSON.parse(this.configTextarea?.value || "{}")
+      return config && config.auth ? config.auth : null
+    } catch (_) {
+      return null
+    }
+  }
+
   async detect(event) {
     event.preventDefault();
 
@@ -99,7 +108,7 @@ export default class extends Controller {
           "Content-Type": "application/json",
           "X-CSRF-Token": this.getCSRFToken(),
         },
-        body: JSON.stringify({ url: url, session_id: sessionId }),
+        body: JSON.stringify({ url: url, session_id: sessionId, auth: this.currentAuth() }),
       });
 
       const data = await response.json();

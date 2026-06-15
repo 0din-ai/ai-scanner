@@ -168,8 +168,10 @@ module Admin
         return
       end
 
+      auth = params[:auth].respond_to?(:to_unsafe_h) ? params[:auth].to_unsafe_h : params[:auth]
+
       # Call auto-detection service with session_id for progress streaming
-      detector = AutoDetectWebchatSelectors.new(url, session_id: session_id)
+      detector = AutoDetectWebchatSelectors.new(url, session_id: session_id, auth: auth)
       detection_result = detector.call
 
       if detection_result
@@ -202,6 +204,8 @@ module Admin
           }
         }
 
+        config[:auth] = auth if auth.present?
+
         render json: { success: true, config: config, screenshot: screenshot_base64 }
       else
         render json: {
@@ -210,9 +214,10 @@ module Admin
         }, status: :unprocessable_entity
       end
     rescue StandardError => e
-      Rails.logger.error("Auto-detection error: #{e.message}")
-      Rails.logger.error(e.backtrace.join("\n"))
-      render json: { error: "Detection failed: #{e.message}" }, status: :internal_server_error
+      safe_message = Reports::FailureClassifier.sanitize_text(e.message)
+      Rails.logger.error("Auto-detection error: #{safe_message}")
+      Rails.logger.error(Reports::FailureClassifier.sanitize_text(e.backtrace.join("\n")))
+      render json: { error: "Detection failed: #{safe_message}" }, status: :internal_server_error
     end
 
     private

@@ -21,6 +21,7 @@ _mock_db.get_log_file_path = MagicMock(return_value=Path("/tmp/fake_reports/repo
 _mock_db.HeartbeatThread = MagicMock
 _mock_db.JournalSyncThread = MagicMock
 _mock_db.REPORTS_PATH = Path("/tmp/fake_reports")
+_mock_db.CONFIG_PATH = Path("/tmp/fake_config")
 
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..")
 if SCRIPT_DIR not in sys.path:

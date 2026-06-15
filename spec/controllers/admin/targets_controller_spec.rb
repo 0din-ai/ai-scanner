@@ -65,4 +65,59 @@ RSpec.describe Admin::TargetsController, type: :controller do
       expect(target.status).not_to eq("good")
     end
   end
+
+  describe "POST #auto_detect_selectors" do
+    let(:session_id) do
+      Rails.application.message_verifier(:auto_detect_session).generate([ user.id, SecureRandom.uuid ])
+    end
+
+    it "rejects blocked internal URLs before running auto-detection" do
+      expect(AutoDetectWebchatSelectors).not_to receive(:new)
+
+      post :auto_detect_selectors, params: {
+        url: "http://169.254.169.254/latest/meta-data",
+        session_id: session_id
+      }, format: :json
+
+      expect(response).to have_http_status(:bad_request)
+      json = JSON.parse(response.body)
+      expect(json["error"]).to include("blocked internal address")
+    end
+
+    it "forwards auth to the service and echoes it into the returned config" do
+      auth = { "headers" => { "Authorization" => "Bearer x" } }
+      detector = instance_double(AutoDetectWebchatSelectors)
+
+      expect(AutoDetectWebchatSelectors).to receive(:new)
+        .with("https://example.com/chat", hash_including(auth: hash_including("headers")))
+        .and_return(detector)
+      allow(detector).to receive(:call).and_return(
+        selectors: { "input_field" => "#i", "response_container" => "#r", "response_text" => "" },
+        screenshot: nil
+      )
+
+      post :auto_detect_selectors, params: {
+        url: "https://example.com/chat",
+        session_id: session_id,
+        auth: auth
+      }, format: :json
+
+      expect(response).to have_http_status(:ok)
+      json = JSON.parse(response.body)
+      expect(json.dig("config", "auth", "headers", "Authorization")).to eq("Bearer x")
+    end
+
+    it "sanitizes secrets from the error response when detection raises" do
+      allow(AutoDetectWebchatSelectors).to receive(:new).and_raise(StandardError, "boom Bearer abcdef123456")
+
+      post :auto_detect_selectors, params: {
+        url: "https://example.com/chat",
+        session_id: session_id
+      }, format: :json
+
+      expect(response).to have_http_status(:internal_server_error)
+      expect(response.body).not_to include("abcdef123456")
+      expect(JSON.parse(response.body)["error"]).to include("[REDACTED]")
+    end
+  end
 end

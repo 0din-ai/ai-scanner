@@ -127,6 +127,39 @@ RSpec.describe ValidateWebChatTarget do
       end
     end
 
+    context "with an auth block" do
+      let(:auth) { { "headers" => { "Authorization" => "Bearer secret-token" } } }
+      let(:config_with_auth) do
+        {
+          "url" => "https://example.com/chat",
+          "selectors" => { "input_field" => "#input", "response_container" => "#response" },
+          "auth" => auth
+        }
+      end
+
+      before { target.update(web_config: config_with_auth) }
+
+      it "forwards auth to validate_webchat_config" do
+        expect(playwright_service).to receive(:validate_webchat_config) do |_url, cfg|
+          expect(cfg[:auth] || cfg["auth"]).to eq(auth)
+          { success: true, response_detected: true, errors: [] }
+        end
+
+        service.call
+      end
+
+      it "sanitizes secrets out of validation_text on failure" do
+        allow(playwright_service).to receive(:validate_webchat_config).and_return(
+          success: false, response_detected: false, errors: [ "boom Bearer secret-token" ]
+        )
+
+        service.call
+
+        expect(target.reload.validation_text).not_to include("secret-token")
+        expect(target.validation_text).to include("[REDACTED]")
+      end
+    end
+
     context "error handling" do
       let(:valid_config) do
         {

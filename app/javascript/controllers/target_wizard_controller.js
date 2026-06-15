@@ -478,13 +478,14 @@ export default class extends Controller {
       if (config.trim()) {
         try {
           this.reviewConfigTarget.textContent = JSON.stringify(
-            JSON.parse(config),
+            this.redactAuthForReview(JSON.parse(config)),
             null,
             2,
           );
         } catch (error) {
           console.warn("[target-wizard] Config JSON is malformed on review:", error.message);
-          this.reviewConfigTarget.textContent = config;
+          // Do not dump the raw config here — it may carry auth secrets.
+          this.reviewConfigTarget.textContent = "(configuration contains invalid JSON)";
         }
         if (this.hasReviewConfigSectionTarget) {
           this.reviewConfigSectionTarget.classList.remove("hidden");
@@ -498,6 +499,26 @@ export default class extends Controller {
   }
 
   // --- Webchat Config Helpers ---
+
+  // Replace auth credential values with non-secret summaries for the read-only
+  // review so cookies/headers/storageState are never rendered in plaintext.
+  redactAuthForReview(config) {
+    if (!config || typeof config !== "object" || !config.auth || typeof config.auth !== "object") {
+      return config;
+    }
+    const auth = config.auth;
+    const redacted = {};
+    if (Array.isArray(auth.cookies) && auth.cookies.length) {
+      redacted.cookies = `${auth.cookies.length} cookie(s) [hidden]`;
+    }
+    if (auth.headers && typeof auth.headers === "object" && Object.keys(auth.headers).length) {
+      redacted.headers = `${Object.keys(auth.headers).length} header(s) [hidden]`;
+    }
+    if (auth.storage_state !== undefined && auth.storage_state !== null) {
+      redacted.storage_state = "[hidden]";
+    }
+    return { ...config, auth: redacted };
+  }
 
   initializeWebConfig() {
     if (!this.hasWebConfigFieldTarget) return;
@@ -524,6 +545,7 @@ export default class extends Controller {
         skip_patterns: [],
         min_response_length: 5,
       },
+      auth: {},
     };
 
     this.webConfigFieldTarget.value = JSON.stringify(defaultConfig, null, 2);
