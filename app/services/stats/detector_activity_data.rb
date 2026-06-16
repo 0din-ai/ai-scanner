@@ -10,29 +10,44 @@ module Stats
       start_date = Time.zone.today - 30.days
       end_date = Time.zone.today
 
-      top_detectors = DetectorResult.joins(:detector, :report)
-                        .where(reports: { created_at: start_date.beginning_of_day..end_date.end_of_day })
-      top_detectors = top_detectors.where(reports: { target_id: @target_id }) if @target_id.present?
-      top_detectors = top_detectors.where(reports: { scan_id: @scan_id }) if @scan_id.present?
-      top_detectors = top_detectors.where(report_id: @report_id) if @report_id.present?
-      top_detectors = top_detectors.select("detectors.name, SUM(detector_results.total) as total_tests, SUM(detector_results.passed) as passed_tests")
-                        .group("detectors.id, detectors.name")
-                        .order("total_tests DESC")
-      detector_names = []
-      test_counts = []
-      passed_counts = []
+      rows = DetectorResult.joins(:detector, :report)
+               .where(reports: { created_at: start_date.beginning_of_day..end_date.end_of_day })
+      rows = rows.where(reports: { target_id: @target_id }) if @target_id.present?
+      rows = rows.where(reports: { scan_id: @scan_id }) if @scan_id.present?
+      rows = rows.where(report_id: @report_id) if @report_id.present?
+      rows = rows.select("detectors.name, SUM(detector_results.total) AS total_tests, SUM(detector_results.passed) AS passed_tests")
+                 .group("detectors.id, detectors.name")
+                 .order("total_tests DESC")
 
-      top_detectors.each do |result|
-        short_name = result.name.split(".").last
-        detector_names << I18n.t("detectors.names.#{short_name}", default: short_name)
-        test_counts << result.total_tests
-        passed_counts << result.passed_tests
+      individual = []
+      community = { total: 0, passed: 0, any: false }
+
+      rows.each do |row|
+        total = row.total_tests.to_i
+        passed = row.passed_tests.to_i
+
+        if row.name.to_s.start_with?("0din.")
+          short_name = row.name.split(".").last
+          individual << {
+            name: I18n.t("detectors.names.#{short_name}", default: short_name),
+            total: total,
+            passed: passed
+          }
+        else
+          community[:total] += total
+          community[:passed] += passed
+          community[:any] = true
+        end
       end
 
+      spokes = individual
+      spokes << { name: "Community", total: community[:total], passed: community[:passed] } if community[:any]
+      spokes.sort_by! { |spoke| -spoke[:total] }
+
       {
-        detector_names: detector_names,
-        test_counts: test_counts,
-        passed_counts: passed_counts,
+        detector_names: spokes.map { |spoke| spoke[:name] },
+        test_counts: spokes.map { |spoke| spoke[:total] },
+        passed_counts: spokes.map { |spoke| spoke[:passed] },
         time_range: "Last 30 Days"
       }
     end

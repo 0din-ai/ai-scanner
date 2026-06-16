@@ -6,9 +6,9 @@ RSpec.describe Stats::DetectorActivityData do
     let(:scan) { create(:complete_scan) }
     let(:report) { create(:report, target: target, scan: scan) }
 
-    let(:detector1) { create(:detector, name: 'detector.type1') }
-    let(:detector2) { create(:detector, name: 'detector.type2') }
-    let(:detector3) { create(:detector, name: 'detector.type3') }
+    let(:detector1) { create(:detector, name: '0din.type1') }
+    let(:detector2) { create(:detector, name: '0din.type2') }
+    let(:detector3) { create(:detector, name: '0din.type3') }
 
     describe 'with no filters' do
       subject { described_class.new }
@@ -160,6 +160,51 @@ RSpec.describe Stats::DetectorActivityData do
 
         result = subject.call
         expect(result[:detector_names]).to eq([ "type1" ])
+      end
+    end
+
+    describe 'community collapsing' do
+      subject { described_class.new }
+
+      context 'with multiple community (garak) detectors' do
+        let(:garak1) { create(:detector, name: 'dan.DAN') }
+        let(:garak2) { create(:detector, name: 'ansiescape.Escaped') }
+
+        before do
+          create(:detector_result, report: report, detector: garak1, total: 60, passed: 40)
+          create(:detector_result, report: report, detector: garak2, total: 30, passed: 10)
+        end
+
+        it 'collapses them into a single "Community" spoke with summed counts' do
+          result = subject.call
+
+          expect(result[:detector_names]).to eq([ "Community" ])
+          expect(result[:test_counts]).to eq([ 90 ])
+          expect(result[:passed_counts]).to eq([ 50 ])
+        end
+      end
+
+      context 'with a mix of 0din and community detectors' do
+        let(:odin) { create(:detector, name: '0din.MitigationBypass') }
+        let(:garak1) { create(:detector, name: 'dan.DAN') }
+        let(:garak2) { create(:detector, name: 'continuation.Continuation') }
+
+        before do
+          create(:detector_result, report: report, detector: odin, total: 100, passed: 90)
+          create(:detector_result, report: report, detector: garak1, total: 40, passed: 20)
+          create(:detector_result, report: report, detector: garak2, total: 35, passed: 15)
+          allow(I18n).to receive(:t)
+            .with("detectors.names.MitigationBypass", default: "MitigationBypass")
+            .and_return("Generic Mitigation Bypass Checks")
+        end
+
+        it 'keeps 0din individual and collapses community, ordered by total DESC' do
+          result = subject.call
+
+          expect(result[:detector_names]).to eq([ "Generic Mitigation Bypass Checks", "Community" ])
+          expect(result[:test_counts]).to eq([ 100, 75 ])
+          expect(result[:passed_counts]).to eq([ 90, 35 ])
+        end
       end
     end
   end
