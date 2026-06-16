@@ -1,2 +1,6 @@
 web: env RUBY_DEBUG_OPEN=true RUBY_YJIT_ENABLE=1 bin/rails server -p $PORT -b '0.0.0.0'
-css: yarn build:css --watch
+# css: tailwind --watch, but fall back to a one-time build + idle when the watcher
+# can't start (tailwind v4 oxide throws "Bad file descriptor" over the macOS Docker
+# bind mount). Without the fallback the css process exits and foreman tears down the
+# whole dev container. On Linux/CI the watcher runs normally and the fallback is never hit.
+css: yarn build:css --watch || { yarn build:css; exec tail -f /dev/null; }
