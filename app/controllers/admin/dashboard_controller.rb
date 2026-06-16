@@ -18,6 +18,8 @@ module Admin
       @total_scans = stats["total_scans"]
       @total_targets = stats["total_targets"]
       @total_reports = stats["total_reports"]
+      @last_five_scans = Stats::LastFiveScansData.new.call
+      @top_five_attacks = Stats::TopFiveAttacksData.new(probe_scope: policy_scope(Probe)).call
     end
 
     def get_started

@@ -1,9 +1,21 @@
-<div class="bg-white dark:bg-zinc-900 rounded-lg shadow-sm border border-gray-100 dark:border-zinc-700 p-3 lg:p-4">
+<div class="bg-white dark:bg-zinc-900 rounded-lg shadow-sm border border-gray-100 dark:border-zinc-700 p-3 lg:p-4 flex flex-col">
   <div class="flex items-center gap-2 mb-4">
-    <h3 class="text-white font-sans text-base font-normal">Last Five Scans Attack Success Rate</h3>
-    <%= render 'shared/info_tooltip', aria_label: 'Information about Last Five Scans Attack Success Rate', content: t('dashboard.tooltips.last_five_scans') %>
+    <h3 class="text-white font-sans text-base font-normal">Last Five Scans</h3>
+    <%= render 'shared/info_tooltip', aria_label: 'Information about Last Five Scans', content: t('dashboard.tooltips.last_five_scans') %>
   </div>
-  <div data-dashboard-target="lastFiveScansScores" class="w-full h-56 sm:h-64" aria-label="Last Five Scans Score chart">
-    <%= render partial: "charts/shared/loading_notice" %>
+  <div class="flex flex-col flex-grow">
+    <% if @last_five_scans.blank? %>
+      <p class="text-sm text-contentSecondary">No scans yet</p>
+    <% else %>
+      <ul class="flex flex-col divide-y divide-zinc-800">
+        <% @last_five_scans.each do |scan| %>
+          <li class="flex items-center justify-between gap-3 py-2">
+            <%= link_to scan[:scan_name], scan_path(scan[:scan_id]),
+                  class: "text-sm text-primary hover:underline truncate", title: scan[:scan_name] %>
+            <span class="text-sm font-semibold shrink-0 <%= asr_color_class(scan[:asr]) %>"><%= scan[:asr] %>%</span>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
   </div>
 </div>

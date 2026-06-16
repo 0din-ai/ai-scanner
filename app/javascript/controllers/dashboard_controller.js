@@ -19,7 +19,6 @@ export default class extends Controller {
         "percentage4",
         "periodLabel4",
         "sparklineChart4",
-        "lastFiveScansScores",
         "vulnerableTargetsChart",
         "detectorActivityRadarChart",
         "taxonomyDistributionChart",
@@ -67,7 +66,6 @@ export default class extends Controller {
         this.initTotalScans(chartConfig);
         this.initAvgAsrScores(chartConfig);
         this.initAvgScans(chartConfig);
-        this.initLastFiveScanScores(chartConfig);
         this.initVulnerableTargetsChart(chartConfig);
         this.initDetectorActivityRadarChart(chartConfig);
         this.initTaxonomyDistributionChart(chartConfig);
@@ -333,115 +331,6 @@ export default class extends Controller {
         chart.getZr().off('click');
 
         this.charts[chartKeyValue] = chart;
-    }
-
-    initLastFiveScanScores(chartConfig) {
-        const chart = this.initChart(this.lastFiveScansScoresTarget, chartConfig);
-        fetch('/dashboard_stats/last_five_scans_data')
-            .then(response => response.json())
-            .then(data => {
-                // Handle empty data
-                if (!data.models || data.models.length === 0) {
-                    chart.setOption({
-                        ...chartConfig,
-                        title: {
-                            text: 'No scan data available',
-                            left: 'center',
-                            top: 'center',
-                            textStyle: {
-                                color: colors.textColor,
-                                fontSize: 14
-                            }
-                        }
-                    });
-                    return;
-                }
-
-                const chartData = data.models.map((name, index) => ({
-                    name,
-                    value: data.values[index],
-                    reportId: data.report_ids[index]
-                }));
-                chartData.sort((a, b) => a.value - b.value);
-
-                const modelFullNames = chartData.map(d => d.name);
-                const modelNames = chartData.map(d => d.name.length > 22 ? d.name.substring(0, 22) + '...' : d.name);
-                const scoreValues = chartData.map(d => d.value);
-                const reportIds = chartData.map(d => d.reportId);
-
-                chart.setOption({
-                    ...chartConfig,
-                    legend: {
-                        show: false
-                    },
-                    tooltip: {
-                        ...tooltipConfig,
-                        trigger: 'item',
-                        formatter: function(params) {
-                            const dataIndex = params.dataIndex;
-                            return `${modelFullNames[dataIndex]}: ${params.value}%<br/>Click on model name to view report`;
-                        }
-                    },
-                    grid: {
-                        left: '1%',
-                        right: '4%',
-                        bottom: '3%',
-                        top: 0,
-                        containLabel: true
-                    },
-                    xAxis: {
-                        type: 'value',
-                        axisLine: { lineStyle: { color: colors.gridLineColor } },
-                        axisLabel: {
-                            color: colors.subTextColor,
-                            fontFamily: BRAND_FONT
-                        },
-                        splitLine: { lineStyle: { color: colors.gridLineColor, type: 'dashed' } }
-                    },
-                    yAxis: {
-                        type: 'category',
-                        data: modelNames,
-                        axisLine: { lineStyle: { color: colors.gridLineColor } },
-                        axisLabel: {
-                            color: colors.subTextColor,
-                            cursor: 'pointer',
-                            fontFamily: BRAND_FONT
-                        },
-                        triggerEvent: true
-                    },
-                    series: [
-                        {
-                            name: 'Attack Success Rate (ASR)',
-                            type: 'bar',
-                            data: scoreValues,
-                            barWidth: 16,
-                            itemStyle: {
-                                color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                                    { offset: 0, color: '#B94E10' },
-                                    { offset: 1, color: '#FF9456' }
-                                ]),
-                                cursor: 'pointer'
-                            },
-                            emphasis: {
-                                itemStyle: {
-                                    color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                                        { offset: 0, color: '#C85D1A' },
-                                        { offset: 1, color: '#FDB97F' }
-                                    ])
-                                }
-                            },
-                            barCategoryGap: '20%'
-                        }
-                    ]
-                });
-
-                chart.on('click', function(params) {
-                    const reportId = reportIds[params.dataIndex];
-                    if (reportId) {
-                        window.location.href = `/reports/${reportId}`;
-                    }
-                });
-            });
     }
 
     initVulnerableTargetsChart(chartConfig) {

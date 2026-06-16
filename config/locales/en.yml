@@ -104,6 +104,7 @@ en:
       average_asr: "Average Attack Success Rate across all completed scans. ASR measures the percentage of probe attempts that successfully identified vulnerabilities."
       average_scan_time: "Average time taken to complete a security scan."
       last_five_scans: "Attack Success Rate for the five most recent scans, showing recent vulnerability detection trends."
+      top_five_attacks: "The five probes (attacks) with the highest Attack Success Rate across your recent scans."
       vulnerable_targets: "Targets with the highest vulnerability scores over time, helping identify systems that need attention."
       detector_activity: "Distribution of probe activity across different detector categories, showing which detection methods are most active."
       taxonomy_distribution: "Distribution of probes by security taxonomy categories, showing coverage across different vulnerability types."

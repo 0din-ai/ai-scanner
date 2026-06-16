@@ -1,0 +1,20 @@
+<div class="bg-white dark:bg-zinc-900 rounded-lg shadow-sm border border-gray-100 dark:border-zinc-700 p-3 lg:p-4 flex flex-col">
+  <div class="flex items-center gap-2 mb-4">
+    <h3 class="text-white font-sans text-base font-normal">Top Five Most Successful Attacks</h3>
+    <%= render 'shared/info_tooltip', aria_label: 'Information about Top Five Most Successful Attacks', content: t('dashboard.tooltips.top_five_attacks') %>
+  </div>
+  <div class="flex flex-col flex-grow">
+    <% if @top_five_attacks.blank? %>
+      <p class="text-sm text-contentSecondary">No attack data yet</p>
+    <% else %>
+      <ul class="flex flex-col divide-y divide-zinc-800">
+        <% @top_five_attacks.each do |attack| %>
+          <li class="flex items-center justify-between gap-3 py-2">
+            <span class="text-sm text-white truncate" title="<%= attack[:probe_name] %>"><%= attack[:probe_name] %></span>
+            <span class="text-sm font-semibold shrink-0 <%= asr_color_class(attack[:asr]) %>"><%= attack[:asr] %>%</span>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </div>
+</div>

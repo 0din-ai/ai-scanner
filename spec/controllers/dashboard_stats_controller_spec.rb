@@ -160,23 +160,6 @@ RSpec.describe DashboardStatsController, type: :controller do
     end
   end
 
-  describe '#last_five_scans_data' do
-    let(:mock_result) { { scans: [ { id: 1, name: 'Scan 1' } ] } }
-    let(:mock_service) { instance_double(Stats::LastFiveScansData, call: mock_result) }
-
-    before do
-      allow(Stats::LastFiveScansData).to receive(:new).and_return(mock_service)
-    end
-
-    it 'calls the service and returns the result as JSON' do
-      get :last_five_scans_data
-
-      expect(Stats::LastFiveScansData).to have_received(:new)
-      expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body)).to eq(mock_result.as_json)
-    end
-  end
-
   describe '#targets_timeline_data' do
     let(:mock_result) { { targets: [ { id: 1, name: 'Target 1' } ] } }
     let(:mock_service) { instance_double(Stats::TargetsTimelineData, call: mock_result) }

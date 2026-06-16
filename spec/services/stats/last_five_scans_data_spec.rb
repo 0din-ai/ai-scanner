@@ -2,103 +2,71 @@ require 'rails_helper'
 
 RSpec.describe Stats::LastFiveScansData, type: :service do
   describe '#call' do
-    let(:target1) { create(:target, name: 'Model 1') }
-    let(:target2) { create(:target, name: 'Model 2') }
-    let(:target3) { create(:target, name: 'Model 3') }
-    let(:scan) { create(:complete_scan) }
+    let(:company) { create(:company) }
 
     before do
+      ActsAsTenant.current_tenant = company
       # Stub service calls that might be triggered
       allow_any_instance_of(RunGarakScan).to receive(:call)
       allow_any_instance_of(ToastNotifier).to receive(:call)
     end
 
-    context 'when there are completed reports' do
-      before do
-        # Create 7 completed reports (2 more than we need to test limiting)
-        report1 = create(:report, :completed, target: target1, scan: scan, created_at: 7.days.ago)
-        report2 = create(:report, :completed, target: target2, scan: scan, created_at: 6.days.ago)
-        report3 = create(:report, :completed, target: target3, scan: scan, created_at: 5.days.ago)
-        report4 = create(:report, :completed, target: target1, scan: scan, created_at: 4.days.ago)
-        report5 = create(:report, :completed, target: target2, scan: scan, created_at: 3.days.ago)
-        report6 = create(:report, :completed, target: target3, scan: scan, created_at: 2.days.ago)
-        report7 = create(:report, :completed, target: target1, scan: scan, created_at: 1.day.ago)
+    def scan_with_asr(name:, asr:, created_at:)
+      scan = create(:complete_scan, company: company, name: name, created_at: created_at)
+      scan.update_column(:avg_successful_attacks, asr) unless asr.nil?
+      scan
+    end
 
-        # Create probe results for each report with different scores
-        create(:probe_result, report: report1, passed: 8, total: 10) # 80%
-        create(:probe_result, report: report2, passed: 6, total: 10) # 60%
-        create(:probe_result, report: report3, passed: 9, total: 10) # 90%
-        create(:probe_result, report: report4, passed: 5, total: 10) # 50%
-        create(:probe_result, report: report5, passed: 7, total: 10) # 70%
-        create(:probe_result, report: report6, passed: 4, total: 10) # 40%
-        create(:probe_result, report: report7, passed: 10, total: 10) # 100%
+    context 'with more than five scans' do
+      before do
+        scan_with_asr(name: 'Scan A', asr: 10, created_at: 6.days.ago)
+        scan_with_asr(name: 'Scan B', asr: 20, created_at: 5.days.ago)
+        scan_with_asr(name: 'Scan C', asr: 30, created_at: 4.days.ago)
+        scan_with_asr(name: 'Scan D', asr: 40, created_at: 3.days.ago)
+        scan_with_asr(name: 'Scan E', asr: 50, created_at: 2.days.ago)
+        scan_with_asr(name: 'Scan F', asr: 60, created_at: 1.day.ago)
       end
 
-      it 'returns data for the last 5 completed reports' do
+      it 'returns the five most recent scans, newest first' do
         result = described_class.new.call
 
-        # Should have 5 entries
-        expect(result[:models].length).to eq(5)
-        expect(result[:values].length).to eq(5)
-
-        # Check that the models and values match up in reverse chronological order
-        # The most recent 5 reports should be included (reports 3-7)
-        expect(result[:models]).to eq([ 'Model 1', 'Model 3', 'Model 2', 'Model 1', 'Model 3' ])
-        expect(result[:values]).to eq([ 100, 40, 70, 50, 90 ])
+        expect(result.length).to eq(5)
+        expect(result.map { |r| r[:scan_name] }).to eq([ 'Scan F', 'Scan E', 'Scan D', 'Scan C', 'Scan B' ])
+        expect(result.map { |r| r[:asr] }).to eq([ 60, 50, 40, 30, 20 ])
+        expect(result.first[:scan_id]).to be_present
       end
     end
 
-    context 'when there are fewer than 5 completed reports' do
-      before do
-        report1 = create(:report, :completed, target: target1, scan: scan, created_at: 3.days.ago)
-        report2 = create(:report, :completed, target: target2, scan: scan, created_at: 2.days.ago)
-        report3 = create(:report, :completed, target: target3, scan: scan, created_at: 1.day.ago)
+    context 'when a scan has no computed ASR' do
+      before { scan_with_asr(name: 'No ASR', asr: nil, created_at: 1.day.ago) }
 
-        create(:probe_result, report: report1, passed: 8, total: 10) # 80%
-        create(:probe_result, report: report2, passed: 6, total: 10) # 60%
-        create(:probe_result, report: report3, passed: 9, total: 10) # 90%
-
-        # Create a non-completed report that should be excluded
-        incomplete_report = create(:report, :running, target: target1, scan: scan, created_at: 4.days.ago)
-        create(:probe_result, report: incomplete_report, passed: 3, total: 10) # 30%
-      end
-
-      it 'returns data for all available completed reports' do
+      it 'reports 0' do
         result = described_class.new.call
-
-        expect(result[:models].length).to eq(3)
-        expect(result[:values].length).to eq(3)
-
-        expect(result[:models]).to eq([ 'Model 3', 'Model 2', 'Model 1' ])
-        expect(result[:values]).to eq([ 90, 60, 80 ])
+        expect(result).to eq([ { scan_name: 'No ASR', scan_id: Scan.last.id, asr: 0 } ])
       end
     end
 
-    context 'when there are no completed reports' do
-      before do
-        create(:report, :running, target: target1, scan: scan)
-        create(:report, :processing, target: target2, scan: scan)
-      end
+    context 'rounding' do
+      before { scan_with_asr(name: 'Fractional', asr: 62.4, created_at: 1.day.ago) }
 
-      it 'returns empty arrays' do
-        result = described_class.new.call
-
-        expect(result[:models]).to eq([])
-        expect(result[:values]).to eq([])
+      it 'rounds ASR to an integer' do
+        expect(described_class.new.call.first[:asr]).to eq(62)
       end
     end
 
-    context 'when reports have zero tests' do
+    context 'tenant isolation' do
       before do
-        report = create(:report, :completed, target: target1, scan: scan)
-        create(:probe_result, report: report, passed: 0, total: 0)
+        scan_with_asr(name: 'Mine', asr: 25, created_at: 1.day.ago)
+        other = create(:company)
+        ActsAsTenant.with_tenant(other) do
+          s = create(:complete_scan, company: other, name: 'Theirs', created_at: 1.day.ago)
+          s.update_column(:avg_successful_attacks, 80)
+        end
       end
 
-      it 'handles zero division correctly' do
+      it 'only returns the current tenant scans' do
         result = described_class.new.call
-
-        expect(result[:models]).to eq([ 'Model 1' ])
-        expect(result[:values]).to eq([ 0 ]) # Score should be 0 when total is 0
+        expect(result.map { |r| r[:scan_name] }).to eq([ 'Mine' ])
       end
     end
   end

@@ -119,7 +119,6 @@ Rails.application.routes.draw do
   resource :dashboard_stats, only: [] do
     get :total_scans_data
     get :probes_data
-    get :last_five_scans_data
     get :targets_timeline_data
     get :reports_timeline_data
     get :probes_passed_failed_timeline_data

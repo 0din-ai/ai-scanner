@@ -39,6 +39,14 @@ RSpec.describe Admin::DashboardController, type: :controller do
         expect(response.body).to include("icon-wand")
         expect(response.body).to include(get_started_path)
       end
+
+      it "renders the Last Five Scans and Top Five Most Successful Attacks list tiles" do
+        get :index
+
+        expect(response.body).to include("Last Five Scans")
+        expect(response.body).to include("Top Five Most Successful Attacks")
+        expect(response.body).to include(scan.name)
+      end
     end
 
     context "when company has no scans" do

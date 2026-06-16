@@ -26,11 +26,6 @@ class DashboardStatsController < ApplicationController
     render json: result
   end
 
-  def last_five_scans_data
-    result = Stats::LastFiveScansData.new.call
-    render json: result
-  end
-
   def targets_timeline_data
     result = Stats::TargetsTimelineData.new.call
     render json: result
