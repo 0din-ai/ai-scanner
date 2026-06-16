@@ -20,6 +20,8 @@ Rails.application.routes.draw do
     # === ROOT ROUTE ===
     root "dashboard#index"
 
+    get "get_started", to: "dashboard#get_started", as: :get_started
+
     # === Settings & Configuration ===
     resources :metadata
     get "release_notes", to: "release_notes#show", as: :release_notes

@@ -1,0 +1,78 @@
+<div class="flex flex-col items-center justify-center min-h-[80vh] px-4 py-8">
+  <!-- Main content container -->
+  <div class="max-w-4xl w-full min-w-[580px] bg-white dark:bg-transparent rounded-lg p-8 text-center">
+    <h2 class="min-w-[580px] text-2xl text-center justify-start text-white text-4xl font-normal font-roboto-mono leading-10 text-primary dark:text-white">
+      <%= heading %>
+    </h2>
+
+    <div class="relative m-auto top-[54px] w-64 h-1 <%= Target.count > 0 ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-700' %>"></div>
+
+    <div class="flex items-start justify-center mt-8 mb-10 min-h-40">
+      <!-- Target Setup -->
+      <div class="flex flex-col items-center mr-4">
+        <div class="flex flex-col">
+          <div class="w-10 h-10 self-end flex items-center justify-center rounded-full border-2 border-primary <%= Target.count > 0 ? 'bg-primary text-white' : 'bg-transparent text-gray-500 dark:text-gray-400' %>">
+            <span class="font-bold m1-3">1</span>
+          </div>
+        </div>
+
+        <!-- Target Button -->
+        <% if Target.count == 0 %>
+          <div class="h-10 w-1 bg-primary"></div>
+          <%= link_to new_target_path, class: "px-10 py-3 bg-primary hover:bg-primary/90 text-white text-lg uppercase leading-9 tracking-wide font-medium rounded-md shadow-sm transition-colors duration-200" do %>
+            <div class="flex items-center">
+              <span class="w-40 text-center">Setup Target</span>
+              <span class="icon icon-chevron-right w-4 h-4 ml-2"></span>
+            </div>
+          <% end %>
+        <% else %>
+          <div class="px-12 py-3 text-primary text-lg uppercase leading-9 tracking-wide font-medium transition-colors duration-200">
+            <div class="flex items-center">
+              <span class="w-40 text-center">Setup Target</span>
+            </div>
+          </div>
+        <% end %>
+      </div>
+
+      <!-- Scan Setup -->
+      <div class="flex flex-col items-center ml-4">
+        <!-- Circle -->
+        <div class="w-10 h-10 flex items-center justify-center rounded-full border-2 <%= Scan.count > 0 ? 'bg-primary text-white' : 'border-gray-300 dark:border-gray-700 bg-transparent text-gray-500 dark:text-gray-400' %> <%= Target.count > 0 ? 'ml-1 border-2 border-primary dark:border-primary' : '' %>">
+          <span class="font-bold">2</span>
+        </div>
+
+        <!-- Action Buttons (Setup Scan) -->
+        <% if Target.count > 0 %>
+          <div class="h-10 w-1 bg-primary"></div>
+          <%= link_to new_scan_path, class: "px-10 py-3 bg-primary hover:bg-primary/90 text-white text-lg uppercase leading-9 tracking-wide font-medium rounded-md shadow-sm transition-colors duration-200" do %>
+            <div class="flex items-center">
+              <span class="w-40 text-center">Setup Scan</span>
+              <span class="icon icon-chevron-right w-4 h-4 ml-2"></span>
+            </div>
+          <% end %>
+        <% else %>
+          <!-- Disabled state for button if no Target is set -->
+          <div class="h-10 w-0 bg-gray-300 dark:bg-gray-700"></div>
+          <button disabled class="px-10 py-3 bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-lg uppercase leading-9 tracking-wide font-medium rounded-md shadow-sm cursor-not-allowed">
+            <div class="flex items-center">
+              <span class="w-40 text-center">Setup Scan</span>
+              <span class="icon icon-chevron-right w-4 h-4 ml-2"></span>
+            </div>
+          </button>
+        <% end %>
+      </div>
+    </div>
+
+    <!-- Screenshots -->
+    <div class="relative mt-8">
+      <!-- First image (bigger) -->
+      <div class="relative z-0 w-[60%] rounded-lg overflow-hidden border border-[#F89D53]/30 shadow-[0_8px_40px_rgba(248,157,83,0.08)]">
+        <%= image_tag "dashboard.png", alt: "Target Setup Screenshot", class: "w-full h-auto object-cover" %>
+      </div>
+      <!-- Second image (overlaid) -->
+      <div class="absolute right-0 top-[5%] z-10 w-[55%] rounded-lg overflow-hidden border border-[#F89D53]/30 shadow-[0_8px_40px_rgba(248,157,83,0.12)]">
+        <%= image_tag "report.png", alt: "Scan Setup Screenshot", class: "w-full h-auto object-cover" %>
+      </div>
+    </div>
+  </div>
+</div>

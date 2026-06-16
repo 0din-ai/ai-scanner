@@ -20,6 +20,11 @@ module Admin
       @total_reports = stats["total_reports"]
     end
 
+    def get_started
+      skip_authorization # same as #index; dashboard is for all authenticated users
+      @page_title = "Get Started"
+    end
+
     private
 
     def dashboard_stats

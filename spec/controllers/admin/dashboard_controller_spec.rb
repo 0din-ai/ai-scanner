@@ -6,7 +6,7 @@ RSpec.describe Admin::DashboardController, type: :controller do
   render_views # Enable view rendering to test templates
 
   let(:company) { create(:company) }
-  let(:user) { create(:user, companies: [ company ], current_company: company) }
+  let(:user) { create(:user, company: company) }
 
   before do
     # Authentication is bypassed in test environment via User.first
@@ -30,6 +30,15 @@ RSpec.describe Admin::DashboardController, type: :controller do
         expect(response.body).not_to include("no scans")
         expect(response.body).not_to include("No scans")
       end
+
+      it "shows a Setup Wizard button linking to get_started" do
+        get :index
+
+        expect(response.body).to include("Setup Wizard")
+        expect(response.body).to include("Set up a target and scan")
+        expect(response.body).to include("icon-wand")
+        expect(response.body).to include(get_started_path)
+      end
     end
 
     context "when company has no scans" do
@@ -44,6 +53,14 @@ RSpec.describe Admin::DashboardController, type: :controller do
 
         # The no_scans template should be rendered (can check for specific content)
         expect(response.body).to include("scan") # will contain "scan" or "Scan" in no_scans message
+      end
+
+      it "renders the guided setup steps with the first-time heading" do
+        get :index
+
+        expect(response.body).to include("Initiate Scan to activate Dashboard")
+        expect(response.body).to include("Setup Target")
+        expect(response.body).to include("Setup Scan")
       end
     end
 
@@ -73,6 +90,27 @@ RSpec.describe Admin::DashboardController, type: :controller do
         # Verify other company has scans (using without_tenant)
         other_scan_count = ActsAsTenant.without_tenant { Scan.where(company_id: other_company.id).count }
         expect(other_scan_count).to eq(5)
+      end
+    end
+  end
+
+  describe "GET #get_started" do
+    context "even when the company already has scans" do
+      let!(:scan) { create(:complete_scan, company: company) }
+
+      it "renders the guided setup steps" do
+        get :get_started
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include("Setup Target")
+        expect(response.body).to include("Setup Scan")
+      end
+
+      it "uses the returning-user heading, not the first-time copy" do
+        get :get_started
+
+        expect(response.body).to include("Set up a target, then run a scan")
+        expect(response.body).not_to include("Initiate Scan to activate Dashboard")
       end
     end
   end

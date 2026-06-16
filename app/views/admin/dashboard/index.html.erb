@@ -1,5 +1,16 @@
 <div class="" data-controller="dashboard">
-  <div class="flex justify-end items-center mb-4 sm:mb-6">
+  <div class="flex justify-between items-center mb-4 sm:mb-6">
+    <%# Setup Wizard CTA — amber-emphasis onboarding entry point (design: V4_CTA) %>
+    <%= link_to get_started_path, title: "Setup Wizard", class: "group inline-flex items-center gap-3 rounded-[10px] border border-primary/40 bg-primary/10 py-2 pl-[9px] pr-3.5 text-left transition-all duration-200 hover:-translate-y-px hover:border-primary/70 hover:bg-primary/20 hover:shadow-[0_6px_18px_rgba(0,0,0,0.28)]" do %>
+      <span class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary transition-colors duration-150 group-hover:bg-primary/25">
+        <span class="icon icon-sm icon-wand"></span>
+      </span>
+      <span class="flex flex-col gap-0.5 leading-tight">
+        <span class="text-[13.5px] font-semibold text-contentPrimary">Setup Wizard</span>
+        <span class="text-[11.5px] font-medium text-contentSecondary">Set up a target and scan</span>
+      </span>
+      <span class="icon icon-sm icon-chevron-right ml-1 text-contentTertiary transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-primary"></span>
+    <% end %>
     <div class="flex items-center gap-3">
       <span class="text-white font-sans text-sm font-normal leading-5">TIMEFRAME</span>
       <%= render partial: "admin/dashboard/period_select", locals: {
