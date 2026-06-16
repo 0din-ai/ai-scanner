@@ -1,7 +1,7 @@
 # Dockerfile for Cypress E2E tests
 # This creates a lightweight image containing only the cypress tests and configuration
 
-FROM cypress/included:13.17.0
+FROM cypress/included:15.17.0
 
 # Set working directory
 WORKDIR /e2e
