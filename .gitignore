@@ -98,6 +98,8 @@ bin/rspec-docker
 # ralphex progress logs
 .ralphex/progress/
 docs/plans/
+docs/plans/completed/
+docs/superpowers/
 
 # Docusaurus docs site build artifacts
 docs-site/build/
