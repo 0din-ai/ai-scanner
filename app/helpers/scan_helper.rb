@@ -18,6 +18,12 @@ module ScanHelper
     end
   end
 
+  # Probe ids that actually have threat variants — loaded once per request so the
+  # probe-selection form (≈935 probes) can flag variant-eligibility without N+1.
+  def variant_eligible_probe_ids
+    @variant_eligible_probe_ids ||= ThreatVariant.distinct.pluck(:probe_id).to_set
+  end
+
   private
 
   def extract_rule_type(recurrence)

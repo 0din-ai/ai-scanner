@@ -277,12 +277,9 @@ class Scan < ApplicationRecord
 
     def variants_require_eligible_probe
       return if threat_variant_subindustries.empty?
+      return if ThreatVariant.where(probe_id: probe_ids).exists?
 
-      probe_records = probes.to_a
-      ActiveRecord::Associations::Preloader.new(records: probe_records, associations: [ :detector ]).call
-      return if probe_records.any?(&:variant_eligible?)
-
-      errors.add(:base, "Threat variants require at least one copyright or illicit-substance probe")
+      errors.add(:base, "Threat variants require at least one probe that supports variants")
     end
 
     def generate_uuid

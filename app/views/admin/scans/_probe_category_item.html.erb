@@ -115,7 +115,7 @@
                   "detector-id": probe.detector_id,
                   "category-id": category_id,
                   "input-tokens": probe.input_tokens,
-                  "variant-eligible": probe.variant_eligible?,
+                  "variant-eligible": variant_eligible_probe_ids.include?(probe.id),
                   "probe-category-target": "probeCheckbox",
                   action: "change->probe-category#updateCategoryState"
                 } %>

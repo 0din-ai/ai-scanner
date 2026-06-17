@@ -105,13 +105,13 @@ RSpec.describe Scan, type: :model do
       allow(scan).to receive(:update_next_scheduled_run)
 
       expect(scan).not_to be_valid
-      expect(scan.errors[:base]).to include('Threat variants require at least one copyright or illicit-substance probe')
+      expect(scan.errors[:base]).to include('Threat variants require at least one probe that supports variants')
     end
 
     it 'is valid when at least one selected probe is variant-eligible' do
-      eligible_detector = create(:detector, name: '0din.MitigationBypass')
-      eligible_probe = create(:probe, detector: eligible_detector)
+      eligible_probe = create(:probe)
       subindustry = create(:threat_variant_subindustry)
+      create(:threat_variant, probe: eligible_probe, threat_variant_subindustry: subindustry)
       scan = Scan.new(name: 'Variant With Eligible Probe', uuid: SecureRandom.uuid, company: company)
       scan.targets = [ create(:target, company: company) ]
       scan.probes = [ eligible_probe ]

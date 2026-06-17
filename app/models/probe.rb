@@ -65,6 +65,6 @@ class Probe < ApplicationRecord
   end
 
   def variant_eligible?
-    detector&.variant_eligible? || false
+    threat_variants.exists?
   end
 end

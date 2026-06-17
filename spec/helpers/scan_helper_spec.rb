@@ -161,6 +161,20 @@ RSpec.describe ScanHelper, type: :helper do
     end
   end
 
+  describe '#variant_eligible_probe_ids' do
+    it 'returns the ids of probes that have threat variants, memoized' do
+      with_variant = create(:probe)
+      without_variant = create(:probe)
+      create(:threat_variant, probe: with_variant)
+
+      expect(ThreatVariant).to receive(:distinct).once.and_call_original
+
+      expect(helper.variant_eligible_probe_ids).to include(with_variant.id)
+      expect(helper.variant_eligible_probe_ids).not_to include(without_variant.id)
+      expect(helper.variant_eligible_probe_ids).to be_a(Set)
+    end
+  end
+
   describe '#detector_color' do
     it 'returns red for Crystal Meth detector' do
       expect(helper.send(:detector_color, "CrystalMethScore")).to eq("red")
