@@ -69,7 +69,7 @@ RSpec.describe Admin::ReportsController, type: :controller do
 
       detector_stat_headers = detector_stats_section.css("th").map { |header| header.text.squish }
 
-      expect(detector_stats_section.text).to include("Illicit Substances: Crystal Meth")
+      expect(detector_stats_section.text).to include("Illicit Substances")
       expect(detector_stats_section.text).to include("Generic Mitigation Bypass Checks")
       expect(detector_stat_headers).to eq([ "Detector", "Attack Success Rate", "Successful Attacks" ])
       expect(detector_stats_section.text).not_to include("Max Score")

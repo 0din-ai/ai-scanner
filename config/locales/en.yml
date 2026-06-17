@@ -36,10 +36,10 @@ en:
   detectors:
     names:
       MitigationBypass: "Generic Mitigation Bypass Checks"
-      CrystalMethScore: "Illicit Substances: Crystal Meth"
-      NerveAgent: "Harmful Substances: Nerve Agent"
-      CopyRightScoreHarryPotterChapterOne: "Copyright Violation: Harry Potter"
-      TiananmenSquareCensorshipBypass: "Censorship Bypass: Tiananmen Square"
+      CrystalMethScore: "Illicit Substances"
+      NerveAgent: "Harmful Substances"
+      CopyRightScoreHarryPotterChapterOne: "Copyright Violation"
+      TiananmenSquareCensorshipBypass: "Censorship Bypass"
   flash:
     actions:
       destroy:
