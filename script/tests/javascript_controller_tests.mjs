@@ -1308,6 +1308,36 @@ function testTargetWizardRedactAuth() {
   assert.deepEqual(JSON.parse(JSON.stringify(c.redactAuthForReview(cfg))), cfg)
 }
 
+function testTargetWizardSyncModel() {
+  const { ControllerClass } = loadTargetWizardController()
+
+  // edited model is synced into the embedded json config (replaces all occurrences,
+  // covering the model in a request body and/or a URI)
+  const c = new ControllerClass()
+  c.embeddedModel = "claude-sonnet-4-5"
+  c.hasModelFieldTarget = true
+  c.modelFieldTarget = { value: "claude-opus-4-1" }
+  c.hasJsonConfigFieldTarget = true
+  c.jsonConfigFieldTarget = {
+    value: '{"rest":{"RestGenerator":{"uri":"https://api.anthropic.com/v1/messages","req_template_json_object":{"model":"claude-sonnet-4-5"}}}}',
+  }
+  c.syncModelIntoConfig()
+  assert.equal(c.jsonConfigFieldTarget.value.includes("claude-opus-4-1"), true)
+  assert.equal(c.jsonConfigFieldTarget.value.includes("claude-sonnet-4-5"), false)
+  assert.equal(c.embeddedModel, "claude-opus-4-1")
+
+  // no-op when there is no embedded config (e.g. OpenAI/OpenRouter)
+  const c2 = new ControllerClass()
+  c2.embeddedModel = "gpt-4o"
+  c2.hasModelFieldTarget = true
+  c2.modelFieldTarget = { value: "gpt-4o-mini" }
+  c2.hasJsonConfigFieldTarget = true
+  c2.jsonConfigFieldTarget = { value: "" }
+  c2.syncModelIntoConfig()
+  assert.equal(c2.jsonConfigFieldTarget.value, "")
+  assert.equal(c2.embeddedModel, "gpt-4o-mini")
+}
+
 function loadWebchatAutoDetectController() {
   const raw = readFileSync(
     new URL("../../app/javascript/controllers/webchat_auto_detect_controller.js", import.meta.url),
@@ -1357,5 +1387,6 @@ testLogViewerController()
 testThreatVariantsController()
 testWebchatAuthController()
 testTargetWizardRedactAuth()
+testTargetWizardSyncModel()
 testWebchatAutoDetectCurrentAuth()
 console.log("JavaScript controller tests passed")

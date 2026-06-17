@@ -72,22 +72,37 @@
         <%= f.text_field :model,
                         placeholder: "e.g., gpt-4o, claude-3-opus",
                         class: "input-base",
-                        data: { "target-wizard-target": "modelField" } %>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">The specific model identifier</p>
+                        data: { "target-wizard-target": "modelField", action: "input->target-wizard#syncModelIntoConfig" } %>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Default model for this provider — edit to target a different model</p>
       </div>
 
-      <div class="mb-4">
-        <div class="flex items-center gap-1.5 mb-2">
-          <%= f.label :json_config, "JSON Config", class: "text-sm font-medium text-contentSecondary" %>
-          <%= render "shared/info_tooltip", aria_label: "JSON config info", content: "Optional JSON configuration passed to the garak generator. Use $API_KEY as a placeholder for secrets stored in environment variables" %>
+      <div class="mb-4" data-controller="toggle">
+        <button type="button"
+                class="flex items-center gap-2 text-sm font-medium text-contentSecondary mb-2 hover:text-contentPrimary transition-colors cursor-pointer"
+                data-action="click->toggle#toggle">
+          <span class="icon icon-sm icon-chevron-down transition-transform duration-200"
+                data-toggle-target="icon" data-target-wizard-target="advancedConfigIcon"></span>
+          Advanced configuration
+          <span class="text-xs text-contentTertiary">(optional — raw JSON)</span>
+        </button>
+        <div class="hidden" data-toggle-target="content" data-target-wizard-target="advancedConfigContent">
+          <div class="flex items-center gap-1.5 mb-2">
+            <%= f.label :json_config, "JSON Config", class: "text-sm font-medium text-contentSecondary" %>
+            <%= render "shared/info_tooltip", aria_label: "JSON config info", content: "Optional JSON configuration passed to the garak generator. Use $API_KEY as a placeholder for secrets stored in environment variables" %>
+          </div>
+          <%= f.text_area :json_config, rows: 8,
+                          placeholder: '{"rest": {"RestGenerator": {...}}}',
+                          class: "input-textarea font-mono",
+                          data: { "target-wizard-target": "jsonConfigField" } %>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Pre-configured providers already include this — edit only if you need to. Use
+            <code class="text-xs bg-backgroundSecondary px-1 py-0.5 rounded">$API_KEY</code>
+            placeholders for secrets stored in environment variables. For Azure, set the endpoint
+            (<code class="text-xs bg-backgroundSecondary px-1 py-0.5 rounded">https://&lt;resource&gt;.openai.azure.com/</code>)
+            as <code class="text-xs bg-backgroundSecondary px-1 py-0.5 rounded">$AZURE_ENDPOINT</code> and the key as
+            <code class="text-xs bg-backgroundSecondary px-1 py-0.5 rounded">$API_KEY</code>.
+          </p>
         </div>
-        <%= f.text_area :json_config, rows: 8,
-                        placeholder: '{"rest": {"RestGenerator": {...}}}',
-                        class: "input-textarea font-mono",
-                        data: { "target-wizard-target": "jsonConfigField" } %>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Enter configuration in valid JSON format. Use <code class="text-xs bg-backgroundSecondary px-1 py-0.5 rounded">$API_KEY</code> placeholders for secrets stored in environment variables.
-        </p>
       </div>
     </div>
 

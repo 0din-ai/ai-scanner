@@ -19,7 +19,7 @@
           </div>
           <span class="text-xs <%= template[:badge_color] %> border px-2 py-1 rounded"><%= template[:badge] %></span>
         </div>
-        <h3 class="font-bold text-contentPrimary mb-1"><%= template[:name].split("(").first.strip %></h3>
+        <h3 class="font-bold text-contentPrimary mb-1"><%= template[:label] || template[:name].split("(").first.strip %></h3>
         <p class="text-sm text-contentSecondary mb-3"><%= template[:description] %></p>
         <div class="text-xs text-contentTertiary">Requires: <%= template[:env_var] %></div>
       </div>

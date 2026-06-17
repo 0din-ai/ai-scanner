@@ -22,6 +22,8 @@ export default class extends Controller {
     "modelTypeSelectWrapper",
     "modelField",
     "jsonConfigField",
+    "advancedConfigContent",
+    "advancedConfigIcon",
     "webConfigField",
     "descriptionField",
     // Conditional sections
@@ -69,6 +71,8 @@ export default class extends Controller {
 
     this.showStep(this.currentStepValue);
     this.updateIndicator();
+
+    this.embeddedModel = this.hasModelFieldTarget ? this.modelFieldTarget.value : "";
   }
 
   // --- Step Navigation ---
@@ -205,6 +209,7 @@ export default class extends Controller {
       this.modelTypeFieldTarget.value = template.model_type || "";
     if (this.hasModelFieldTarget)
       this.modelFieldTarget.value = template.model || "";
+    this.embeddedModel = template.model || "";
     if (this.hasDescriptionFieldTarget)
       this.descriptionFieldTarget.value = template.description || "";
     if (this.hasJsonConfigFieldTarget) {
@@ -230,6 +235,19 @@ export default class extends Controller {
     if (this.hasModelFieldTarget) this.modelFieldTarget.value = "";
     if (this.hasDescriptionFieldTarget) this.descriptionFieldTarget.value = "";
     if (this.hasJsonConfigFieldTarget) this.jsonConfigFieldTarget.value = "";
+    this.embeddedModel = "";
+  }
+
+  syncModelIntoConfig() {
+    if (!this.hasModelFieldTarget || !this.hasJsonConfigFieldTarget) return;
+    const newModel = this.modelFieldTarget.value;
+    const oldModel = this.embeddedModel;
+    this.embeddedModel = newModel;
+    if (!oldModel || !newModel || oldModel === newModel) return;
+    const config = this.jsonConfigFieldTarget.value;
+    if (config && config.includes(oldModel)) {
+      this.jsonConfigFieldTarget.value = config.split(oldModel).join(newModel);
+    }
   }
 
   toggleFieldsForProvider(provider) {
@@ -248,6 +266,12 @@ export default class extends Controller {
     }
     if (this.hasModelTypeSelectWrapperTarget) {
       this.modelTypeSelectWrapperTarget.classList.toggle("hidden", !isCustom);
+    }
+    if (this.hasAdvancedConfigContentTarget) {
+      this.advancedConfigContentTarget.classList.toggle("hidden", !isCustom);
+      if (this.hasAdvancedConfigIconTarget) {
+        this.advancedConfigIconTarget.classList.toggle("rotate-180", isCustom);
+      }
     }
   }
 
@@ -276,6 +300,7 @@ export default class extends Controller {
     const template = this.templatesValue[this.selectedProviderValue];
     const specialLabels = { custom: "Custom Configuration", webchat: "Webchat" };
     this.providerBadgeLabelTarget.textContent =
+      template?.label ||
       template?.name ||
       specialLabels[this.selectedProviderValue] ||
       this.selectedProviderValue;
@@ -421,7 +446,10 @@ export default class extends Controller {
 
     // API-specific review fields
     if (this.hasReviewModelTypeRowTarget) {
-      this.reviewModelTypeRowTarget.classList.toggle("hidden", isWebchat);
+      // Only Custom targets benefit from seeing the raw garak generator class;
+      // for pre-configured providers the "Provider" row already says what they picked.
+      const showModelType = !isWebchat && this.selectedProviderValue === "custom";
+      this.reviewModelTypeRowTarget.classList.toggle("hidden", !showModelType);
     }
     if (this.hasReviewModelRowTarget) {
       this.reviewModelRowTarget.classList.toggle("hidden", isWebchat);

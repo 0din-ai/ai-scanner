@@ -307,13 +307,13 @@ RSpec.describe TargetsHelper, type: :helper do
   describe '#provider_templates_for_js' do
     subject(:js_templates) { helper.provider_templates_for_js }
 
-    let(:allowed_keys) { %i[name model_type model description json_config] }
+    let(:allowed_keys) { %i[label name model_type model description json_config] }
 
     it 'returns a hash with same keys as PROVIDER_TEMPLATES' do
       expect(js_templates.keys).to match_array(TargetsHelper::PROVIDER_TEMPLATES.keys)
     end
 
-    it 'only includes name, model_type, model, description, and json_config' do
+    it 'only includes label, name, model_type, model, description, and json_config' do
       js_templates.each_value do |template|
         expect(template.keys).to match_array(allowed_keys)
       end
@@ -326,6 +326,65 @@ RSpec.describe TargetsHelper, type: :helper do
           expect(template).not_to have_key(key)
         end
       end
+    end
+  end
+
+  describe 'PROVIDER_TEMPLATES labels and Anthropic tile' do
+    it 'gives every template a provider-name :label (no model suffix)' do
+      TargetsHelper::PROVIDER_TEMPLATES.each_value do |t|
+        expect(t[:label]).to be_present
+      end
+      expect(TargetsHelper::PROVIDER_TEMPLATES[:openai][:label]).to eq('OpenAI')
+      expect(TargetsHelper::PROVIDER_TEMPLATES[:gemini][:label]).to eq('Google Gemini')
+      expect(TargetsHelper::PROVIDER_TEMPLATES[:huggingface][:label]).to eq('Hugging Face')
+      expect(TargetsHelper::PROVIDER_TEMPLATES[:ollama][:label]).to eq('Ollama')
+      expect(TargetsHelper::PROVIDER_TEMPLATES[:deepinfra][:label]).to eq('Deep Infra')
+    end
+
+    it 'includes a first-class Anthropic Claude tile via the Anthropic API' do
+      t = TargetsHelper::PROVIDER_TEMPLATES[:anthropic]
+      expect(t).to be_present
+      expect(t[:label]).to eq('Anthropic Claude')
+      expect(t[:model_type]).to eq('RestGenerator')
+      expect(t[:env_var]).to eq('ANTHROPIC_API_KEY')
+      config = JSON.parse(t[:json_config])
+      expect(config.dig('rest', 'RestGenerator', 'uri')).to include('api.anthropic.com')
+      expect(config.dig('rest', 'RestGenerator', 'response_json_field')).to eq('$.content[0].text')
+    end
+
+    it 'exposes :label to the JS templates' do
+      js = helper.provider_templates_for_js
+      expect(js[:anthropic]).to include(:label, :model_type, :model, :json_config)
+      expect(js[:gemini][:label]).to eq('Google Gemini')
+    end
+  end
+
+  describe '#infer_provider_from_target with three RestGenerator templates' do
+    it 'infers anthropic for a Claude RestGenerator target' do
+      target = build(:target, model_type: 'RestGenerator', model: 'claude-sonnet-4-5',
+                              json_config: TargetsHelper::PROVIDER_TEMPLATES[:anthropic][:json_config])
+      expect(helper.infer_provider_from_target(target)).to eq('anthropic')
+    end
+
+    it 'still infers gemini and huggingface correctly' do
+      gemini = build(:target, model_type: 'RestGenerator', model: 'gemini-2.0-flash-exp',
+                              json_config: TargetsHelper::PROVIDER_TEMPLATES[:gemini][:json_config])
+      hf = build(:target, model_type: 'RestGenerator', model: 'meta-llama/Llama-3.3-70B-Instruct',
+                          json_config: TargetsHelper::PROVIDER_TEMPLATES[:huggingface][:json_config])
+      expect(helper.infer_provider_from_target(gemini)).to eq('gemini')
+      expect(helper.infer_provider_from_target(hf)).to eq('huggingface')
+    end
+
+    it 'falls back to the json_config host when the model was edited' do
+      target = build(:target, model_type: 'RestGenerator', model: 'claude-opus-4-1',
+                              json_config: TargetsHelper::PROVIDER_TEMPLATES[:anthropic][:json_config])
+      expect(helper.infer_provider_from_target(target)).to eq('anthropic')
+    end
+
+    it 'does not infer a provider from a look-alike host' do
+      target = build(:target, model_type: 'RestGenerator', model: 'claude-x',
+                              json_config: { rest: { RestGenerator: { uri: 'https://api.anthropic.com.evil.test/v1/messages' } } }.to_json)
+      expect(helper.infer_provider_from_target(target)).to eq('custom')
     end
   end
 
