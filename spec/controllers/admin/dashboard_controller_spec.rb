@@ -60,6 +60,8 @@ RSpec.describe Admin::DashboardController, type: :controller do
         get :index
 
         assert_select "a[href=?]", probe_path(probe.id), text: probe.name
+        # Opens in the same tab (no target="_blank")
+        assert_select "a[href=?][target=?]", probe_path(probe.id), "_blank", count: 0
       end
 
       it "renders explanatory subtitles for the core nav items" do
