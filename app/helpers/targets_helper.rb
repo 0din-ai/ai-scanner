@@ -294,7 +294,10 @@ module TargetsHelper
 
   def rest_config_host(json_config)
     parsed = JSON.parse(json_config.to_s)
-    URI.parse(parsed.dig("rest", "RestGenerator", "uri").to_s).host.to_s
+    rest = parsed.is_a?(Hash) ? parsed["rest"] : nil
+    generator = rest.is_a?(Hash) ? rest["RestGenerator"] : nil
+    uri = generator.is_a?(Hash) ? generator["uri"] : nil
+    URI.parse(uri.to_s).host.to_s
   rescue JSON::ParserError, URI::Error
     ""
   end

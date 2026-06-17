@@ -386,6 +386,13 @@ RSpec.describe TargetsHelper, type: :helper do
                               json_config: { rest: { RestGenerator: { uri: 'https://api.anthropic.com.evil.test/v1/messages' } } }.to_json)
       expect(helper.infer_provider_from_target(target)).to eq('custom')
     end
+
+    it 'falls back to custom for non-object or malformed json_config without raising' do
+      [ '[1, 2, 3]', '"just a string"', '42', '{"rest": "not-an-object"}', '{}' ].each do |cfg|
+        target = build(:target, model_type: 'RestGenerator', model: 'claude-x', json_config: cfg)
+        expect(helper.infer_provider_from_target(target)).to eq('custom')
+      end
+    end
   end
 
   describe 'PROVIDER_TEMPLATES' do
