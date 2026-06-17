@@ -36,6 +36,15 @@ RSpec.describe Admin::ScansController, type: :controller do
       get :index, params: { scope: "all" }
       expect(response).to have_http_status(:success)
     end
+
+    it "renders labeled, hover-reveal action buttons" do
+      get :index, params: { scope: "all" }
+
+      assert_select "a[href=?]", reports_path(q: { scan_id_eq: scan.id }), text: /Reports/
+      assert_select "tbody tr.group"
+      expect(response.body).to include("group-hover:opacity-100")
+      expect(response.body).to include("group-focus-within:opacity-100")
+    end
   end
 
   describe "GET #new" do

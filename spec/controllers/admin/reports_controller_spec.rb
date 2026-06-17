@@ -19,6 +19,30 @@ RSpec.describe Admin::ReportsController, type: :controller do
     ActsAsTenant.current_tenant = company
   end
 
+  describe "GET #index" do
+    it "links the report name to the report overview, not the scan" do
+      get :index
+
+      assert_select "a[href=?]", report_path(report), text: report.scan.name
+      assert_select "a[href=?]", scan_path(report.scan)
+      assert_select "th", text: /Report/
+    end
+
+    it "labels the report action buttons" do
+      get :index
+
+      assert_select "a[href=?]", report_detail_path(report), text: /Details/
+    end
+
+    it "labels the Stop action on a running report" do
+      ActsAsTenant.with_tenant(company) { report.update!(status: :running) }
+
+      get :index
+
+      assert_select "form[action=?] button", stop_report_path(report), text: /Stop/
+    end
+  end
+
   describe "GET #show" do
     it "returns success" do
       get :show, params: { id: report.id }

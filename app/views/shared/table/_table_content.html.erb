@@ -29,7 +29,7 @@
       </thead>
       <tbody class="bg-backgroundPrimary divide-y divide-borderPrimary">
         <% collection.each do |item| %>
-          <tr class="hover:bg-zinc-800/50 transition-colors">
+          <tr class="group hover:bg-zinc-800/50 transition-colors">
             <% if has_batch_actions %>
               <td class="px-4 py-3">
                 <%= check_box_tag "ids[]", item.id, false,

@@ -163,13 +163,13 @@
         type: :custom,
         align: :right,
         render: ->(scan) {
-          content_tag(:div, class: "flex items-center justify-end gap-3") do
+          content_tag(:div, class: "flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity") do
             safe_join([
-              link_to(reports_path(q: { scan_id_eq: scan.id }), class: "text-actionButton hover:text-textMuted transition-colors", title: "View Reports") do
-                content_tag(:span, "", class: "icon icon-sm icon-view")
+              link_to(reports_path(q: { scan_id_eq: scan.id }), class: "inline-flex items-center gap-1 text-xs text-actionButton hover:text-textMuted transition-colors") do
+                safe_join([content_tag(:span, "", class: "icon icon-sm icon-view"), "Reports"])
               end,
-              button_to(rerun_scan_path(scan), method: :post, form: { data: { turbo: true }, class: "inline-flex items-center" }, class: "text-actionButton hover:text-textMuted transition-colors cursor-pointer", title: "Rerun Scan") do
-                content_tag(:span, "", class: "icon icon-sm icon-restore")
+              button_to(rerun_scan_path(scan), method: :post, form: { data: { turbo: true }, class: "inline-flex items-center" }, class: "inline-flex items-center gap-1 text-xs text-actionButton hover:text-textMuted transition-colors cursor-pointer") do
+                safe_join([content_tag(:span, "", class: "icon icon-sm icon-restore"), "Rerun"])
               end
             ])
           end

@@ -62,12 +62,15 @@
   columns += [
     {
       key: :scan_name,
-      label: "Scan",
+      label: "Report",
       type: :custom,
       sortable: false,
       sort_key: :scan_name,
       render: ->(report) {
-        link_to report.scan.name, scan_path(report.scan), class: "text-sm text-primary hover:underline"
+        safe_join([
+          link_to(report.scan.name, report_path(report), class: "text-sm text-primary hover:underline"),
+          content_tag(:div, link_to("Scan ↗", scan_path(report.scan), class: "text-xs text-textMuted hover:underline"), class: "mt-0.5")
+        ])
       }
     },
     {
@@ -142,38 +145,29 @@
       type: :custom,
       align: :right,
       render: ->(report) {
-        content_tag(:div, class: "flex items-center justify-end gap-3") do
-          links = []
+        links = []
 
-          # Stop/Cancel button (for running states)
-          if report.running? || report.pending? || report.starting? || report.interrupted?
-            if report.interrupted?
-              links << button_to(stop_report_path(report), method: :post, data: { turbo_confirm: "Are you sure you want to cancel this retry?" }, class: "text-actionButton hover:text-textMuted transition-colors cursor-pointer", title: "Cancel Retry", form: { class: "inline-flex items-center" }) do
-                content_tag(:span, "", class: "icon icon-sm icon-cancel")
-              end
-            else
-              links << button_to(stop_report_path(report), method: :post, data: { turbo_confirm: "Are you sure you want to stop this scan?" }, class: "text-actionButton hover:text-textMuted transition-colors cursor-pointer", title: "Stop Scan", form: { class: "inline-flex items-center" }) do
-                content_tag(:span, "", class: "icon icon-sm icon-stop")
-              end
+        if report.running? || report.pending? || report.starting? || report.interrupted?
+          if report.interrupted?
+            links << button_to(stop_report_path(report), method: :post, data: { turbo_confirm: "Are you sure you want to cancel this retry?" }, class: "inline-flex items-center gap-1 text-xs text-actionButton hover:text-textMuted transition-colors cursor-pointer", form: { class: "inline-flex items-center" }) do
+              safe_join([content_tag(:span, "", class: "icon icon-sm icon-cancel"), "Cancel retry"])
             end
           else
-            links << content_tag(:span, "", class: "w-4")
-          end
-
-          # View Overview (always visible)
-          links << link_to(report_path(report), class: "text-actionButton hover:text-textMuted transition-colors cursor-pointer", title: "View Overview") do
-            content_tag(:span, "", class: "icon icon-sm icon-view")
-          end
-
-          # View Detailed Report (completed only, opens in new tab)
-          if report.completed?
-            links << link_to(report_detail_path(report), target: "_blank", class: "text-actionButton hover:text-textMuted transition-colors cursor-pointer", title: "View Detailed Report") do
-              content_tag(:span, "", class: "icon icon-sm icon-external-link")
+            links << button_to(stop_report_path(report), method: :post, data: { turbo_confirm: "Are you sure you want to stop this scan?" }, class: "inline-flex items-center gap-1 text-xs text-actionButton hover:text-textMuted transition-colors cursor-pointer", form: { class: "inline-flex items-center" }) do
+              safe_join([content_tag(:span, "", class: "icon icon-sm icon-stop"), "Stop"])
             end
-          else
-            links << content_tag(:span, "", class: "w-4")
           end
+        end
 
+        if report.completed?
+          links << link_to(report_detail_path(report), target: "_blank", class: "inline-flex items-center gap-1 text-xs text-actionButton hover:text-textMuted transition-colors cursor-pointer") do
+            safe_join([content_tag(:span, "", class: "icon icon-sm icon-external-link"), "Details"])
+          end
+        end
+
+        next "" if links.empty?
+
+        content_tag(:div, class: "flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity") do
           safe_join(links)
         end
       }
