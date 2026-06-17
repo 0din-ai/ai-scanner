@@ -2,7 +2,7 @@
 
 # AdminMenu provides a menu system for the admin interface.
 class AdminMenu
-  MenuItem = Struct.new(:id, :label_text, :url_path, :icon_path, :priority, :children, :html_opts, keyword_init: true) do
+  MenuItem = Struct.new(:id, :label_text, :url_path, :icon_path, :priority, :subtitle, :children, :html_opts, keyword_init: true) do
     def label(_context = nil)
       label_text
     end
@@ -83,21 +83,24 @@ class AdminMenu
         label_text: "Reports",
         url_path: "/reports",
         icon_path: "menu/reports.svg",
-        priority: 2
+        subtitle: "findings from each scan",
+        priority: 4
       ),
       MenuItem.new(
         id: "targets",
         label_text: "Targets",
         url_path: "/targets",
         icon_path: "menu/targets.svg",
-        priority: 3
+        subtitle: "the AI models you test",
+        priority: 2
       ),
       MenuItem.new(
         id: "scans",
         label_text: "Scans",
         url_path: "/scans",
         icon_path: "menu/scans.svg",
-        priority: 4
+        subtitle: "pick probes & attack a target",
+        priority: 3
       ),
       MenuItem.new(
         id: "probes",

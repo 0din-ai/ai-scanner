@@ -61,6 +61,14 @@ RSpec.describe Admin::DashboardController, type: :controller do
 
         assert_select "a[href=?]", probe_path(probe.id), text: probe.name
       end
+
+      it "renders explanatory subtitles for the core nav items" do
+        get :index
+
+        expect(response.body).to include("the AI models you test")
+        expect(response.body).to include("pick probes &amp; attack a target") # & is HTML-escaped on render
+        expect(response.body).to include("findings from each scan")
+      end
     end
 
     context "when company has no scans" do

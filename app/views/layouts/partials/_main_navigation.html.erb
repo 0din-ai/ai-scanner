@@ -49,7 +49,14 @@
             <% if item.icon.present? %>
               <%= image_tag item.icon, class: "h-5 w-5 nav-item-icon flex-shrink-0 #{is_current ? 'nav-icon-active' : ''}", alt: "" %>
             <% end %>
-            <%= item.label(self) %>
+            <% if item.respond_to?(:subtitle) && item.subtitle.present? %>
+              <span class="flex flex-col min-w-0">
+                <span><%= item.label(self) %></span>
+                <span class="text-xs leading-tight text-zinc-400 font-normal"><%= item.subtitle %></span>
+              </span>
+            <% else %>
+              <%= item.label(self) %>
+            <% end %>
           <% end %>
         <% else %>
           <%= item.label(self) %>
