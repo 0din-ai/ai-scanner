@@ -10,7 +10,10 @@
       <ul class="flex flex-col divide-y divide-zinc-800">
         <% @top_five_attacks.each do |attack| %>
           <li class="flex items-center justify-between gap-3 py-2">
-            <span class="text-sm text-white truncate" title="<%= attack[:probe_name] %>"><%= attack[:probe_name] %></span>
+            <%= link_to attack[:probe_name], probe_path(attack[:probe_id]),
+                class: "text-sm text-white truncate min-w-0 hover:text-white/80 no-underline transition-colors",
+                title: attack[:probe_name],
+                target: "_blank" %>
             <span class="text-sm font-semibold shrink-0 <%= asr_color_class(attack[:asr]) %>"><%= attack[:asr] %>%</span>
           </li>
         <% end %>

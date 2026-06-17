@@ -47,6 +47,20 @@ RSpec.describe Admin::DashboardController, type: :controller do
         expect(response.body).to include("Top Five Most Successful Attacks")
         expect(response.body).to include(scan.name)
       end
+
+      it "links each attack name to its probe page" do
+        probe = create(:probe, name: "Linked Probe #{SecureRandom.hex(4)}")
+        allow(Stats::TopFiveAttacksData).to receive(:new).and_return(
+          instance_double(
+            Stats::TopFiveAttacksData,
+            call: [ { probe_name: probe.name, probe_id: probe.id, asr: 90 } ]
+          )
+        )
+
+        get :index
+
+        assert_select "a[href=?]", probe_path(probe.id), text: probe.name
+      end
     end
 
     context "when company has no scans" do
