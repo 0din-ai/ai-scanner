@@ -368,4 +368,28 @@ RSpec.describe ReportsHelper, type: :helper do
       expect(result[:score_percentage]).to be_nil
     end
   end
+
+  describe '#variant_industry_tag' do
+    it 'returns nil when the threat_variant is nil' do
+      expect(helper.variant_industry_tag(nil)).to be_nil
+    end
+
+    it 'returns emoji, industry and subindustry for a mapped industry' do
+      industry = create(:threat_variant_industry, name: 'Healthcare')
+      subindustry = create(:threat_variant_subindustry, threat_variant_industry: industry, name: 'Medical Devices')
+      threat_variant = create(:threat_variant, threat_variant_subindustry: subindustry)
+
+      expect(helper.variant_industry_tag(threat_variant)).to eq(
+        emoji: '🏥', industry: 'Healthcare', subindustry: 'Medical Devices'
+      )
+    end
+
+    it 'falls back to the office emoji for an unmapped industry name' do
+      industry = create(:threat_variant_industry, name: 'Aerospace')
+      subindustry = create(:threat_variant_subindustry, threat_variant_industry: industry, name: 'Avionics')
+      threat_variant = create(:threat_variant, threat_variant_subindustry: subindustry)
+
+      expect(helper.variant_industry_tag(threat_variant)[:emoji]).to eq('🏢')
+    end
+  end
 end

@@ -1,4 +1,16 @@
 module ReportsHelper
+  VARIANT_INDUSTRY_EMOJIS = {
+    "automotive" => "🚗",
+    "finance" => "💰",
+    "healthcare" => "🏥",
+    "retail" => "🛍️",
+    "technology" => "💻",
+    "energy" => "⚡",
+    "education" => "🎓",
+    "government" => "🏛️",
+    "manufacturing" => "🏭"
+  }.freeze
+
   def activity_stream_active_status_for_report?(report)
     return false if report.blank?
 
@@ -73,6 +85,22 @@ module ReportsHelper
     # White if ANY subindustry was tested, grey otherwise
     tested = subindustries.any? { |sub| probe_results_map[sub.id].present? }
     tested ? "text-white" : "text-[#71717a]"
+  end
+
+  # Industry tag for a variant probe result's threat_variant.
+  # Returns nil for non-variant results; emoji falls back to 🏢 for unmapped industries.
+  def variant_industry_tag(threat_variant)
+    return nil if threat_variant.blank?
+
+    subindustry = threat_variant.threat_variant_subindustry
+    industry = subindustry&.threat_variant_industry
+    return nil if industry.blank? || subindustry.blank?
+
+    {
+      emoji: VARIANT_INDUSTRY_EMOJIS[industry.name.downcase] || "🏢",
+      industry: industry.name,
+      subindustry: subindustry.name
+    }
   end
 
   # Format report duration as human-readable text

@@ -250,6 +250,7 @@
           (pdf_mode ? 'shadow-sm' : 'shadow-lg shadow-gray-500/5 hover:shadow-gray-500/10')
         indicator_color = is_vulnerable ? 'bg-red-500' : 'bg-emerald-500'
         indicator_animation = is_vulnerable && !pdf_mode ? 'animate-pulse' : ''
+        industry_tag = variant_industry_tag(result.threat_variant)
       %>
 
       <details id="probe-<%= probe.id %>" class="group" data-report-target="details" <%= 'open' if pdf_mode && result.any_detector_passed %>>
@@ -383,23 +384,34 @@
             <% (result.attempts || []).each do |attempt| %>
               <% attempt_res = attempt_result(attempt) %>
               <div id="<%= attempt["uuid"] %>" class="<%= pdf_mode ? 'bg-gray-50/50 rounded p-4 border border-gray-100 break-inside-avoid' : 'bg-gray-50/50 rounded-lg p-5 shadow-sm border border-gray-100' %>">
-                <div class="<%= pdf_mode ? 'flex items-center justify-end gap-2 mb-3' : 'flex items-center justify-end gap-2 mb-4' %>">
-                  <% unless attempt_res[:succeeded].nil? %>
-                    <% if attempt_res[:succeeded] %>
-                      <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-red-50 text-red-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-red-50 text-red-700 px-3 py-1 rounded-full' %>" title="The probe successfully elicited a vulnerable response from the target model">
-                        Attack Successful
+                <% attempt_justify = industry_tag.present? ? "justify-between" : "justify-end" %>
+                <div class="<%= pdf_mode ? "flex items-center #{attempt_justify} gap-2 mb-3" : "flex items-center #{attempt_justify} gap-2 mb-4" %>">
+                  <% if industry_tag.present? %>
+                    <div class="flex items-center gap-2">
+                      <span class="<%= pdf_mode ? 'inline-flex items-center gap-1 px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-medium' : 'inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs font-medium' %>" title="Industry-specific variant of the probe">
+                        <span><%= industry_tag[:emoji] %></span>
+                        <%= industry_tag[:industry] %> / <%= industry_tag[:subindustry] %>
                       </span>
-                    <% else %>
-                      <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-green-50 text-green-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-green-50 text-green-700 px-3 py-1 rounded-full' %>" title="The target model successfully defended against this probe attempt">
-                        Blocked
+                    </div>
+                  <% end %>
+                  <div class="flex items-center gap-2">
+                    <% unless attempt_res[:succeeded].nil? %>
+                      <% if attempt_res[:succeeded] %>
+                        <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-red-50 text-red-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-red-50 text-red-700 px-3 py-1 rounded-full' %>" title="The probe successfully elicited a vulnerable response from the target model">
+                          Attack Successful
+                        </span>
+                      <% else %>
+                        <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-green-50 text-green-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-green-50 text-green-700 px-3 py-1 rounded-full' %>" title="The target model successfully defended against this probe attempt">
+                          Blocked
+                        </span>
+                      <% end %>
+                    <% end %>
+                    <% if attempt_res[:score_percentage].present? %>
+                      <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-blue-50 text-blue-700 px-3 py-1 rounded-full' %>" title="JEF match score for this attempt">
+                        Score: <%= attempt_res[:score_percentage] %>
                       </span>
                     <% end %>
-                  <% end %>
-                  <% if attempt_res[:score_percentage].present? %>
-                    <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-blue-50 text-blue-700 px-3 py-1 rounded-full' %>" title="JEF match score for this attempt">
-                      Score: <%= attempt_res[:score_percentage] %>
-                    </span>
-                  <% end %>
+                  </div>
                 </div>
 
                 <div class="<%= pdf_mode ? 'space-y-3' : 'space-y-4' %>">

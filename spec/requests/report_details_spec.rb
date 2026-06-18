@@ -82,6 +82,36 @@ RSpec.describe "ReportDetails", type: :request do
         expect(response.body).to include("Blocked")
         expect(response.body).to include("Score: 90.00%")
       end
+
+      it "stamps each variant prompt with its industry tag" do
+        industry = create(:threat_variant_industry, name: "Healthcare")
+        subindustry = create(:threat_variant_subindustry, threat_variant_industry: industry, name: "Medical Devices")
+        variant_probe = create(:probe, name: "VariantProbe")
+        threat_variant = create(:threat_variant, probe: variant_probe, threat_variant_subindustry: subindustry)
+
+        variant_report = ActsAsTenant.with_tenant(company) do
+          parent = create(:report, :completed, company: company)
+          create(:report, :completed, company: company, parent_report_id: parent.id)
+        end
+        ActsAsTenant.with_tenant(company) do
+          create(:probe_result, report: variant_report, probe: variant_probe, threat_variant: threat_variant,
+                 passed: 1, total: 1, attempts: [
+                   { "uuid" => "variant-att-1", "prompt" => "p1", "outputs" => [ "o1" ], "notes" => {}, "attack_succeeded" => true }
+                 ])
+        end
+
+        variant_pdf_token = Rails.application.message_verifier(Reports::PdfGenerator::RENDER_TOKEN_VERIFIER_KEY).generate(
+          variant_report.id,
+          expires_in: Reports::PdfGenerator::RENDER_TOKEN_TTL,
+          purpose: Reports::PdfGenerator::RENDER_TOKEN_PURPOSE
+        )
+
+        get report_detail_path(variant_report, pdf: "true", pdf_token: variant_pdf_token)
+
+        expect(response).to have_http_status(:success)
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css("#variant-att-1").text).to include("Healthcare / Medical Devices")
+      end
     end
 
     context "with pdf=true but an invalid pdf_token" do
