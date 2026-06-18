@@ -58,6 +58,43 @@ RSpec.describe Admin::ScansController, type: :controller do
       # The controller uses policy_scope(Probe) for tier-based filtering
       expect(response).to have_http_status(:success)
     end
+
+    context "default probe pre-selection" do
+      let!(:results_scan) { ActsAsTenant.with_tenant(company) { create(:complete_scan, company: company) } }
+      let!(:results_report) do
+        ActsAsTenant.with_tenant(company) do
+          create(:report, :completed, company: company, scan: results_scan, target: target)
+        end
+      end
+
+      def seed_result(name, passed, total)
+        p = create(:probe, name: name, detector: create(:detector))
+        ActsAsTenant.with_tenant(company) { create(:probe_result, report: results_report, probe: p, passed: passed, total: total) }
+        p
+      end
+
+      it "pre-checks successful probes above the attempts floor and shows the note" do
+        winner = seed_result("attack.win", 9, 10)   # 90%, 10 attempts -> checked
+        low_vol = seed_result("attack.lowvol", 3, 3) # 3 attempts -> below floor, not checked
+
+        get :new
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css("input#scan_probe_ids_#{winner.id}")["checked"]).to eq("checked")
+        expect(doc.at_css("input#scan_probe_ids_#{low_vol.id}")["checked"]).to be_nil
+        expect(response.body).to include("most successful against your past targets")
+      end
+
+      it "pre-checks nothing and renders no note when the tenant has no data" do
+        fresh = create(:probe, name: "attack.fresh", detector: create(:detector))
+
+        get :new
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css("input#scan_probe_ids_#{fresh.id}")["checked"]).to be_nil
+        expect(response.body).not_to include("most successful against your past targets")
+      end
+    end
   end
 
   describe "POST #create" do
@@ -80,6 +117,25 @@ RSpec.describe Admin::ScansController, type: :controller do
     it "redirects to scan show page on success" do
       post :create, params: valid_params
       expect(response).to redirect_to(scan_path(Scan.last))
+    end
+
+    it "keeps the submitted probe selection (not defaults) when create fails validation" do
+      submitted = create(:probe, name: "attack.submitted", detector: create(:detector))
+      default_only = create(:probe, name: "attack.defaultonly", detector: create(:detector)) # high ASR -> would be a default, but not submitted
+      results_scan = ActsAsTenant.with_tenant(company) { create(:complete_scan, company: company) }
+      results_report = ActsAsTenant.with_tenant(company) { create(:report, :completed, company: company, scan: results_scan, target: target) }
+      ActsAsTenant.with_tenant(company) do
+        create(:probe_result, report: results_report, probe: submitted, passed: 1, total: 10)
+        create(:probe_result, report: results_report, probe: default_only, passed: 9, total: 10)
+      end
+
+      # Omitting target_ids fails Scan's targets-presence validation -> re-renders :new.
+      post :create, params: { scan: { name: "Invalid Scan", probe_ids: [ submitted.id.to_s ] } }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.at_css("input#scan_probe_ids_#{submitted.id}")["checked"]).to eq("checked")
+      expect(doc.at_css("input#scan_probe_ids_#{default_only.id}")["checked"]).to be_nil
     end
   end
 

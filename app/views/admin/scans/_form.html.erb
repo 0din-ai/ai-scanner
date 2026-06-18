@@ -139,7 +139,7 @@
   </div>
 
   <!-- Probe Selection Section -->
-  <%= render "probe_selection", f: f, scan: @scan, probe_categories: @probe_categories, community_categories: @community_categories %>
+  <%= render "probe_selection", f: f, scan: @scan, probe_categories: @probe_categories, community_categories: @community_categories, default_probe_ids: @default_probe_ids %>
 
   <!-- Threat Variants Section (only when variant infrastructure is available) -->
   <% if @threat_variant_industries.present? %>

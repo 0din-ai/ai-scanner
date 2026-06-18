@@ -1,9 +1,20 @@
+<% default_probe_ids = local_assigns[:default_probe_ids] || Set.new %>
 <div class="bg-backgroundPrimary rounded-lg border border-borderPrimary p-6 mb-6">
   <h3 class="text-lg font-semibold mb-4 text-primary">
     Probe Selection
   </h3>
 
   <div class="probe-selection-section" data-controller="probe-category">
+    <% if default_probe_ids.any? %>
+      <div class="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-6">
+        <div class="flex items-start gap-3">
+          <span class="icon icon-md icon-info text-primary shrink-0 mt-0.5"></span>
+          <p class="text-sm text-contentSecondary">
+            Pre-selected the <%= default_probe_ids.size %> <%= "probe".pluralize(default_probe_ids.size) %> most successful against your past targets — adjust as needed.
+          </p>
+        </div>
+      </div>
+    <% end %>
     <!-- Search bar -->
     <div class="mb-6">
       <div class="relative">
@@ -80,7 +91,7 @@
     <div class="space-y-3">
       <%# Curated probe categories %>
       <% probe_categories.each do |category_name, category_data| %>
-        <%= render "probe_category_item", f: f, scan: scan, category_name: category_name, category_data: category_data, show_auto_update: true %>
+        <%= render "probe_category_item", f: f, scan: scan, category_name: category_name, category_data: category_data, show_auto_update: true, default_probe_ids: default_probe_ids %>
       <% end %>
 
       <%# Community probes section (nested) %>
@@ -142,7 +153,7 @@
             <div class="p-4 bg-backgroundPrimary border-t border-borderPrimary">
               <div class="space-y-2 ml-2 pl-4 border-l-2 border-borderPrimary">
                 <% community_categories.each do |category_name, category_data| %>
-                  <%= render "probe_category_item", f: f, scan: scan, category_name: category_name, category_data: category_data, show_auto_update: false, nested: true %>
+                  <%= render "probe_category_item", f: f, scan: scan, category_name: category_name, category_data: category_data, show_auto_update: false, nested: true, default_probe_ids: default_probe_ids %>
                 <% end %>
               </div>
             </div>

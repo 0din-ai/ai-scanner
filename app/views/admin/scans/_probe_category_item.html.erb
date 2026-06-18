@@ -7,6 +7,7 @@
 <% icon = category_data[:icon] %>
 <% color = category_data[:color] %>
 <% is_nested = local_assigns[:nested] || false %>
+<% default_probe_ids = local_assigns[:default_probe_ids] || Set.new %>
 
 <div class="border border-borderPrimary rounded-lg overflow-hidden hover:border-primary/50 transition-all <%= 'bg-backgroundSecondary/30' if is_nested %>"
      data-probe-category-target="category"
@@ -106,7 +107,7 @@
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-<%= is_nested ? '2' : '3' %>">
         <% probes.sort_by(&:name).each do |probe| %>
           <div class="flex items-center">
-            <% is_checked = scan.probes.include?(probe) if scan.persisted? %>
+            <% is_checked = scan.probes.any? ? scan.probes.include?(probe) : default_probe_ids.include?(probe.id) %>
             <%= check_box_tag "scan[probe_ids][]",
                 probe.id,
                 is_checked,

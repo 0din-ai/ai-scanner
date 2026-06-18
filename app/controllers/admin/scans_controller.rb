@@ -55,6 +55,7 @@ module Admin
       authorize @scan
       @page_title = "New Scan"
       load_form_data
+      @default_probe_ids = Scans::DefaultProbeSelector.new(probe_scope: policy_scope(Probe).enabled).call
     end
 
     def create
