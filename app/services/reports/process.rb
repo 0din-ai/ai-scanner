@@ -132,6 +132,15 @@ module Reports
           end
 
           case data["entry_type"]
+          when "start_run setup"
+            # Capture the eval threshold garak actually used for this run (from its
+            # start_run setup config dump) so per-attempt success agrees with the
+            # eval rows / ASR even if live EVALUATION_THRESHOLD config changed since.
+            # Resumed scans concatenate multiple setup segments; clear the memo so
+            # each segment's attempts re-resolve against that segment's threshold.
+            @scan_eval_threshold = data["run.eval_threshold"]
+            @eval_threshold = nil
+            next
           when "init"
             process_init(data)
           when "attempt"
@@ -236,7 +245,9 @@ module Reports
       probe_classname = data["probe_classname"]
       report_data[probe_classname] ||= {}
       report_data[probe_classname]["attempts"] ||= []
+      attack_succeeded = attempt_attack_succeeded(data["detector_results"])
       data = data.slice(*ATTEMPT_KEYS)
+      data["attack_succeeded"] = attack_succeeded
       report_data[probe_classname]["attempts"] << data
 
       score = data.dig("notes", "score_percentage")
@@ -247,6 +258,28 @@ module Reports
       current_score = report_data[probe_classname]["stats"]["max_score"] || 0
       max_score = score > current_score ? score : current_score
       report_data[probe_classname]["stats"]["max_score"] = max_score
+    end
+
+    # True when any detector flagged any output as a successful attack
+    # (score >= the configured eval threshold). nil when garak gave no detector
+    # scores for the attempt (unknown — the view shows no status badge).
+    def attempt_attack_succeeded(detector_results)
+      return nil unless detector_results.is_a?(Hash)
+
+      scores = detector_results.values.flatten.compact.map(&:to_f)
+      return nil if scores.empty?
+
+      scores.max >= eval_threshold
+    end
+
+    # The eval threshold for this report's target, so the per-attempt success
+    # flag agrees with garak's eval rows / the ASR. Prefer the threshold garak
+    # actually used for this run (captured from its start_run setup config dump);
+    # fall back to the live env config only when raw data lacks that entry.
+    # A run value of 0/0.0 is a valid threshold and is honored (only nil/false
+    # are falsy in Ruby, so `0.0 || resolver` correctly keeps 0.0).
+    def eval_threshold
+      @eval_threshold ||= (@scan_eval_threshold || EnvironmentVariable.evaluation_threshold_for(report.target)).to_f
     end
 
     def process_eval(data)

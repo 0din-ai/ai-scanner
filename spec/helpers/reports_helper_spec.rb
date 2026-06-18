@@ -348,4 +348,24 @@ RSpec.describe ReportsHelper, type: :helper do
       expect(helper.show_activity_stream_for_report?(nil, params: params, user: user)).to be(false)
     end
   end
+
+  describe '#attempt_result' do
+    it 'extracts succeeded and score_percentage' do
+      attempt = { 'attack_succeeded' => true, 'notes' => { 'score_percentage' => '90.00%' } }
+      expect(helper.attempt_result(attempt)).to eq(succeeded: true, score_percentage: '90.00%')
+    end
+
+    it 'reports false succeeded with a score (blocked JEF attempt)' do
+      attempt = { 'attack_succeeded' => false, 'notes' => { 'score_percentage' => '12.00%' } }
+      result = helper.attempt_result(attempt)
+      expect(result[:succeeded]).to be(false)
+      expect(result[:score_percentage]).to eq('12.00%')
+    end
+
+    it 'returns nil succeeded and score for a legacy attempt missing the keys' do
+      result = helper.attempt_result({ 'notes' => {} })
+      expect(result[:succeeded]).to be_nil
+      expect(result[:score_percentage]).to be_nil
+    end
+  end
 end

@@ -10,14 +10,15 @@
   prompt = TokenEstimator.extract_prompt_text(raw_prompt) || ''
   raw_response = (attempt['outputs'] || attempt[:outputs])&.first
   response = TokenEstimator.extract_output_text(raw_response) || ''
-  score = attempt.dig('notes', 'score_percentage')
+  attempt_res = attempt_result(attempt)
+  score = attempt_res[:score_percentage]
+  attack_succeeded = attempt_res[:succeeded]
 
   is_variant = variant_industry.present?
   unique_attempt_id = "#{probe_index}-#{index}"
 
   attempt_input_tokens = TokenEstimator.estimate_tokens(prompt)
   attempt_output_tokens = TokenEstimator.estimate_tokens(response)
-  attack_successful = score.present? && score.to_f > 0
 %>
 
 <div class="w-full font-sans">
@@ -41,16 +42,22 @@
 
     <%# Right side: Status, tokens, and chevron %>
     <div class="flex items-center gap-3 ml-auto">
-      <% if score.present? %>
-        <% if attack_successful %>
+      <% unless attack_succeeded.nil? %>
+        <% if attack_succeeded %>
           <span class="bg-red-950 rounded-md px-2.5 py-1 text-xs font-semibold text-red-400 uppercase tracking-wide" title="The probe successfully elicited a vulnerable response from the target model">
             Attack Successful
           </span>
         <% else %>
-          <span class="bg-zinc-800 rounded-md px-2.5 py-1 text-xs font-semibold text-zinc-400 uppercase tracking-wide" title="The target model successfully defended against this probe attempt">
-            ATTACK FAILED
+          <span class="bg-green-950 rounded-md px-2.5 py-1 text-xs font-semibold text-green-400 uppercase tracking-wide" title="The target model successfully defended against this probe attempt">
+            Blocked
           </span>
         <% end %>
+      <% end %>
+
+      <% if score.present? %>
+        <span class="bg-blue-500/20 rounded-md px-2.5 py-1 text-xs font-semibold text-blue-300" title="JEF match score for this attempt">
+          Score: <%= score %>
+        </span>
       <% end %>
 
       <% if attempt_input_tokens > 0 || attempt_output_tokens > 0 %>

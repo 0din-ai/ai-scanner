@@ -381,11 +381,23 @@
         <div class="<%= pdf_mode ? 'px-6 pb-4 page-break-inside-avoid' : 'px-8 pb-6' %>">
           <div class="<%= pdf_mode ? 'pl-4 border-l-2 border-gray-200 space-y-3' : 'pl-6 border-l-2 border-gray-200 space-y-4' %>">
             <% (result.attempts || []).each do |attempt| %>
+              <% attempt_res = attempt_result(attempt) %>
               <div id="<%= attempt["uuid"] %>" class="<%= pdf_mode ? 'bg-gray-50/50 rounded p-4 border border-gray-100 break-inside-avoid' : 'bg-gray-50/50 rounded-lg p-5 shadow-sm border border-gray-100' %>">
-                <div class="<%= pdf_mode ? 'flex items-center justify-end mb-3' : 'flex items-center justify-end mb-4' %>">
-                  <% if attempt.dig('notes', 'score_percentage').present? %>
-                    <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-blue-50 text-blue-700 px-3 py-1 rounded-full' %>">
-                      Score: <%= attempt.dig('notes', 'score_percentage') %>
+                <div class="<%= pdf_mode ? 'flex items-center justify-end gap-2 mb-3' : 'flex items-center justify-end gap-2 mb-4' %>">
+                  <% unless attempt_res[:succeeded].nil? %>
+                    <% if attempt_res[:succeeded] %>
+                      <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-red-50 text-red-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-red-50 text-red-700 px-3 py-1 rounded-full' %>" title="The probe successfully elicited a vulnerable response from the target model">
+                        Attack Successful
+                      </span>
+                    <% else %>
+                      <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-green-50 text-green-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-green-50 text-green-700 px-3 py-1 rounded-full' %>" title="The target model successfully defended against this probe attempt">
+                        Blocked
+                      </span>
+                    <% end %>
+                  <% end %>
+                  <% if attempt_res[:score_percentage].present? %>
+                    <span class="<%= pdf_mode ? 'text-[10px] font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full' : 'text-xs font-semibold bg-blue-50 text-blue-700 px-3 py-1 rounded-full' %>" title="JEF match score for this attempt">
+                      Score: <%= attempt_res[:score_percentage] %>
                     </span>
                   <% end %>
                 </div>

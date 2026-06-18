@@ -433,6 +433,98 @@ RSpec.describe Reports::Process, type: :service do
       end
     end
 
+    context 'per-attempt attack_succeeded' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:jsonl_content) do
+        [
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a-hit',  prompt: 'p1', outputs: [ 'o1' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.9 ] } }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a-miss', prompt: 'p2', outputs: [ 'o2' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.1 ] } }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a-none', prompt: 'p3', outputs: [ 'o3' ], notes: {} }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a-boundary', prompt: 'p4', outputs: [ 'o4' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.5 ] } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 1, total_evaluated: 4 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n")
+      end
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: jsonl_content, logs_data: 'logs') }
+
+      it 'stores a per-attempt attack_succeeded derived from detector_results (>= 0.5), without the raw blob' do
+        service.call
+
+        by_uuid = ProbeResult.last.attempts.index_by { |a| a['uuid'] }
+        expect(by_uuid['a-hit']['attack_succeeded']).to be(true)
+        expect(by_uuid['a-miss']['attack_succeeded']).to be(false)
+        expect(by_uuid['a-none']['attack_succeeded']).to be_nil
+        expect(by_uuid['a-boundary']['attack_succeeded']).to be(true)
+        expect(by_uuid['a-hit']).not_to have_key('detector_results')
+      end
+
+      it 'uses the configured eval threshold so a 0.3 score below garak default still counts as a success' do
+        ActsAsTenant.with_tenant(report.company) do
+          create(:global_environment_variable, company: report.company,
+                 env_name: 'EVALUATION_THRESHOLD', env_value: '0.2')
+          raw_data.update!(jsonl_data: [
+            { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+            { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a-low', prompt: 'p', outputs: [ 'o' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.3 ] } }.to_json,
+            { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 0, total_evaluated: 1 }.to_json,
+            { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+          ].join("\n"))
+
+          service.call
+        end
+
+        by_uuid = ProbeResult.last.attempts.index_by { |a| a['uuid'] }
+        expect(by_uuid['a-low']['attack_succeeded']).to be(true)
+      end
+
+      it 'prefers the threshold garak used for the run over live env config' do
+        ActsAsTenant.with_tenant(report.company) do
+          create(:global_environment_variable, company: report.company,
+                 env_name: 'EVALUATION_THRESHOLD', env_value: '0.5')
+          raw_data.update!(jsonl_data: [
+            { entry_type: 'start_run setup', 'run.eval_threshold' => 0.3 }.to_json,
+            { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+            { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a-run', prompt: 'p', outputs: [ 'o' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.35 ] } }.to_json,
+            { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 0, total_evaluated: 1 }.to_json,
+            { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+          ].join("\n"))
+
+          service.call
+        end
+
+        by_uuid = ProbeResult.last.attempts.index_by { |a| a['uuid'] }
+        # 0.35 >= 0.3 (run config) => true; would be false under the live 0.5
+        expect(by_uuid['a-run']['attack_succeeded']).to be(true)
+      end
+
+      it 'uses each setup segment threshold for a resumed scan with concatenated segments' do
+        probe_a = create(:probe, name: 'ProbeA')
+        probe_b = create(:probe, name: 'ProbeB')
+        raw_data.update!(jsonl_data: [
+          # Segment 1: threshold 0.5
+          { entry_type: 'start_run setup', 'run.eval_threshold' => 0.5 }.to_json,
+          { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.ProbeA', uuid: 'a-seg1', prompt: 'p', outputs: [ 'o' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.3 ] } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.ProbeA', passed: 1, total_evaluated: 1 }.to_json,
+          # Segment 2 (resume): threshold 0.2
+          { entry_type: 'start_run setup', 'run.eval_threshold' => 0.2 }.to_json,
+          { entry_type: 'attempt', probe_classname: '0din.ProbeB', uuid: 'a-seg2', prompt: 'p', outputs: [ 'o' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.3 ] } }.to_json,
+          { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.ProbeB', passed: 0, total_evaluated: 1 }.to_json,
+          { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+        ].join("\n"))
+
+        service.call
+
+        # Segment 1 threshold 0.5: 0.3 < 0.5 => false
+        attempt_a = report.probe_results.find_by(probe: probe_a).attempts.first
+        expect(attempt_a['attack_succeeded']).to be(false)
+        # Segment 2 threshold 0.2 (memo reset): 0.3 >= 0.2 => true.
+        # Without the reset this would be false (stale 0.5).
+        attempt_b = report.probe_results.find_by(probe: probe_b).attempts.first
+        expect(attempt_b['attack_succeeded']).to be(true)
+      end
+    end
+
     context 'when raw_report_data has only whitespace in jsonl_data' do
       # Note: Model validation prevents blank jsonl_data, so we test with
       # valid-looking but non-processable content

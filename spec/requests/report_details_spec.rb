@@ -62,6 +62,26 @@ RSpec.describe "ReportDetails", type: :request do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Report for #{target_name}")
       end
+
+      it "shows a per-prompt Success/Blocked badge and JEF score on the report page" do
+        probe = create(:probe, name: "BadgeProbe")
+
+        ActsAsTenant.with_tenant(company) do
+          report.scan.probes << probe unless report.scan.probes.exists?(probe.id)
+          create(:probe_result, report: report, probe: probe, passed: 1, total: 2, attempts: [
+            { "uuid" => "att-success", "prompt" => "p1", "outputs" => [ "o1" ], "notes" => {}, "attack_succeeded" => true },
+            { "uuid" => "att-blocked", "prompt" => "p2", "outputs" => [ "o2" ], "notes" => {}, "attack_succeeded" => false },
+            { "uuid" => "att-jef", "prompt" => "p3", "outputs" => [ "o3" ], "notes" => { "score_percentage" => "90.00%" }, "attack_succeeded" => true }
+          ])
+        end
+
+        get report_detail_path(report, pdf: "true", pdf_token: pdf_token)
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include("Attack Successful")
+        expect(response.body).to include("Blocked")
+        expect(response.body).to include("Score: 90.00%")
+      end
     end
 
     context "with pdf=true but an invalid pdf_token" do

@@ -81,6 +81,16 @@ module ReportsHelper
     distance_of_time_in_words(report.start_time, report.end_time, include_seconds: true)
   end
 
+  # Per-prompt result for an attempt hash from probe_result.attempts.
+  # succeeded: true (Attack Successful) / false (Blocked) / nil (unknown — legacy
+  # attempt ingested before detector_results was captured).
+  def attempt_result(attempt)
+    {
+      succeeded: attempt["attack_succeeded"],
+      score_percentage: attempt.dig("notes", "score_percentage")
+    }
+  end
+
   # Format token counts for display
   # Returns nil if both counts are 0 (old reports without token data)
   # @param input_tokens [Integer] Number of input tokens
