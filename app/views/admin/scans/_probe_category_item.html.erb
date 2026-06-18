@@ -29,6 +29,7 @@
               "category-id": category_id,
               action: "change->probe-category#selectCategory"
             },
+            title: "Select all #{category_name} probes",
             "aria-label": "Select all #{category_name} probes" %>
       </div>
 
@@ -36,9 +37,9 @@
       <% unless is_nested %>
         <span class="icon icon-md <%= icon %> text-<%= color %>-500"></span>
       <% end %>
-      <label for="category_<%= category_id %>" class="text-<%= is_nested ? 'xs' : 'sm' %> font-medium text-contentPrimary cursor-pointer">
+      <span class="text-<%= is_nested ? 'xs' : 'sm' %> font-medium text-contentPrimary cursor-pointer">
         <%= category_name %>
-      </label>
+      </span>
 
       <!-- Selection count badge -->
       <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-zinc-700/50 text-contentTertiary border border-borderPrimary"

@@ -1377,6 +1377,64 @@ function testWebchatAutoDetectCurrentAuth() {
   assert.equal(malformed.currentAuth(), null)
 }
 
+function loadProbeCategoryController() {
+  const transformed = loadControllerSource(
+    "probe_category_controller.js",
+    "ProbeCategoryController"
+  )
+
+  const context = {
+    Controller: class {}
+  }
+
+  const ControllerClass = vm.runInNewContext(
+    `${transformed}\nProbeCategoryController`,
+    context
+  )
+
+  return { ControllerClass, context }
+}
+
+function testProbeCategoryToggleCategory() {
+  const { ControllerClass } = loadProbeCategoryController()
+  const controller = new ControllerClass()
+
+  const content = { dataset: { categoryId: "c1" }, style: {}, scrollHeight: 240 }
+  const chevron = { dataset: { categoryId: "c1" }, classList: classListWith() }
+  controller.contentTargets = [content]
+  controller.chevronTargets = [chevron]
+
+  let ariaExpanded = "false"
+  const header = {
+    dataset: { probeCategoryId: "c1" },
+    getAttribute() {
+      return ariaExpanded
+    },
+    setAttribute(_name, value) {
+      ariaExpanded = value
+    }
+  }
+
+  // Clicking the title (a SPAN) expands the category
+  controller.toggleCategory({ target: { tagName: "SPAN" }, currentTarget: header })
+  assert.equal(ariaExpanded, "true")
+  assert.equal(content.style.maxHeight, "240px")
+  assert.equal(chevron.classList.contains("rotate-180"), true)
+
+  // Clicking again collapses it
+  controller.toggleCategory({ target: { tagName: "SPAN" }, currentTarget: header })
+  assert.equal(ariaExpanded, "false")
+  assert.equal(content.style.maxHeight, "0px")
+
+  // Guard removed: a LABEL target must also toggle
+  controller.toggleCategory({ target: { tagName: "LABEL" }, currentTarget: header })
+  assert.equal(ariaExpanded, "true")
+
+  // The checkbox itself never toggles expand state
+  controller.toggleCategory({ target: { type: "checkbox", tagName: "INPUT" }, currentTarget: header })
+  assert.equal(ariaExpanded, "true")
+}
+
 await testDebugStreamLeaseController()
 testActivityStreamController()
 testDebugTabsController()
@@ -1389,4 +1447,5 @@ testWebchatAuthController()
 testTargetWizardRedactAuth()
 testTargetWizardSyncModel()
 testWebchatAutoDetectCurrentAuth()
+testProbeCategoryToggleCategory()
 console.log("JavaScript controller tests passed")

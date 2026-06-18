@@ -57,7 +57,7 @@ export default class extends Controller {
   }
 
   toggleCategory(event) {
-    if (event.target.type === 'checkbox' || event.target.tagName === 'LABEL') {
+    if (event.target.type === 'checkbox') {
       return
     }
 
