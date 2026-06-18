@@ -58,6 +58,8 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<sc
 - `security` / `perf` — triggers patch release
 - `docs` / `refactor` / `test` / `style` / `chore` / `ci` — no release
 
+> Commit types determine the **version bump** when a release is cut — they do **not** auto-release on merge. A maintainer cuts a release on demand via **Actions → Release → Run workflow** (on `main`), which bundles every change since the last release.
+
 Keep subject lines <= 72 characters. Include a body when more context is needed.
 
 **Examples:**

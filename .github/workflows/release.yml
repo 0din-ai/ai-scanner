@@ -1,9 +1,12 @@
 name: Release
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview the next version + notes without releasing (no tag, no Docker build)"
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -25,6 +28,7 @@ jobs:
 
   release:
     needs: ci
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       released: ${{ steps.semantic.outputs.released }}
@@ -47,7 +51,7 @@ jobs:
         id: semantic
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
+        run: npx semantic-release${{ inputs.dry_run && ' --dry-run' || '' }}
 
   build-amd64:
     needs: release
@@ -151,6 +155,7 @@ jobs:
 
   merge:
     needs: [release, build-amd64, build-arm64]
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download digests
