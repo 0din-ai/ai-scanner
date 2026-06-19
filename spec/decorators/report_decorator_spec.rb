@@ -111,4 +111,78 @@ RSpec.describe ReportDecorator, type: :decorator do
       end
     end
   end
+
+  describe '#top_findings' do
+    let(:probe_a) { create(:probe, name: 'ProbeA') }
+    let(:probe_b) { create(:probe, name: 'ProbeB') }
+    let(:probe_c) { create(:probe, name: 'ProbeC') }
+    let(:probe_d) { create(:probe, name: 'ProbeD') }
+
+    it 'returns highest-ASR findings first, up to the limit' do
+      # 80% ASR
+      create(:probe_result, report: report, probe: probe_a, passed: 8, total: 10,
+             any_detector_passed: true)
+      # 60% ASR
+      create(:probe_result, report: report, probe: probe_b, passed: 6, total: 10,
+             any_detector_passed: true)
+      # 40% ASR — below limit
+      create(:probe_result, report: report, probe: probe_c, passed: 4, total: 10,
+             any_detector_passed: true)
+
+      results = described_class.new(report).top_findings
+      expect(results.map { |f| f[:name] }).to eq(%w[ProbeA ProbeB ProbeC])
+    end
+
+    it 'limits to 3 by default' do
+      [ probe_a, probe_b, probe_c, probe_d ].each do |probe|
+        create(:probe_result, report: report, probe: probe, passed: 5, total: 10,
+               any_detector_passed: true)
+      end
+
+      expect(described_class.new(report).top_findings.size).to eq(3)
+    end
+
+    it 'accepts a custom limit' do
+      [ probe_a, probe_b ].each do |probe|
+        create(:probe_result, report: report, probe: probe, passed: 5, total: 10,
+               any_detector_passed: true)
+      end
+
+      expect(described_class.new(report).top_findings(limit: 1).size).to eq(1)
+    end
+
+    it 'skips zero-attempt probe results' do
+      create(:probe_result, report: report, probe: probe_a, passed: 0, total: 0,
+             any_detector_passed: false)
+      create(:probe_result, report: report, probe: probe_b, passed: 5, total: 10,
+             any_detector_passed: true)
+
+      results = described_class.new(report).top_findings
+      expect(results.map { |f| f[:name] }).to eq([ 'ProbeB' ])
+    end
+
+    it 'skips defended (any_detector_passed = false) rows' do
+      create(:probe_result, report: report, probe: probe_a, passed: 0, total: 10,
+             any_detector_passed: false)
+
+      expect(described_class.new(report).top_findings).to eq([])
+    end
+
+    it 'includes multi-detector probes where any_detector_passed is true but passed is 0' do
+      create(:probe_result, report: report, probe: probe_a, passed: 0, total: 10,
+             any_detector_passed: true)
+
+      results = described_class.new(report).top_findings
+      expect(results.map { |f| f[:name] }).to eq([ 'ProbeA' ])
+    end
+
+    it 'returns [] when all rows are defended' do
+      create(:probe_result, report: report, probe: probe_a, passed: 0, total: 10,
+             any_detector_passed: false)
+      create(:probe_result, report: report, probe: probe_b, passed: 0, total: 5,
+             any_detector_passed: false)
+
+      expect(described_class.new(report).top_findings).to eq([])
+    end
+  end
 end

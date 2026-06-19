@@ -1,0 +1,52 @@
+<%#
+  Auto-computed narrative band — leads the customer report.
+  locals: report (decorated Report), pdf_mode (boolean)
+%>
+<% asr = report.attack_success_rate %>
+<% has_scores = report.detector_results.exists? %>
+<% grade = report_risk_grade_label(asr) %>
+<% delta = report.asr_delta_vs_previous %>
+<% findings = report.top_findings %>
+<% if has_scores %>
+  <div data-narrative-band class="<%= pdf_mode ? 'px-6 py-5 bg-white border-b border-gray-200' : 'px-8 py-6 bg-gradient-to-r from-indigo-50 via-white to-white border-b border-gray-200' %>">
+    <h2 class="<%= pdf_mode ? 'text-lg font-bold text-gray-800 mb-3' : 'text-xl font-bold text-gray-800 mb-4' %>">Summary</h2>
+
+    <div class="flex flex-wrap items-center gap-3 mb-4">
+      <% if grade %>
+        <span class="inline-flex items-center px-3 py-1 rounded-lg font-bold text-sm <%= report_risk_grade_classes(asr) %>">
+          <%= grade %> Risk
+        </span>
+      <% end %>
+      <span class="flex items-baseline gap-1">
+        <span class="<%= pdf_mode ? 'text-xl font-bold text-gray-900' : 'text-2xl font-bold text-gray-900' %>"><%= asr.round %>%</span>
+        <span class="text-xs text-gray-500">attack success rate</span>
+      </span>
+      <% unless delta.nil? %>
+        <% pts = delta.round %>
+        <% worse = pts.positive? %>
+        <% better = pts.negative? %>
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold <%= worse ? 'bg-red-50 text-red-700' : (better ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600') %>" title="Change vs the previous completed scan of this target">
+          <% if pts.zero? %>
+            &#9632; no change vs last scan
+          <% else %>
+            <%= worse ? '▲' : '▼' %> <%= pts.abs %> pts <span class="sr-only"><%= worse ? 'higher' : 'lower' %> </span>vs last scan
+          <% end %>
+        </span>
+      <% end %>
+    </div>
+
+    <% if findings.any? %>
+      <div>
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Top findings</h3>
+        <ul class="space-y-1 max-w-2xl">
+          <% findings.each do |f| %>
+            <li class="flex items-center justify-between text-sm border-b border-dashed border-gray-200 pb-1">
+              <span class="text-gray-700"><%= f[:name] %></span>
+              <span class="font-semibold <%= f[:asr].to_f >= 50 ? 'text-red-600' : 'text-gray-700' %>"><%= f[:asr] %>%</span>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+  </div>
+<% end %>

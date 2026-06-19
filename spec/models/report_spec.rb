@@ -1032,4 +1032,121 @@ RSpec.describe Report, type: :model do
       expect(Report.new).not_to respond_to(:preloaded_variant_data)
     end
   end
+
+  describe '#previous_completed_report' do
+    let(:company) { create(:company) }
+    let(:target) { create(:target, company: company) }
+    let(:scan) do
+      build(:scan, company: company).tap do |s|
+        s.targets << target
+        s.save!(validate: false)
+      end
+    end
+
+    before do
+      allow_any_instance_of(RunGarakScan).to receive(:call)
+      allow(ToastNotifier).to receive(:call)
+    end
+
+    it 'returns the most recent prior completed report for the same scan + target' do
+      older = create(:report, :completed, company: company, target: target, scan: scan,
+                     created_at: 2.days.ago)
+      newer = create(:report, :completed, company: company, target: target, scan: scan,
+                     created_at: 1.day.ago)
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+
+      expect(current.previous_completed_report).to eq(newer)
+    end
+
+    it 'ignores reports for a different target' do
+      other_target = create(:target, company: company)
+      other_scan = build(:scan, company: company).tap do |s|
+        s.targets << other_target
+        s.save!(validate: false)
+      end
+      create(:report, :completed, company: company, target: other_target, scan: other_scan,
+             created_at: 1.day.ago)
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+
+      expect(current.previous_completed_report).to be_nil
+    end
+
+    it 'ignores incomplete (non-completed) reports' do
+      create(:report, :failed, company: company, target: target, scan: scan,
+             created_at: 1.day.ago)
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+
+      expect(current.previous_completed_report).to be_nil
+    end
+
+    it 'ignores variant child reports' do
+      parent = create(:report, :completed, company: company, target: target, scan: scan,
+                      created_at: 1.day.ago)
+      # child report (non-nil parent_report_id) should be excluded from the timeline
+      create(:report, :completed, company: company, target: target, scan: scan,
+             parent_report_id: parent.id, created_at: 12.hours.ago)
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+
+      # The only eligible prior parent report is `parent`
+      expect(current.previous_completed_report).to eq(parent)
+    end
+
+    it 'returns nil when current report is a variant child' do
+      parent = create(:report, :completed, company: company, target: target, scan: scan,
+                      created_at: 2.days.ago)
+      variant = create(:report, :completed, company: company, target: target, scan: scan,
+                       parent_report_id: parent.id)
+
+      expect(variant.previous_completed_report).to be_nil
+    end
+
+    it 'returns nil when no prior completed report exists' do
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+
+      expect(current.previous_completed_report).to be_nil
+    end
+  end
+
+  describe '#asr_delta_vs_previous' do
+    let(:company) { create(:company) }
+    let(:target) { create(:target, company: company) }
+    let(:scan) do
+      build(:scan, company: company).tap do |s|
+        s.targets << target
+        s.save!(validate: false)
+      end
+    end
+
+    before do
+      allow_any_instance_of(RunGarakScan).to receive(:call)
+      allow(ToastNotifier).to receive(:call)
+    end
+
+    it 'returns nil when there is no prior completed report' do
+      report = create(:report, :completed, company: company, target: target, scan: scan)
+      expect(report.asr_delta_vs_previous).to be_nil
+    end
+
+    it 'returns a positive delta when ASR rose (got worse)' do
+      prev = create(:report, :completed, company: company, target: target, scan: scan,
+                    created_at: 1.day.ago)
+      create(:detector_result, report: prev, passed: 2, total: 10)   # 20%
+
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+      create(:detector_result, report: current, passed: 5, total: 10) # 50%
+
+      expect(current.asr_delta_vs_previous).to eq(30.0)
+    end
+
+    it 'returns a negative delta when ASR fell (improved)' do
+      prev = create(:report, :completed, company: company, target: target, scan: scan,
+                    created_at: 1.day.ago)
+      create(:detector_result, report: prev, passed: 5, total: 10)   # 50%
+
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+      create(:detector_result, report: current, passed: 2, total: 10) # 20%
+
+      expect(current.asr_delta_vs_previous).to eq(-30.0)
+    end
+  end
 end

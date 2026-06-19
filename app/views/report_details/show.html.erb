@@ -76,6 +76,8 @@
     <%= render partial: 'reports/failure_summary', locals: { report: @report, pdf_mode: pdf_mode } %>
   <% end %>
 
+  <%= render partial: 'report_details/narrative_band', locals: { report: @report, pdf_mode: pdf_mode } %>
+
   <% if @report.detector_results.exists? %>
     <div class="<%= pdf_mode ? 'px-6 py-5 bg-gray-50 border-b border-gray-200' : 'px-8 py-6 bg-gradient-to-r from-gray-100 via-white to-gray-50 border-b border-gray-200' %>">
       <div class="<%= pdf_mode ? 'mb-3' : 'mb-4' %>">

@@ -1,4 +1,8 @@
 module ReportsHelper
+  # Risk grade label boundaries, aligned to the ASR color bands (0...25, 25...50,
+  # 50...75, 75+) so the grade word always matches the ASR number.
+  RISK_GRADE_THRESHOLDS = [ [ 25, "Low" ], [ 50, "Medium" ], [ 75, "High" ] ].freeze
+
   VARIANT_INDUSTRY_EMOJIS = {
     "automotive" => "🚗",
     "finance" => "💰",
@@ -101,6 +105,25 @@ module ReportsHelper
       industry: industry.name,
       subindustry: subindustry.name
     }
+  end
+
+  # 4-tier risk grade label for an ASR percentage. nil when asr is nil.
+  def report_risk_grade_label(asr)
+    return nil if asr.nil?
+    RISK_GRADE_THRESHOLDS.each { |max, label| return label if asr.to_f < max }
+    "Critical"
+  end
+
+  # Light-theme pill classes for the risk grade chip on the (light) customer
+  # report band, aligned to the same 4 thresholds. nil when asr is nil.
+  def report_risk_grade_classes(asr)
+    return nil if asr.nil?
+    case asr.to_f
+    when 0...25 then "bg-zinc-100 text-zinc-700"
+    when 25...50 then "bg-yellow-100 text-yellow-800"
+    when 50...75 then "bg-orange-100 text-orange-800"
+    else "bg-red-100 text-red-800"
+    end
   end
 
   # Format report duration as human-readable text

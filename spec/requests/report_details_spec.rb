@@ -114,6 +114,66 @@ RSpec.describe "ReportDetails", type: :request do
       end
     end
 
+    context "narrative band" do
+      let(:company) { create(:company) }
+      let(:target) { create(:target, company: company) }
+      let(:scan) do
+        build(:scan, company: company).tap do |s|
+          s.targets << target
+          s.save!(validate: false)
+        end
+      end
+      let(:current_report) { create(:report, :completed, company: company, target: target, scan: scan) }
+
+      let(:pdf_token) do
+        Rails.application.message_verifier(Reports::PdfGenerator::RENDER_TOKEN_VERIFIER_KEY).generate(
+          current_report.id,
+          expires_in: Reports::PdfGenerator::RENDER_TOKEN_TTL,
+          purpose: Reports::PdfGenerator::RENDER_TOKEN_PURPOSE
+        )
+      end
+
+      before do
+        allow_any_instance_of(RunGarakScan).to receive(:call)
+        allow(ToastNotifier).to receive(:call)
+      end
+
+      it "renders [data-narrative-band] with the risk grade, ASR, and top findings" do
+        probe = create(:probe, name: 'TopProbe')
+        ActsAsTenant.with_tenant(company) do
+          current_report.scan.probes << probe unless current_report.scan.probes.exists?(probe.id)
+          create(:detector_result, report: current_report, passed: 6, total: 10)  # 60% => High
+          create(:probe_result, report: current_report, probe: probe,
+                 passed: 6, total: 10, any_detector_passed: true)
+        end
+
+        get report_detail_path(current_report, pdf: 'true', pdf_token: pdf_token)
+
+        expect(response).to have_http_status(:ok)
+        doc = Nokogiri::HTML(response.body)
+        band = doc.at_css('[data-narrative-band]')
+        expect(band).to be_present
+        expect(band.text).to include('High Risk')
+        expect(band.text).to include('60%')
+        expect(band.text).to include('TopProbe')
+      end
+
+      it "renders a ▲ delta chip when ASR rose vs the previous completed report" do
+        previous_report = create(:report, :completed, company: company, target: target,
+                                 scan: scan, created_at: 1.day.ago)
+        ActsAsTenant.with_tenant(company) do
+          create(:detector_result, report: previous_report, passed: 2, total: 10) # 20%
+          create(:detector_result, report: current_report, passed: 6, total: 10)  # 60%
+        end
+
+        get report_detail_path(current_report, pdf: 'true', pdf_token: pdf_token)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include('▲')
+        expect(response.body).to include('pts')
+      end
+    end
+
     context "with pdf=true but an invalid pdf_token" do
       it "redirects to sign in" do
         get report_detail_path(report, pdf: "true", pdf_token: "invalid-token")

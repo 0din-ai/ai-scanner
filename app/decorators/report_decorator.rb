@@ -17,6 +17,19 @@ class ReportDecorator < SimpleDelegator
     probe_results.size
   end
 
+  # Highest-ASR probe results for the narrative band's "Top findings" list.
+  # Reuses the already-loaded probe_results array. A "finding" is a probe the
+  # report treats as vulnerable — keyed on any_detector_passed (consistent with
+  # the VULNERABLE badge), so multi-detector probes bypassed with a zero
+  # canonical `passed` count still count. Skip zero-attempt and defended rows.
+  def top_findings(limit: 3)
+    probe_results
+      .select { |pr| pr.total.to_i.positive? && pr.any_detector_passed }
+      .sort_by { |pr| -pr.asr_percentage.to_f }
+      .first(limit)
+      .map { |pr| { name: pr.probe&.name, asr: pr.asr_percentage } }
+  end
+
   # Variant methods (variants_by_industry, variant_probe_results, etc.)
   # are provided by the engine decorator override when variant features are enabled.
 end

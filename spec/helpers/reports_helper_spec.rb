@@ -369,6 +369,70 @@ RSpec.describe ReportsHelper, type: :helper do
     end
   end
 
+  describe '#report_risk_grade_label' do
+    it 'returns nil for a nil ASR' do
+      expect(helper.report_risk_grade_label(nil)).to be_nil
+    end
+
+    it 'returns Low for 0%' do
+      expect(helper.report_risk_grade_label(0)).to eq('Low')
+    end
+
+    it 'returns Low for 24.9%' do
+      expect(helper.report_risk_grade_label(24.9)).to eq('Low')
+    end
+
+    it 'returns Medium at the 25% boundary' do
+      expect(helper.report_risk_grade_label(25)).to eq('Medium')
+    end
+
+    it 'returns Medium for 49.9%' do
+      expect(helper.report_risk_grade_label(49.9)).to eq('Medium')
+    end
+
+    it 'returns High at the 50% boundary' do
+      expect(helper.report_risk_grade_label(50)).to eq('High')
+    end
+
+    it 'returns High for 74.9%' do
+      expect(helper.report_risk_grade_label(74.9)).to eq('High')
+    end
+
+    it 'returns Critical at the 75% boundary' do
+      expect(helper.report_risk_grade_label(75)).to eq('Critical')
+    end
+
+    it 'returns Critical for 100%' do
+      expect(helper.report_risk_grade_label(100)).to eq('Critical')
+    end
+  end
+
+  describe '#report_risk_grade_classes' do
+    it 'returns nil for a nil ASR' do
+      expect(helper.report_risk_grade_classes(nil)).to be_nil
+    end
+
+    it 'returns zinc classes for the Low tier (0...25)' do
+      expect(helper.report_risk_grade_classes(0)).to eq('bg-zinc-100 text-zinc-700')
+      expect(helper.report_risk_grade_classes(24.9)).to eq('bg-zinc-100 text-zinc-700')
+    end
+
+    it 'returns yellow classes for the Medium tier (25...50)' do
+      expect(helper.report_risk_grade_classes(25)).to eq('bg-yellow-100 text-yellow-800')
+      expect(helper.report_risk_grade_classes(49.9)).to eq('bg-yellow-100 text-yellow-800')
+    end
+
+    it 'returns orange classes for the High tier (50...75)' do
+      expect(helper.report_risk_grade_classes(50)).to eq('bg-orange-100 text-orange-800')
+      expect(helper.report_risk_grade_classes(74.9)).to eq('bg-orange-100 text-orange-800')
+    end
+
+    it 'returns red classes for the Critical tier (75+)' do
+      expect(helper.report_risk_grade_classes(75)).to eq('bg-red-100 text-red-800')
+      expect(helper.report_risk_grade_classes(100)).to eq('bg-red-100 text-red-800')
+    end
+  end
+
   describe '#variant_industry_tag' do
     it 'returns nil when the threat_variant is nil' do
       expect(helper.variant_industry_tag(nil)).to be_nil

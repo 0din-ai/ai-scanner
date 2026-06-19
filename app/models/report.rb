@@ -220,6 +220,36 @@ class Report < ApplicationRecord
     asr == 0 ? "N/A" : "#{asr}%"
   end
 
+  # The most recent prior completed parent (non-variant) report of the same
+  # scan + target — the run this report is compared against in the narrative
+  # band. Scoped via scan.reports so it works without an ambient tenant (PDF
+  # render). Variant child reports are not part of the run-over-run timeline,
+  # so they have no "previous run" (and must never compare against their own
+  # base).
+  def previous_completed_report
+    return nil if is_variant_report?
+
+    scan.reports
+        .parent_reports
+        .completed
+        .where(target_id: target_id)
+        .where.not(id: id)
+        .where("reports.created_at < ?", created_at)
+        .order(created_at: :desc, id: :desc)
+        .first
+  end
+
+  # Signed ASR delta vs the previous completed report (positive = ASR rose =
+  # worse). nil when there is no prior completed report to compare against.
+  # NOTE: calls attack_success_rate on self and on the prior report; each
+  # falls back to two detector_results queries when not preloaded.
+  # Multi-report callers should preload.
+  def asr_delta_vs_previous
+    prev = previous_completed_report
+    return nil unless prev
+    (attack_success_rate - prev.attack_success_rate).round(2)
+  end
+
   def total_successful_attacks
     cached_passed
   end
