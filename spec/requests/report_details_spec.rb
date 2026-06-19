@@ -174,6 +174,42 @@ RSpec.describe "ReportDetails", type: :request do
       end
     end
 
+    context "detector statistics reconcile line" do
+      let(:company) { create(:company) }
+      let(:report) { create(:report, :completed, company: company) }
+      let(:pdf_token) do
+        Rails.application.message_verifier(Reports::PdfGenerator::RENDER_TOKEN_VERIFIER_KEY).generate(
+          report.id,
+          expires_in: Reports::PdfGenerator::RENDER_TOKEN_TTL,
+          purpose: Reports::PdfGenerator::RENDER_TOKEN_PURPOSE
+        )
+      end
+
+      it "reconciles the probe count with detector evaluations in the Detector Statistics header" do
+        detector = create(:detector, name: "detector.0din.ReconcileD")
+        probe = create(:probe, name: "ReconcileProbe")
+
+        ActsAsTenant.with_tenant(company) do
+          report.scan.probes << probe unless report.scan.probes.exists?(probe.id)
+          create(:probe_result, report: report, probe: probe, detector: detector, passed: 5, total: 10)
+          create(:detector_result, report: report, detector: detector, passed: 612, total: 990)
+        end
+
+        get report_detail_path(report, pdf: "true", pdf_token: pdf_token)
+
+        expect(response).to have_http_status(:ok)
+        doc = Nokogiri::HTML(response.body)
+
+        reconcile = doc.at_css("[data-detector-reconcile]")
+        expect(reconcile).to be_present
+        expect(reconcile.text.gsub(/\s+/, " ").strip).to eq("1 probe · 990 detector evaluations")
+
+        stat = doc.at_css("[data-detector-stat]")
+        expect(stat).to be_present
+        expect(stat.text.gsub(/\s+/, " ").strip).to include("612 / 990 evaluations")
+      end
+    end
+
     context "with pdf=true but an invalid pdf_token" do
       it "redirects to sign in" do
         get report_detail_path(report, pdf: "true", pdf_token: "invalid-token")

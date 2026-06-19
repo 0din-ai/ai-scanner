@@ -17,6 +17,17 @@ class ReportDecorator < SimpleDelegator
     probe_results.size
   end
 
+  # Total per-detector evaluations across the run (Σ detector_results.total).
+  # Reconciles with probe_count in the Detector Statistics header: each probe runs
+  # multiple prompts and each prompt can be scored by multiple detectors, so this
+  # exceeds the probe count. Counts evaluation events, not distinct prompts (a prompt
+  # scored by two detectors is counted once per detector).
+  def detector_evaluation_count
+    # `total` is a nullable column; SUM returns nil when rows exist but every total
+    # is NULL, so coerce to 0 to keep the reconciling line well-formed.
+    __getobj__.detector_results.sum(:total) || 0
+  end
+
   # Highest-ASR probe results for the narrative band's "Top findings" list.
   # Reuses the already-loaded probe_results array. A "finding" is a probe the
   # report treats as vulnerable — keyed on any_detector_passed (consistent with

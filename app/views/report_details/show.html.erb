@@ -83,6 +83,11 @@
       <div class="<%= pdf_mode ? 'mb-3' : 'mb-4' %>">
         <h2 class="<%= pdf_mode ? 'text-lg font-bold text-gray-800' : 'text-xl font-bold text-gray-800' %>">Detector Statistics</h2>
         <p class="<%= pdf_mode ? 'text-xs text-gray-500' : 'text-sm text-gray-500' %>">Security test success rates by detector</p>
+        <p data-detector-reconcile class="<%= pdf_mode ? 'text-xs text-gray-500 mt-0.5' : 'text-sm text-gray-500 mt-1' %>">
+          <%= number_with_delimiter(@report.probe_count) %> <%= 'probe'.pluralize(@report.probe_count) %>
+          ·
+          <%= number_with_delimiter(@report.detector_evaluation_count) %> detector <%= 'evaluation'.pluralize(@report.detector_evaluation_count) %>
+        </p>
       </div>
 
       <div class="<%= pdf_mode ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3' %>">
@@ -114,12 +119,13 @@
               <% end %>
             </div>
             <div class="<%= pdf_mode ? 'flex items-center gap-1.5 ml-3 mt-0.5' : 'flex items-center gap-2 ml-4' %>">
-              <div class="flex items-center gap-1">
+              <div data-detector-stat class="flex items-center gap-1">
                 <span class="<%= pdf_mode ? 'font-medium' : 'font-semibold' %> <%= result.passed.to_i > 0 ? 'text-red-600' : 'text-emerald-600' %>">
                   <%= result.passed %>
                 </span>
                 <span class="text-gray-500">/</span>
                 <span class="<%= pdf_mode ? 'text-gray-600' : 'font-medium text-gray-600' %>"><%= result.total %></span>
+                <span class="text-gray-500 <%= pdf_mode ? 'text-[10px]' : 'text-xs' %>"><%= 'evaluation'.pluralize(result.total.to_i) %></span>
               </div>
               <div class="<%= pdf_mode ? 'text-[10px] bg-gray-100 px-1.5 py-0.5 rounded-full' : 'text-xs bg-gray-100 px-2 py-0.5 rounded-full' %>">
                 <%= result.asr_percentage %>% Attack Success Rate (ASR)

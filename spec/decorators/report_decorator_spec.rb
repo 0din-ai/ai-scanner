@@ -112,6 +112,33 @@ RSpec.describe ReportDecorator, type: :decorator do
     end
   end
 
+  describe '#detector_evaluation_count' do
+    it 'sums total across all detector results' do
+      ActsAsTenant.with_tenant(company) do
+        r = create(:report, company: company)
+        d1 = create(:detector, name: 'detector.0din.EvalA')
+        d2 = create(:detector, name: 'detector.0din.EvalB')
+        create(:detector_result, report: r, detector: d1, passed: 100, total: 990)
+        create(:detector_result, report: r, detector: d2, passed: 50, total: 374)
+
+        expect(described_class.new(r).detector_evaluation_count).to eq(1364)
+      end
+    end
+
+    it 'returns zero when there are no detector results' do
+      expect(decorated_report.detector_evaluation_count).to eq(0)
+    end
+
+    it 'returns zero when detector results have nil totals' do
+      ActsAsTenant.with_tenant(company) do
+        r = create(:report, company: company)
+        create(:detector_result, report: r, detector: create(:detector, name: 'detector.0din.NilTotal'), passed: 0, total: nil)
+
+        expect(described_class.new(r).detector_evaluation_count).to eq(0)
+      end
+    end
+  end
+
   describe '#top_findings' do
     let(:probe_a) { create(:probe, name: 'ProbeA') }
     let(:probe_b) { create(:probe, name: 'ProbeB') }
