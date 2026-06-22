@@ -88,9 +88,16 @@ Rails.application.configure do
   #
   # IMPORTANT: Be careful with this setting as it determines which domains can access
   # the session cookie. Use the most specific domain possible for security.
-  if ENV["SESSION_COOKIE_DOMAIN"].present?
-    config.session_store :cookie_store, key: "_scanner_session", domain: ENV["SESSION_COOKIE_DOMAIN"]
-  end
+  # SECURITY: set the session cookie Secure + SameSite flags. With a TLS-terminating
+  # proxy (force_ssl=false, ASSUME_SSL=true), Rails does not add Secure automatically,
+  # so set it explicitly. Applied whether or not SESSION_COOKIE_DOMAIN is configured.
+  session_options = {
+    key: "_scanner_session",
+    secure: ENV.fetch("ASSUME_SSL", "false") == "true",
+    same_site: :lax
+  }
+  session_options[:domain] = ENV["SESSION_COOKIE_DOMAIN"] if ENV["SESSION_COOKIE_DOMAIN"].present?
+  config.session_store :cookie_store, **session_options
 
   # Configure logging with file rotation and STDOUT output
   log_dir = Rails.root.join("storage/logs/rails")

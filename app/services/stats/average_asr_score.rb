@@ -26,18 +26,22 @@ module Stats
       # Previous: fetched N rows, averaged in Ruby. Now: single SQL AVG()
       date_condition = since_date ? "AND reports.created_at >= :since_date" : ""
 
+      # SECURITY: raw SQL bypasses acts_as_tenant's default scope, so we MUST filter by
+      # the current tenant's company_id explicitly. Fail closed (no tenant => no rows => 0).
+      company_id = ActsAsTenant.current_tenant&.id
+
       sql = <<~SQL.squish
         SELECT AVG(per_report_rate) as avg FROM (
           SELECT (SUM(probe_results.passed)::float / NULLIF(SUM(probe_results.total), 0)::float * 100) as per_report_rate
           FROM reports
           INNER JOIN probe_results ON probe_results.report_id = reports.id
-          WHERE probe_results.total > 0 #{date_condition}
+          WHERE probe_results.total > 0 AND reports.company_id = :company_id #{date_condition}
           GROUP BY reports.id
         ) subquery
       SQL
 
       result = ActiveRecord::Base.connection.select_value(
-        ActiveRecord::Base.sanitize_sql_array([ sql, { since_date: since_date } ])
+        ActiveRecord::Base.sanitize_sql_array([ sql, { since_date: since_date, company_id: company_id } ])
       )
       (result.to_f || 0).round(2)
     end
@@ -86,7 +90,11 @@ module Stats
     end
 
     def base_report_query(since_date)
-      query = Report.joins(:probe_results).where("probe_results.total > 0")
+      # SECURITY: fail closed on a missing tenant. acts_as_tenant returns ALL rows when
+      # current_tenant is nil, which would leak the time series across tenants — so scope
+      # by company_id explicitly (nil => no rows), mirroring the scalar average.
+      query = Report.where(company_id: ActsAsTenant.current_tenant&.id)
+                    .joins(:probe_results).where("probe_results.total > 0")
       since_date.present? ? query.where("reports.created_at >= ?", since_date) : query
     end
 

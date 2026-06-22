@@ -120,4 +120,24 @@ RSpec.describe Admin::TargetsController, type: :controller do
       expect(JSON.parse(response.body)["error"]).to include("[REDACTED]")
     end
   end
+
+  describe "batch actions are tenant-scoped (cross-tenant guard)" do
+    let!(:other_company) { create(:company, name: "Other Co", tier: :tier_2) }
+    let!(:other_target) do
+      ActsAsTenant.with_tenant(other_company) { create(:target, company: other_company, name: "Other Target") }
+    end
+
+    it "POST #batch_destroy does not archive another tenant's target" do
+      post :batch_destroy, params: { ids: [ other_target.id ] }
+
+      still_present = ActsAsTenant.without_tenant { Target.with_deleted.find(other_target.id) }
+      expect(still_present.deleted_at).to be_nil
+    end
+
+    it "POST #batch_validate does not enqueue validation for another tenant's target" do
+      expect(ValidateTargetJob).not_to receive(:perform_later)
+
+      post :batch_validate, params: { ids: [ other_target.id ] }
+    end
+  end
 end

@@ -9,6 +9,7 @@ RSpec.describe OutputServers::Splunk do
                                         enabled: true,
                                         connection_string: 'https://splunk.example.com:8088',
                                         access_token: 'test_token',
+                                        destination_safe?: true,
                                         endpoint_path: nil) }
   let(:scan) { instance_double(Scan, output_server: output_server) }
   let(:target) { instance_double(Target, name: 'test-target', model: 'gpt-4', model_type: 'openai') }
@@ -52,6 +53,27 @@ RSpec.describe OutputServers::Splunk do
       expect(Rails.logger).to receive(:info).with("Successfully sent report data to Splunk")
 
       service.call
+    end
+
+    context 'when the destination fails the SSRF recheck' do
+      let(:unsafe_output_server) do
+        instance_double(OutputServer, server_type: 'splunk', protocol: 'https',
+                        host: '169.254.169.254', port: 8088, enabled: true,
+                        connection_string: 'https://169.254.169.254:8088', access_token: 'x',
+                        destination_safe?: false, endpoint_path: nil)
+      end
+      let(:unsafe_scan) { instance_double(Scan, output_server: unsafe_output_server) }
+      let(:unsafe_report) { instance_double(Report, scan: unsafe_scan, target: target, uuid: 'test-uuid') }
+      let(:unsafe_service) { OutputServers::Splunk.new(unsafe_report) }
+
+      it 'aborts the send (no HTTP request) and logs the recheck failure' do
+        allow(Rails.logger).to receive(:error)
+        expect(@http_client).not_to receive(:request)
+
+        unsafe_service.call
+
+        expect(Rails.logger).to have_received(:error).with(/failed the SSRF recheck/)
+      end
     end
 
     context 'when output_server is nil' do

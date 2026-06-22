@@ -1,13 +1,20 @@
 require 'rails_helper'
 
 RSpec.describe Stats::AverageAsrScore do
+  # The aggregate is tenant-scoped (acts_as_tenant), so run within a tenant; records
+  # created by the factories below then belong to this company and are counted.
+  let(:company) { create(:company) }
+  around { |example| ActsAsTenant.with_tenant(company) { example.run } }
+
   let(:detector) { create(:detector) }
   let(:target) { create(:target) }
   let(:scan) { create(:complete_scan) }
   let(:probe) { create(:probe) }
 
   describe '#call' do
-    subject { described_class.new(days: 30).call }
+    # Factories can reset ActsAsTenant.current_tenant during record creation, so set the
+    # tenant explicitly at call time (the aggregate is tenant-scoped).
+    subject { ActsAsTenant.with_tenant(company) { described_class.new(days: 30).call } }
 
     context 'when no reports exist' do
       it 'returns zero score with empty data' do
@@ -21,13 +28,13 @@ RSpec.describe Stats::AverageAsrScore do
 
     context 'when reports exist with probe results' do
       before do
-        report1 = create(:report, target: target, scan: scan, created_at: Time.zone.today)
+        report1 = create(:report, company: company, target: target, scan: scan, created_at: Time.zone.today)
         create(:probe_result, report: report1, probe: probe, detector: detector, passed: 5, total: 10)
 
-        report2 = create(:report, target: target, scan: scan, created_at: 5.days.ago)
+        report2 = create(:report, company: company, target: target, scan: scan, created_at: 5.days.ago)
         create(:probe_result, report: report2, probe: probe, detector: detector, passed: 7, total: 10)
 
-        report3 = create(:report, target: target, scan: scan, created_at: 15.days.ago)
+        report3 = create(:report, company: company, target: target, scan: scan, created_at: 15.days.ago)
         create(:probe_result, report: report3, probe: probe, detector: detector, passed: 3, total: 10)
       end
 
@@ -62,10 +69,10 @@ RSpec.describe Stats::AverageAsrScore do
 
     context 'with reports outside the specified time window' do
       before do
-        report_recent = create(:report, target: target, scan: scan, created_at: 10.days.ago)
+        report_recent = create(:report, company: company, target: target, scan: scan, created_at: 10.days.ago)
         create(:probe_result, report: report_recent, probe: probe, detector: detector, passed: 6, total: 10)
 
-        report_old = create(:report, target: target, scan: scan, created_at: 35.days.ago)
+        report_old = create(:report, company: company, target: target, scan: scan, created_at: 35.days.ago)
         create(:probe_result, report: report_old, probe: probe, detector: detector, passed: 4, total: 10)
       end
 
@@ -78,7 +85,7 @@ RSpec.describe Stats::AverageAsrScore do
 
     context 'with reports with zero total probes' do
       before do
-        report = create(:report, target: target, scan: scan, created_at: Time.zone.today)
+        report = create(:report, company: company, target: target, scan: scan, created_at: Time.zone.today)
         create(:probe_result, report: report, probe: probe, detector: detector, passed: 0, total: 0)
       end
 
@@ -95,24 +102,28 @@ RSpec.describe Stats::AverageAsrScore do
 
     context 'with various success rates' do
       before do
-        report1 = create(:report, target: target, scan: scan, created_at: 1.day.ago)
+        report1 = create(:report, company: company, target: target, scan: scan, created_at: 1.day.ago)
         create(:probe_result, report: report1, probe: probe, detector: detector, passed: 8, total: 10)
 
-        report2 = create(:report, target: target, scan: scan, created_at: 2.days.ago)
+        report2 = create(:report, company: company, target: target, scan: scan, created_at: 2.days.ago)
         create(:probe_result, report: report2, probe: probe, detector: detector, passed: 4, total: 10)
 
-        report3 = create(:report, target: target, scan: scan, created_at: 3.days.ago)
+        report3 = create(:report, company: company, target: target, scan: scan, created_at: 3.days.ago)
         create(:probe_result, report: report3, probe: probe, detector: detector, passed: 6, total: 10)
       end
 
       it 'calculates the average correctly' do
-        expect(subject.average_attack_success_rate(4.days.ago)).to eq(60)
+        ActsAsTenant.with_tenant(company) do
+          expect(subject.average_attack_success_rate(4.days.ago)).to eq(60)
+        end
       end
     end
 
     context 'with no reports' do
       it 'returns zero' do
-        expect(subject.average_attack_success_rate(4.days.ago)).to eq(0)
+        ActsAsTenant.with_tenant(company) do
+          expect(subject.average_attack_success_rate(4.days.ago)).to eq(0)
+        end
       end
     end
   end
@@ -122,15 +133,15 @@ RSpec.describe Stats::AverageAsrScore do
 
     context 'with daily interval' do
       before do
-        report1 = create(:report, target: target, scan: scan, created_at: Time.zone.today)
+        report1 = create(:report, company: company, target: target, scan: scan, created_at: Time.zone.today)
         create(:probe_result, report: report1, probe: probe, detector: detector, passed: 5, total: 10)
 
-        report2 = create(:report, target: target, scan: scan, created_at: 1.day.ago)
+        report2 = create(:report, company: company, target: target, scan: scan, created_at: 1.day.ago)
         create(:probe_result, report: report2, probe: probe, detector: detector, passed: 7, total: 10)
       end
 
       it 'returns data grouped by day' do
-        result = subject.average_attack_success_rate_over_time(2.days.ago)
+        result = ActsAsTenant.with_tenant(company) { subject.average_attack_success_rate_over_time(2.days.ago) }
 
         expect(result[:rates]).to eq([ 0.0, 70.0, 50.0 ])
       end
@@ -138,17 +149,16 @@ RSpec.describe Stats::AverageAsrScore do
 
     context 'with weekly interval' do
       before do
-        report1 = create(:report, target: target, scan: scan, created_at: Time.zone.today)
+        report1 = create(:report, company: company, target: target, scan: scan, created_at: Time.zone.today)
         create(:probe_result, report: report1, probe: probe, detector: detector, passed: 6, total: 10)
 
         last_week = 1.week.ago
-        report2 = create(:report, target: target, scan: scan, created_at: last_week)
+        report2 = create(:report, company: company, target: target, scan: scan, created_at: last_week)
         create(:probe_result, report: report2, probe: probe, detector: detector, passed: 8, total: 10)
       end
 
       it 'returns data grouped by week' do
-        result = subject.average_attack_success_rate_over_time(2.weeks.ago, "week")
-
+        result = ActsAsTenant.with_tenant(company) { subject.average_attack_success_rate_over_time(2.weeks.ago, "week") }
 
         this_week_label = "#{Time.zone.today.to_date.cwyear}-Week #{Time.zone.today.strftime('%V')}"
         last_week_label = "#{1.week.ago.to_date.cwyear}-Week #{1.week.ago.strftime('%V')}"
@@ -163,13 +173,12 @@ RSpec.describe Stats::AverageAsrScore do
 
     context 'with monthly interval' do
       before do
-        report = create(:report, target: target, scan: scan, created_at: Time.zone.today)
+        report = create(:report, company: company, target: target, scan: scan, created_at: Time.zone.today)
         create(:probe_result, report: report, probe: probe, detector: detector, passed: 75, total: 100)
       end
 
       it 'returns data grouped by month' do
-        result = subject.average_attack_success_rate_over_time(1.month.ago, "month")
-
+        result = ActsAsTenant.with_tenant(company) { subject.average_attack_success_rate_over_time(1.month.ago, "month") }
 
         this_month_label = Time.zone.today.strftime("%Y-%m")
         this_month_index = result[:dates].find_index(this_month_label)

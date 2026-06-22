@@ -372,4 +372,22 @@ RSpec.describe Admin::ReportsController, type: :controller do
       }.to raise_error(ActiveRecord::RecordNotFound)
     end
   end
+
+  describe "batch actions are tenant-scoped (cross-tenant guard)" do
+    let!(:other_company) { create(:company, tier: :tier_4) }
+    let!(:other_report) { ActsAsTenant.with_tenant(other_company) { create(:report, :completed, company: other_company) } }
+
+    it "POST #batch_destroy does not delete another tenant's report" do
+      post :batch_destroy, params: { ids: [ other_report.id ] }
+
+      survives = ActsAsTenant.without_tenant { Report.where(id: other_report.id).exists? }
+      expect(survives).to be(true)
+    end
+
+    it "POST #batch_stop does not stop another tenant's report" do
+      expect(Reports::Stop).not_to receive(:new)
+
+      post :batch_stop, params: { ids: [ other_report.id ] }
+    end
+  end
 end

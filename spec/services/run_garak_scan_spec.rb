@@ -38,6 +38,22 @@ RSpec.describe RunGarakScan, type: :service do
       service.call
     end
 
+    it 'aborts and marks the report failed when the target URL fails the SSRF recheck' do
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:target).and_return(target)
+      allow(service).to receive(:all_probes_completed?).and_return(false)
+      allow(target).to receive(:rest_uri_safe?).and_return(false)
+
+      expect(service).not_to receive(:execute_scan)
+
+      service.call
+
+      report.reload
+      expect(report.status).to eq('failed')
+      expect(report.failure_code).to eq('target_url_unsafe')
+    end
+
     it 'fails the report if target has bad status' do
       bad_target = create(:target, :bad)
       bad_report = build(:report, target: bad_target, scan: scan)
@@ -457,7 +473,7 @@ RSpec.describe RunGarakScan, type: :service do
     describe '#call launch-failure cleanup' do
       it 'removes the web config file if the scan process fails to launch' do
         allow(service).to receive(:call).and_call_original
-        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true))
+        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, rest_uri_safe?: true))
         allow(service).to receive(:all_probes_completed?).and_return(false)
         allow(service).to receive(:build_argv).and_return([ 'echo' ])
         allow(service).to receive(:build_env).and_return({})
@@ -475,7 +491,7 @@ RSpec.describe RunGarakScan, type: :service do
 
       it 'removes the web config file when the scan process exits immediately (ImmediateExitError)' do
         allow(service).to receive(:call).and_call_original
-        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true))
+        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, rest_uri_safe?: true))
         allow(service).to receive(:all_probes_completed?).and_return(false)
         allow(service).to receive(:build_argv).and_return([ 'echo' ])
         allow(service).to receive(:build_env).and_return({})

@@ -197,4 +197,22 @@ RSpec.describe Admin::ScansController, type: :controller do
       end
     end
   end
+
+  describe "batch actions are tenant-scoped (cross-tenant guard)" do
+    let!(:other_company) { create(:company, tier: :tier_4) }
+    let!(:other_scan) { ActsAsTenant.with_tenant(other_company) { create(:complete_scan, company: other_company) } }
+
+    it "POST #batch_destroy does not delete another tenant's scan" do
+      post :batch_destroy, params: { ids: [ other_scan.id ] }
+
+      survives = ActsAsTenant.without_tenant { Scan.where(id: other_scan.id).exists? }
+      expect(survives).to be(true)
+    end
+
+    it "POST #batch_rerun does not rerun another tenant's scan" do
+      expect_any_instance_of(Scan).not_to receive(:rerun)
+
+      post :batch_rerun, params: { ids: [ other_scan.id ] }
+    end
+  end
 end

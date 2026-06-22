@@ -15,6 +15,11 @@ module OutputServers
       return unless output_server.enabled
       return unless output_server.server_type == "splunk"
 
+      unless output_server.destination_safe?
+        Rails.logger.error("[Splunk] aborting send for report #{report&.uuid}: host #{output_server.host} failed the SSRF recheck")
+        return
+      end
+
       uri = URI.parse(endpoint_url)
       http = setup_http_connection(uri)
 

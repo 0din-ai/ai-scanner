@@ -77,10 +77,17 @@ module Admin
       end
     end
 
-    # Batch action: destroy multiple environment variables
+    # Batch action: destroy multiple environment variables.
+    # SECURITY: authorize explicitly (the standalone POST route can reach this without
+    # going through #batch's dispatcher guard) and scope to the current tenant explicitly
+    # — acts_as_tenant returns ALL rows when the tenant is nil, so an unscoped
+    # `where(id:)` could delete other tenants' encrypted secrets.
     def batch_destroy
+      authorize EnvironmentVariable, :batch_destroy?
+      tenant = ActsAsTenant.current_tenant
       ids = params[:ids] || []
-      count = EnvironmentVariable.where(id: ids).destroy_all.count
+      scope = tenant ? EnvironmentVariable.where(company_id: tenant.id, id: ids) : EnvironmentVariable.none
+      count = scope.destroy_all.count
       redirect_to environment_variables_path,
                   notice: "#{count} environment variable(s) were successfully deleted.",
                   status: :see_other

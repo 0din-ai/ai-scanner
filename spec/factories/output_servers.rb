@@ -3,7 +3,9 @@ FactoryBot.define do
     association :company
     sequence(:name) { |n| "#{Faker::App.name}_#{n}" }
     server_type { 'splunk' }
-    host { Faker::Internet.ip_v4_address }
+    # Deterministic non-blocked (TEST-NET-3) address so the host-SSRF validation passes —
+    # Faker's random IPs can land in private/blocked ranges and flake.
+    host { '203.0.113.10' }
     port { 8088 }
     protocol { 'https' }
     endpoint_path { '/services/collector' }

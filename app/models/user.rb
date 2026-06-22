@@ -12,7 +12,7 @@ class User < ApplicationRecord
 
   # Devise modules (engine may add :omniauthable)
   devise :database_authenticatable, :recoverable, :rememberable,
-         :validatable, :lockable
+         :validatable, :lockable, :timeoutable
 
   # Super admin scopes and methods
   scope :super_admins, -> { where(super_admin: true) }

@@ -101,8 +101,12 @@ module Admin
 
     # Batch validate
     def batch_validate
+      # SECURITY: authorize explicitly (the standalone route bypasses #batch's guard)
+      # and scope to the current tenant — acts_as_tenant returns ALL rows when the
+      # tenant is nil, so an unscoped where(id:) could touch other tenants' targets.
+      authorize Target, :batch_validate?
       ids = params[:ids] || []
-      valid_targets = Target.where(id: ids).where(deleted_at: nil)
+      valid_targets = tenant_scoped_targets(ids).where(deleted_at: nil)
       target_count = valid_targets.count
 
       if target_count > 0
@@ -117,9 +121,10 @@ module Admin
 
     # Batch action: destroy (soft delete) multiple targets
     def batch_destroy
+      authorize Target, :batch_destroy?
       ids = params[:ids] || []
       count = 0
-      Target.where(id: ids).find_each do |target|
+      tenant_scoped_targets(ids).find_each do |target|
         target.mark_deleted!
         count += 1
       end
@@ -221,6 +226,15 @@ module Admin
     end
 
     private
+
+    # Fail-closed tenant scoping for batch operations: explicitly filter by the
+    # current company so a nil acts_as_tenant context can't span tenants.
+    def tenant_scoped_targets(ids)
+      tenant = ActsAsTenant.current_tenant
+      return Target.none unless tenant
+
+      Target.where(company_id: tenant.id, id: ids)
+    end
 
     def set_target
       # Allow show/restore to access deleted (archived) targets

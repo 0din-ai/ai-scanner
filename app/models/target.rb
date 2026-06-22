@@ -36,6 +36,7 @@ class Target < ApplicationRecord
   validates :model, presence: true, if: :api?
   validates :model, format: { with: MODEL_FORMAT, message: "contains invalid characters (only letters, numbers, hyphens, underscores, slashes, dots, colons, and @ are allowed)" }, if: -> { api? && model.present? }
   validate :json_config_is_valid_json, if: :json_config_should_be_validated?
+  validate :json_config_uri_is_safe, if: :json_config_should_be_validated?
   validate :web_config_is_valid, if: :webchat?
 
   before_validation :set_defaults_for_webchat
@@ -116,6 +117,19 @@ class Target < ApplicationRecord
     end
   end
 
+  # Re-validate the RestGenerator URI at SCAN-LAUNCH time. Save-time validation can't
+  # stop DNS rebinding (the host may point at an internal address by the time garak
+  # fetches it), so the scan runner re-checks right before launching. Returns true for
+  # non-REST targets (no uri to fetch).
+  def rest_uri_safe?
+    uri = rest_generator_uri
+    return true if uri.nil?
+    return false unless uri.is_a?(String) && uri.present?
+    return false if uri_host_has_placeholder?(uri)
+
+    UrlSafetyValidator.safe_url?(uri, allow_localhost: UrlSafetyValidator.allow_localhost?).safe?
+  end
+
   # Normalize Hash/Array to JSON string before the encrypted attribute type
   # casts via .to_s (which produces Ruby notation, not valid JSON).
   def json_config=(value)
@@ -176,6 +190,55 @@ class Target < ApplicationRecord
     JSON.parse(json_config)
   rescue JSON::ParserError => e
     errors.add(:json_config, "must be valid JSON. Error: #{e.message}")
+  end
+
+  # SECURITY: the RestGenerator uri is fetched by garak as the scan target. Without a
+  # check a tenant could point it at internal/metadata addresses (SSRF). Resolve + block
+  # internal ranges, fail closed. The host may also contain env-var placeholders (e.g.
+  # "$SSRF_HOST") that are substituted at scan time before garak runs — reject those too,
+  # since the substituted value isn't screened here.
+  def json_config_uri_is_safe
+    uri = rest_generator_uri
+    return if uri.nil?
+
+    unless uri.is_a?(String)
+      errors.add(:json_config, "target URL must be a string")
+      return
+    end
+    return if uri.blank?
+
+    if uri_host_has_placeholder?(uri)
+      errors.add(:json_config, "target URL host must not contain environment-variable placeholders")
+      return
+    end
+
+    result = UrlSafetyValidator.safe_url?(uri, allow_localhost: UrlSafetyValidator.allow_localhost?)
+    return if result.safe?
+
+    errors.add(:json_config, "target URL is not allowed: #{result.error}")
+  end
+
+  def uri_host_has_placeholder?(uri)
+    URI.parse(uri).host.to_s.include?("$")
+  rescue URI::InvalidURIError
+    false
+  end
+
+  def rest_generator_uri
+    return nil if json_config.blank?
+
+    parsed = JSON.parse(json_config)
+    return nil unless parsed.is_a?(Hash)
+
+    rest = parsed["rest"]
+    return nil unless rest.is_a?(Hash)
+
+    generator = rest["RestGenerator"]
+    return nil unless generator.is_a?(Hash)
+
+    generator["uri"]
+  rescue JSON::ParserError
+    nil
   end
 
   def web_config_is_valid

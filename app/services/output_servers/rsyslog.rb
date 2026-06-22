@@ -1,5 +1,10 @@
 module OutputServers
   class Rsyslog
+    # SECURITY: TLS cert/key/CA paths come from tenant-controlled additional_settings.
+    # Only honor paths inside an operator-configured allowlist directory (SIEM_CERT_DIR)
+    # so a tenant cannot read arbitrary files (e.g. /etc/passwd, config/master.key).
+    ALLOWED_CERT_DIR = ENV["SIEM_CERT_DIR"].presence
+
     attr_reader :report
 
     def initialize(report)
@@ -10,6 +15,11 @@ module OutputServers
       return unless output_server
       return unless output_server.enabled
       return unless output_server.server_type == "rsyslog"
+
+      unless output_server.destination_safe?
+        Rails.logger.error("[rsyslog] aborting send for report #{report&.uuid}: host #{output_server.host} failed the SSRF recheck")
+        return
+      end
 
       begin
         case output_server.protocol
@@ -34,6 +44,35 @@ module OutputServers
 
     def output_server
       report.scan.output_server
+    end
+
+    # Returns an absolute path ONLY if it resides inside the allowlisted
+    # SIEM_CERT_DIR and the file exists; otherwise nil (path rejected/logged).
+    # Prevents tenant-supplied additional_settings from reading arbitrary files.
+    def safe_cert_path(path)
+      return nil if path.blank?
+
+      if ALLOWED_CERT_DIR.blank?
+        Rails.logger.error("[rsyslog] TLS cert path ignored: SIEM_CERT_DIR is not configured")
+        return nil
+      end
+
+      base = File.expand_path(ALLOWED_CERT_DIR)
+      expanded = File.expand_path(path, base)
+      unless expanded.start_with?(base + File::SEPARATOR) && File.file?(expanded)
+        Rails.logger.error("[rsyslog] TLS cert path rejected (outside #{ALLOWED_CERT_DIR}): #{path}")
+        return nil
+      end
+
+      expanded
+    end
+
+    # Abort a TLS send (return without connecting) when a configured cert/CA path is
+    # rejected, so we never ship report data without the cert/verification the
+    # operator explicitly configured.
+    def abort_tls_send(reason)
+      Rails.logger.error("[rsyslog] aborting TLS send for #{report.uuid}: #{reason}")
+      nil
     end
 
     def send_via_udp
@@ -72,15 +111,26 @@ module OutputServers
         begin
           settings = JSON.parse(output_server.additional_settings)
 
-          # Add client certificates if provided
-          if settings["tls_cert_file"] && settings["tls_key_file"]
-            context.cert = OpenSSL::X509::Certificate.new(File.read(settings["tls_cert_file"]))
-            context.key = OpenSSL::PKey::RSA.new(File.read(settings["tls_key_file"]))
+          # Client certificates (paths constrained to SIEM_CERT_DIR). If the operator
+          # configured a cert/key but the path is rejected, ABORT — do not connect
+          # without the client cert they required.
+          if settings["tls_cert_file"].present? || settings["tls_key_file"].present?
+            cert_path = safe_cert_path(settings["tls_cert_file"])
+            key_path = safe_cert_path(settings["tls_key_file"])
+            return abort_tls_send("client certificate path not allowed (set SIEM_CERT_DIR)") unless cert_path && key_path
+
+            context.cert = OpenSSL::X509::Certificate.new(File.read(cert_path))
+            context.key = OpenSSL::PKey::RSA.new(File.read(key_path))
           end
 
-          # Add CA certificate if provided
-          if settings["ca_file"]
-            context.ca_file = settings["ca_file"]
+          # CA certificate (path constrained to SIEM_CERT_DIR). If configured but
+          # rejected, ABORT rather than silently downgrading to VERIFY_NONE — sending
+          # report data without the requested server verification is a MITM risk.
+          if settings["ca_file"].present?
+            ca_path = safe_cert_path(settings["ca_file"])
+            return abort_tls_send("CA certificate path not allowed (set SIEM_CERT_DIR)") unless ca_path
+
+            context.ca_file = ca_path
             context.verify_mode = OpenSSL::SSL::VERIFY_PEER
           end
         rescue JSON::ParserError => e

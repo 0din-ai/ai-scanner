@@ -82,18 +82,24 @@ module Admin
     end
 
     # Batch action: stop multiple reports
+    # SECURITY: authorize explicitly (the standalone route bypasses #batch's guard, and
+    # verify_authorized is an after_action so the work would otherwise run before authz)
+    # and scope to the current tenant — acts_as_tenant returns ALL rows when the tenant
+    # is nil (require_tenant=false), so an unscoped where(id:) could span tenants.
     def batch_stop
+      authorize Report, :batch_stop?
       ids = params[:ids] || []
-      Report.where(id: ids).find_each do |report|
+      tenant_scoped_reports(ids).find_each do |report|
         Reports::Stop.new(report).call
       end
       redirect_to reports_path(preserve_params), notice: "Selected reports have been stopped."
     end
 
-    # Batch action: destroy multiple reports
+    # Batch action: destroy multiple reports (see batch_stop for the SECURITY rationale).
     def batch_destroy
+      authorize Report, :batch_destroy?
       ids = params[:ids] || []
-      count = Report.where(id: ids).destroy_all.count
+      count = tenant_scoped_reports(ids).destroy_all.count
       redirect_to reports_path(preserve_params), notice: "#{count} reports were successfully deleted.", status: :see_other
     end
 
@@ -236,6 +242,15 @@ module Admin
     end
 
     private
+
+    # Fail-closed tenant scoping for batch operations: explicitly filter by the current
+    # company so a nil acts_as_tenant context can't span tenants.
+    def tenant_scoped_reports(ids)
+      tenant = ActsAsTenant.current_tenant
+      return Report.none unless tenant
+
+      Report.where(company_id: tenant.id, id: ids)
+    end
 
     def set_report
       @report = Report.includes(:target, :scan,

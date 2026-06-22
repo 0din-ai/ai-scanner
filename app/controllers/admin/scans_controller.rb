@@ -130,14 +130,19 @@ module Admin
     end
 
     # Batch actions
+    # SECURITY: authorize explicitly (the standalone route bypasses #batch's guard, and
+    # verify_authorized is an after_action so the work would otherwise run before authz)
+    # and scope to the current tenant — acts_as_tenant returns ALL rows when the tenant
+    # is nil (require_tenant=false), so an unscoped where(id:) could span tenants.
     def batch_rerun
+      authorize Scan, :batch_rerun?
       ids = params[:ids] || []
       unless current_company.scan_allowed?
         redirect_to scans_path(scope: params[:scope]), alert: quota_exhausted_message
         return
       end
       count = 0
-      Scan.where(id: ids).find_each do |scan|
+      tenant_scoped_scans(ids).find_each do |scan|
         scan.rerun
         count += 1
       end
@@ -145,12 +150,22 @@ module Admin
     end
 
     def batch_destroy
+      authorize Scan, :batch_destroy?
       ids = params[:ids] || []
-      destroyed = Scan.where(id: ids).destroy_all.count
+      destroyed = tenant_scoped_scans(ids).destroy_all.count
       redirect_to scans_path(scope: params[:scope]), notice: "#{destroyed} scan(s) have been deleted.", status: :see_other
     end
 
     private
+
+    # Fail-closed tenant scoping for batch operations: explicitly filter by the current
+    # company so a nil acts_as_tenant context can't span tenants.
+    def tenant_scoped_scans(ids)
+      tenant = ActsAsTenant.current_tenant
+      return Scan.none unless tenant
+
+      Scan.where(company_id: tenant.id, id: ids)
+    end
 
     def set_scan
       @scan = Scan.find(params[:id])
