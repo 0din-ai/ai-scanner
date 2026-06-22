@@ -53,6 +53,34 @@ RSpec.describe "ReportDetails", type: :request do
         expect(response).to have_http_status(:ok)
       end
 
+      it "keeps each probe card together for PDF (break-inside-avoid on details + summary, no dead class)" do
+        detector = create(:detector, name: "detector.0din.BreakD")
+        probe = create(:probe, name: "BreakProbe")
+
+        ActsAsTenant.with_tenant(company) do
+          report.scan.probes << probe unless report.scan.probes.exists?(probe.id)
+          create(:probe_result, report: report, probe: probe, detector: detector,
+                 passed: 1, total: 1, any_detector_passed: true, attempts: [
+                   { "uuid" => "brk-1", "prompt" => "p1", "outputs" => [ "o1" ], "notes" => {}, "attack_succeeded" => true }
+                 ])
+        end
+
+        get report_detail_path(report, pdf: "true", pdf_token: pdf_token)
+
+        expect(response).to have_http_status(:ok)
+        doc = Nokogiri::HTML(response.body)
+
+        details = doc.at_css("details#probe-#{probe.id}")
+        expect(details).to be_present
+        expect(details["class"].split).to include("break-inside-avoid")
+
+        summary = details.at_css("summary")
+        expect(summary["class"].split).to include("break-inside-avoid")
+
+        # The dead Tailwind-v3 class must not return (it compiles to nothing).
+        expect(response.body).not_to include("page-break-inside-avoid")
+      end
+
       it "renders historical reports whose targets have been soft-deleted" do
         target_name = report.target.name
         ActsAsTenant.with_tenant(company) { report.target.mark_deleted! }
