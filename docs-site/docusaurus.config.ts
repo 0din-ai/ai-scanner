@@ -86,8 +86,9 @@ const config: Config = {
     navbar: {
       title: "0din.ai Docs",
       logo: {
-        alt: "0din.ai",
-        src: "img/logo.png",
+        alt: "0DIN by Mozilla",
+        src: "img/0DIN-Logo-Black.svg",
+        srcDark: "img/0DIN-Logo-White.svg",
       },
       items: [],
     },
