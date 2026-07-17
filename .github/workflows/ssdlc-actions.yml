@@ -1,0 +1,15 @@
+name: ssdlc-actions
+
+permissions: {}
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  code-security-analysis:
+    permissions:
+      security-events: write
+    uses: mozilla/ssdlc-actions/.github/workflows/code-security-analysis-public-repo.yml@ca8be48f3c06204fb16a3bd5ffa6d916782bbc76 # v1
