@@ -18,6 +18,7 @@ const sidebars: SidebarsConfig = {
           items: [
             "getting-started/quick-start",
             "getting-started/first-scan",
+            "getting-started/featured-vulnerabilities",
           ],
         },
         {
