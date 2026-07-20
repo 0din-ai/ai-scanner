@@ -22,7 +22,7 @@ An open-source web application for AI model security assessments, built with Rub
 
 ## Community & Enterprise
 
-Join the community, share feedback, or talk to us about a turn-key SaaS deployment — everything lives on the [Scanner landing page](https://0din.ai/marketing/opensource_scanner?utm_source=github&utm_medium=readme&utm_campaign=opensourcescanner).
+Join the community, share feedback, or talk to us about a turn-key SaaS deployment — everything lives on the [Scanner landing page](https://0din.ai/marketing/open_source_scanner?utm_source=github&utm_medium=readme&utm_campaign=opensourcescanner).
 
 ## Quick Start
 
