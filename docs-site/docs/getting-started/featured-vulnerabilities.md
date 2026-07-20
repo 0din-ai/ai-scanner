@@ -5,7 +5,7 @@ title: Featured Vulnerabilities
 
 # Featured Vulnerabilities
 
-Scanner ships with real, 0DIN-disclosed jailbreaks as ready-to-run probes. The six tactics below are drawn straight from the [0DIN Jailbreak Feed](https://0din.ai/threatfeed?utm_source=0din.ai&utm_medium=open_source_scanner&utm_campaign=opensourcescanner&utm_content=featured_vulnerabilities) and are bundled with the scanner today — each one carries the original attack prompt plus **34 retargetable variants** so you can measure how a given tactic performs against your own targets.
+Scanner ships with real, 0DIN-disclosed jailbreaks as ready-to-run probes. The six tactics below are drawn straight from the [0DIN Jailbreak Feed](https://0din.ai/threatfeed?utm_source=0din.ai&utm_medium=open_source_scanner&utm_campaign=opensourcescanner&utm_content=featured_vulnerabilities) and are bundled with the scanner today - each one carries the original attack prompt plus **34 retargetable variants** so you can measure how a given tactic performs against your own targets.
 
 These are not simulations. Every entry links to its public threat report, which includes the affected models (blast radius), taxonomy classification, reproducibility scores, and mitigation guidance.
 
@@ -22,29 +22,27 @@ These are not simulations. Every entry links to its public threat report, which 
 
 ## What each tactic does
 
-- **Placeholder Injection** — Coaxes the model into reproducing copyrighted material by asking for output with each word separated by a placeholder token, sidestepping content filters.
-- **Incremental Table Completion** — Builds a partially filled table and escalates requests for the "missing" cells, walking the model past its refusal boundary one step at a time.
-- **Technical Field Guide** — Wraps a harmful request in law-enforcement framing and structured technical requirements to bypass inference restrictions.
-- **Chemical Compiler Debug** — Encodes instructions as a "chemical compiler" input with explicit bypass commands, pushing the model to resolve the encoded payload.
-- **Correction** — Presents illicit detail under the guise of "forensic chemical investigation," then asks the model to correct it, eliciting the withheld specifics.
-- **Hex Recipe Book** — Combines hex encoding with scientific framing to smuggle a harmful request past guardrails.
+- **Placeholder Injection** - Coaxes the model into reproducing copyrighted material by asking for output with each word separated by a placeholder token, sidestepping content filters.
+- **Incremental Table Completion** - Builds a partially filled table and escalates requests for the "missing" cells, walking the model past its refusal boundary one step at a time.
+- **Technical Field Guide** - Wraps a harmful request in law-enforcement framing and structured technical requirements to bypass inference restrictions.
+- **Chemical Compiler Debug** - Encodes instructions as a "chemical compiler" input with explicit bypass commands, pushing the model to resolve the encoded payload.
+- **Correction** - Presents illicit detail under the guise of "forensic chemical investigation," then asks the model to correct it, eliciting the withheld specifics.
+- **Hex Recipe Book** - Combines hex encoding with scientific framing to smuggle a harmful request past guardrails.
 
 ## Run them against your own target
 
-Once you have a target configured (see [Your First Scan](./first-scan)), these probes run like any other. No AI red-team expertise required — configure the target, run the suite, and read the report.
+Once you have a target configured (see [Your First Scan](./first-scan)), these probes run like any other. No AI red-team expertise required - configure the target, run the scan, and read the report, all from the web UI.
 
-```bash
-# List available 0DIN probes
-garak --list_probes | grep 0din
-
-# Run a single featured probe against your target
-garak --model_type <your-target> --probes 0din.PlaceholderInjectionHP
-```
+1. Go to **Targets** and add your model as a new target.
+2. Go to **Scans**, click **New Scan**, and choose your target.
+3. Under **Probes**, select the featured probe you want to run (for example, `PlaceholderInjectionHP`), or select several.
+4. Click **Run Scan** and watch progress in real time.
+5. When the scan completes, open **View Report** to see the results.
 
 Each run reports an **Attack Success Rate (ASR)** per probe and per variant, so you can track how a tactic performs across models and over time.
 
 ## Learn more
 
-- [0DIN Jailbreak Feed ↗](https://0din.ai/threatfeed?utm_source=0din.ai&utm_medium=open_source_scanner&utm_campaign=opensourcescanner&utm_content=featured_vulnerabilities) — the full stream of disclosed vulnerabilities
-- [0DIN Jailbreak Taxonomy ↗](https://0din.ai/research/taxonomy) — how these techniques are classified
-- [Probes](/scanner-introduction) — how probe packs plug into your scanning workflow
+- [0DIN Jailbreak Feed ↗](https://0din.ai/threatfeed?utm_source=0din.ai&utm_medium=open_source_scanner&utm_campaign=opensourcescanner&utm_content=featured_vulnerabilities) - the full stream of disclosed vulnerabilities
+- [0DIN Jailbreak Taxonomy ↗](https://0din.ai/research/taxonomy) - how these techniques are classified
+- [Probes](/scanner-introduction) - how probe packs plug into your scanning workflow

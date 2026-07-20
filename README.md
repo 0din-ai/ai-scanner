@@ -46,7 +46,7 @@ See the [Quick Start guide](https://0din.ai/docs/getting-started/quick-start?utm
 
 ## Featured Vulnerabilities
 
-Scanner ships with real, 0DIN-disclosed jailbreaks as ready-to-run probes — not simulations. Six of them are highlighted below, each bundled with the original attack prompt plus 34 retargetable variants and linked to its public threat report (affected models, taxonomy, reproducibility scores, and mitigations).
+Scanner ships with real, 0DIN-disclosed jailbreaks as ready-to-run probes - not simulations. Six of them are highlighted below, each bundled with the original attack prompt plus 34 retargetable variants and linked to its public threat report (affected models, taxonomy, reproducibility scores, and mitigations).
 
 | Tactic | Scanner probe | Threat report |
 |--------|---------------|---------------|
