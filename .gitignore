@@ -100,8 +100,3 @@ bin/rspec-docker
 docs/plans/
 docs/plans/completed/
 docs/superpowers/
-
-# Docusaurus docs site build artifacts
-docs-site/build/
-docs-site/node_modules/
-docs-site/.docusaurus/
