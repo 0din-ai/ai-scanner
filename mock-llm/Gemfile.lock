@@ -2,7 +2,7 @@ GEM
   remote: https://rubygems.org/
   specs:
     drb (2.2.3)
-    json (2.19.4)
+    json (2.19.9)
     minitest (6.0.5)
       drb (~> 2.0)
       prism (~> 1.5)
