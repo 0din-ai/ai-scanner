@@ -10,6 +10,6 @@ jobs:
   sbom:
     permissions:
       contents: write
-    uses: mozilla/ssdlc-actions/.github/workflows/ssdlc-sbom.yml@ca8be48f3c06204fb16a3bd5ffa6d916782bbc76 # v1
+    uses: mozilla/ssdlc-actions/.github/workflows/ssdlc-sbom.yml@507c5535545434e6892219c12d8d56a2b39bf710 # v1.1
     with:
       sbom_name: ai-scanner
