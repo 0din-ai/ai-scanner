@@ -3,7 +3,7 @@
 This generator enables interaction with web-based chatbots through browser automation.
 It uses Playwright to navigate to chatbot interfaces, send prompts, and extract responses.
 
-Requires garak 0.14.1 (uses Conversation/Message API).
+Requires garak 0.16.0 (uses Conversation/Message API).
 """
 
 import logging
@@ -199,7 +199,7 @@ class WebChatbotGenerator(Generator):
         """Send prompt to web chatbot and extract response (sync wrapper for async implementation)
 
         Args:
-            prompt: Conversation object (garak 0.14.1) or string
+            prompt: Conversation object or string
             generations_this_call: Number of generations (currently only 1 supported)
 
         Returns:
@@ -323,7 +323,7 @@ class WebChatbotGenerator(Generator):
             response = await self._wait_for_response(initial_state)
             logging.debug(f"Response received: {response[:100] if response else 'None'}")
 
-            # Return Message object (garak 0.14.1 format)
+            # Return Message object (garak Conversation/Message format)
             return [Message(text=response) if response else None]
 
         except PlaywrightTimeoutError:
