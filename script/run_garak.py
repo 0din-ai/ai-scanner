@@ -214,8 +214,23 @@ def main():
                 f"Target: {target_name}")
 
     if not is_validation:
-        # Notify Rails that the report is running with PID (also sets initial heartbeat_at)
-        notify_report_running(report_uuid, current_pid)
+        # Notify Rails that the report is running with PID (also sets initial heartbeat_at).
+        #
+        # Abort if this fails. It is the only writer of status='running', and
+        # HeartbeatThread's update matches "... AND status = 'running'", so a report left
+        # in 'starting' makes every heartbeat affect zero rows. The thread reads that as
+        # "status changed" and answers with SIGTERM, killing a healthy scan about one
+        # heartbeat interval in. CheckStaleReportsJob then retries the report up to
+        # MAX_START_RETRIES times and finally records "Failed after N start attempts.
+        # Each attempt timed out" -- which never happened; each process started fine.
+        # Failing here costs one attempt instead of four and leaves an accurate reason.
+        if not notify_report_running(report_uuid, current_pid):
+            logger.error(
+                f"Failed to mark report {report_uuid} as running (pid={current_pid}); "
+                f"aborting before the scan starts, because the heartbeat would terminate "
+                f"it mid-run while the report is not in 'running' status"
+            )
+            sys.exit(1)
 
         heartbeat = HeartbeatThread(report_uuid)
         current_heartbeat = heartbeat
