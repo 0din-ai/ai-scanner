@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility checks for the local OSS garak 0.14.1 integration."""
+"""Compatibility checks for the local OSS garak 0.16.0 integration."""
 
 import importlib
 import importlib.metadata
@@ -30,12 +30,12 @@ def _load_local_plugin(module_name, relative_path):
 
 
 class TestGarakDistribution(unittest.TestCase):
-    def test_requirements_pin_garak_0141(self):
-        self.assertEqual((ROOT / "garak-requirements.txt").read_text().strip(), "garak==0.14.1")
+    def test_requirements_pin_garak_0160(self):
+        self.assertEqual((ROOT / "garak-requirements.txt").read_text().strip(), "garak==0.16.0")
 
     @unittest.skipUnless(_garak_available(), "garak is not importable")
-    def test_installed_garak_version_is_0141(self):
-        self.assertEqual(importlib.metadata.version("garak"), "0.14.1")
+    def test_installed_garak_version_is_0160(self):
+        self.assertEqual(importlib.metadata.version("garak"), "0.16.0")
 
     @unittest.skipUnless(_garak_available(), "garak is not importable")
     def test_garak_cli_exposes_scanner_flags(self):
@@ -63,7 +63,7 @@ class TestGarakDistribution(unittest.TestCase):
 
 @unittest.skipUnless(_garak_available(), "garak is not importable")
 class TestGarakPluginApis(unittest.TestCase):
-    def test_garak_0141_base_classes_use_current_language_attributes(self):
+    def test_garak_base_classes_use_current_language_attributes(self):
         from garak.detectors.base import Detector
         from garak.generators.openai import OpenAICompatible
         from garak.probes.base import Probe
@@ -75,7 +75,7 @@ class TestGarakPluginApis(unittest.TestCase):
         self.assertTrue(hasattr(OpenAICompatible, "_load_unsafe"))
         self.assertFalse(hasattr(OpenAICompatible, "_load_client"))
 
-    def test_openrouter_generator_pins_0141_openai_compatible_settings(self):
+    def test_openrouter_generator_pins_openai_compatible_settings(self):
         module = _load_local_plugin("local_openrouter", "openrouter.py")
 
         self.assertEqual(module.OPENROUTER_BASE_URL, "https://openrouter.ai/api/v1")
