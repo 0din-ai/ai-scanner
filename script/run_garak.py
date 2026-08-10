@@ -230,6 +230,16 @@ def main():
                 f"aborting before the scan starts, because the heartbeat would terminate "
                 f"it mid-run while the report is not in 'running' status"
             )
+            # This exit precedes the try/finally below, so do here what the other exit
+            # paths do. notify_report_stopped is PID-safe, so it is a no-op when nothing
+            # was recorded: the pool hands out autocommit connections, so the status/pid
+            # UPDATE can already be committed when the report_debug_logs statement that
+            # follows fails and returns False, leaving a dead process recorded as
+            # running. Rails also wrote the credential-bearing <uuid>_web.json before
+            # launching us, and once it has accepted the process as started its own
+            # rescue no longer removes it.
+            notify_report_stopped(report_uuid)
+            remove_web_config_file(report_uuid)
             sys.exit(1)
 
         heartbeat = HeartbeatThread(report_uuid)
