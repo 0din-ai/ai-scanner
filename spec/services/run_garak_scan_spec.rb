@@ -43,7 +43,7 @@ RSpec.describe RunGarakScan, type: :service do
       allow(service).to receive(:call).and_call_original
       allow(service).to receive(:target).and_return(target)
       allow(service).to receive(:all_probes_completed?).and_return(false)
-      allow(target).to receive(:rest_uri_safe?).and_return(false)
+      allow(target).to receive(:scan_launch_url_safe?).and_return(false)
 
       expect(service).not_to receive(:execute_scan)
 
@@ -473,7 +473,7 @@ RSpec.describe RunGarakScan, type: :service do
     describe '#call launch-failure cleanup' do
       it 'removes the web config file if the scan process fails to launch' do
         allow(service).to receive(:call).and_call_original
-        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, rest_uri_safe?: true))
+        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, scan_launch_url_safe?: true))
         allow(service).to receive(:all_probes_completed?).and_return(false)
         allow(service).to receive(:build_argv).and_return([ 'echo' ])
         allow(service).to receive(:build_env).and_return({})
@@ -491,7 +491,7 @@ RSpec.describe RunGarakScan, type: :service do
 
       it 'removes the web config file when the scan process exits immediately (ImmediateExitError)' do
         allow(service).to receive(:call).and_call_original
-        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, rest_uri_safe?: true))
+        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, scan_launch_url_safe?: true))
         allow(service).to receive(:all_probes_completed?).and_return(false)
         allow(service).to receive(:build_argv).and_return([ 'echo' ])
         allow(service).to receive(:build_env).and_return({})

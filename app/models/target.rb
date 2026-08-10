@@ -121,13 +121,16 @@ class Target < ApplicationRecord
   # stop DNS rebinding (the host may point at an internal address by the time garak
   # fetches it), so the scan runner re-checks right before launching. Returns true for
   # non-REST targets (no uri to fetch).
-  def rest_uri_safe?
-    uri = rest_generator_uri
-    return true if uri.nil?
-    return false unless uri.is_a?(String) && uri.present?
-    return false if uri_host_has_placeholder?(uri)
+  # Launch-time safety for whichever URL the scan will actually reach. Webchat targets
+  # are driven by a browser rather than a RestGenerator, so checking only the latter
+  # passes them vacuously and leaves the rebinding window open for the browser path.
+  def scan_launch_url_safe?
+    url_safe_for_scan_launch?(scan_launch_url)
+  end
 
-    UrlSafetyValidator.safe_url?(uri, allow_localhost: UrlSafetyValidator.allow_localhost?).safe?
+  # REST-only compatibility predicate for callers that do not need webchat coverage.
+  def rest_uri_safe?
+    url_safe_for_scan_launch?(rest_generator_uri)
   end
 
   # Normalize Hash/Array to JSON string before the encrypted attribute type
@@ -216,6 +219,18 @@ class Target < ApplicationRecord
     return if result.safe?
 
     errors.add(:json_config, "target URL is not allowed: #{result.error}")
+  end
+
+  def url_safe_for_scan_launch?(uri)
+    return true if uri.nil?
+    return false unless uri.is_a?(String) && uri.present?
+    return false if uri_host_has_placeholder?(uri)
+
+    UrlSafetyValidator.safe_url?(uri, allow_localhost: UrlSafetyValidator.allow_localhost?).safe?
+  end
+
+  def scan_launch_url
+    webchat? ? web_chat_url : rest_generator_uri
   end
 
   def uri_host_has_placeholder?(uri)

@@ -30,10 +30,12 @@ class RunGarakScan
       return
     end
 
-    # Re-validate the RestGenerator URL just before launch. Save-time validation can't
-    # stop DNS rebinding — the host may resolve to an internal address by now even if it
-    # was safe when the target was saved. Only reached when garak will actually run.
-    unless target.rest_uri_safe?
+    # Re-validate the URL the scan will actually reach, just before launch. Save-time
+    # validation can't stop DNS rebinding — the host may resolve to an internal address
+    # by now even if it was safe when the target was saved. Covers the webchat URL as
+    # well as the RestGenerator one; the browser path is reachable the same way.
+    # Only reached when garak will actually run.
+    unless target.scan_launch_url_safe?
       handle_unsafe_target_uri
       return
     end
@@ -146,7 +148,7 @@ class RunGarakScan
 
   def handle_unsafe_target_uri
     error_message = "Target '#{target.name}' URL failed a safety check (it may resolve to a disallowed address). The scan was aborted."
-    Rails.logger.error("[RunGarakScan] aborting report #{report.id}: target #{target.id} (#{target.name}) RestGenerator URL failed the SSRF recheck")
+    Rails.logger.error("[RunGarakScan] aborting report #{report.id}: target #{target.id} (#{target.name}) URL failed the SSRF recheck")
     sanitized = Reports::FailureClassifier.sanitize_text(error_message)
     report.update(
       status: :failed,
