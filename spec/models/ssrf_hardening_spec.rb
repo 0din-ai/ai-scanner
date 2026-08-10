@@ -10,6 +10,19 @@ RSpec.describe "SSRF hardening" do
       build(:target, company: company, json_config: { rest: { RestGenerator: { uri: uri } } }.to_json)
     end
 
+    def webchat_target(url)
+      build(
+        :target,
+        company: company,
+        target_type: "webchat",
+        model_type: "web_chatbot",
+        web_config: {
+          url: url,
+          selectors: { input_field: "#input", response_container: "#response" }
+        }.to_json
+      )
+    end
+
     it "rejects a RestGenerator uri that resolves to internal/metadata addresses" do
       ActsAsTenant.with_tenant(company) do
         # 169.254 (cloud metadata) + RFC1918 are blocked regardless of env. Loopback is
@@ -58,6 +71,27 @@ RSpec.describe "SSRF hardening" do
 
         # non-REST target (no uri to fetch) is considered safe
         expect(build(:target, company: company).rest_uri_safe?).to be(true)
+      end
+    end
+
+    it "Target#scan_launch_url_safe? re-validates a webchat URL at launch time" do
+      # Save-time validation cannot stop DNS rebinding, which is why the launch-time
+      # recheck exists. It has to cover webchat targets too: rest_uri_safe? inspects
+      # the RestGenerator uri, which is nil for webchat, so it passes vacuously.
+      ActsAsTenant.with_tenant(company) do
+        internal = webchat_target("http://169.254.169.254/chat")
+        expect(internal.scan_launch_url_safe?).to be(false)
+
+        # IP literal, like the REST cases above: hostnames do not resolve in CI.
+        public_t = webchat_target("http://8.8.8.8/widget")
+        expect(public_t.scan_launch_url_safe?).to be(true)
+
+        # A REST target still resolves through its RestGenerator uri.
+        expect(api_target("http://169.254.169.254/").scan_launch_url_safe?).to be(false)
+        expect(api_target("http://8.8.8.8/v1").scan_launch_url_safe?).to be(true)
+
+        # A target with neither URL has nothing to reach.
+        expect(build(:target, company: company).scan_launch_url_safe?).to be(true)
       end
     end
   end
