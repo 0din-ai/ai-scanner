@@ -59,44 +59,71 @@ finally:
 
 
 class TestRunningNotificationFailureIsFatal(unittest.TestCase):
-    def _run_main(self, running_result, uuid="report-uuid-123"):
+    def _run_main(self, running_result, uuid="report-uuid-123", config_dir=None):
         # run_garak is imported once per process, so whichever test module imports it
         # first supplies these module-level constants. Pin them here (as Path, since
         # run_garak builds paths with `/`) so this test does not depend on that order.
         tmp = Path(tempfile.mkdtemp())
+        config_dir = config_dir or (tmp / "config")
+        config_dir.mkdir(parents=True, exist_ok=True)
         with patch.object(run_garak, "REPORTS_PATH", tmp), \
-             patch.object(run_garak, "CONFIG_PATH", tmp / "config"), \
+             patch.object(run_garak, "CONFIG_PATH", config_dir), \
              patch.object(run_garak, "notify_report_running", return_value=running_result), \
              patch.object(run_garak, "run_garak_scan", return_value=0) as mock_scan, \
              patch.object(run_garak, "HeartbeatThread") as mock_heartbeat, \
              patch.object(run_garak, "JournalSyncThread"), \
              patch.object(run_garak, "notify_report_ready", return_value=True), \
              patch.object(run_garak, "notify_report_ready_from_synced", return_value=True), \
-             patch.object(run_garak, "notify_report_stopped", return_value=True), \
+             patch.object(run_garak, "notify_report_stopped", return_value=True) as mock_stopped, \
              patch.object(run_garak, "load_existing_jsonl_prefix", return_value=""), \
              patch.object(run_garak, "get_log_file_path", return_value=tmp / "report.log"), \
              patch.object(sys, "argv", ["run_garak.py", uuid]):
             with self.assertRaises(SystemExit) as ctx:
                 run_garak.main()
-        return ctx.exception.code, mock_scan, mock_heartbeat
+        return ctx.exception.code, mock_scan, mock_heartbeat, mock_stopped
 
     def test_exits_nonzero_and_skips_the_scan_when_the_running_write_fails(self):
-        code, mock_scan, mock_heartbeat = self._run_main(running_result=False)
+        code, mock_scan, mock_heartbeat, _stopped = self._run_main(running_result=False)
 
         self.assertEqual(code, 1)
         # Starting the scan would guarantee a SIGTERM from the heartbeat ~30s later.
         mock_scan.assert_not_called()
         mock_heartbeat.assert_not_called()
 
+    def test_removes_the_credential_web_config_on_the_abort_path(self):
+        """The abort returns before main()'s try/finally, so it must delete the
+        credential-bearing <uuid>_web.json itself. Rails writes that file before
+        launching this process, and once the process is accepted as started its own
+        startup rescue no longer removes it."""
+        config_dir = Path(tempfile.mkdtemp())
+        web_config = config_dir / "report-uuid-123_web.json"
+        web_config.write_text('{"cookies": [{"name": "session", "value": "secret"}]}')
+
+        code, _scan, _hb, _stopped = self._run_main(running_result=False, config_dir=config_dir)
+
+        self.assertEqual(code, 1)
+        self.assertFalse(web_config.exists(), "credential web config left on disk")
+
+    def test_clears_the_recorded_pid_on_the_abort_path(self):
+        """notify_report_running() can return False after the reports row is already
+        committed: the pool hands out autocommit connections, so the status/pid UPDATE
+        lands before the report_debug_logs statement that follows can fail. Without
+        this, a dead process stays recorded as running until the reaper notices.
+        The call is PID-safe, so it is a no-op when nothing was recorded."""
+        code, _scan, _hb, mock_stopped = self._run_main(running_result=False)
+
+        self.assertEqual(code, 1)
+        mock_stopped.assert_called_once_with("report-uuid-123")
+
     def test_still_runs_the_scan_when_the_running_write_succeeds(self):
-        code, mock_scan, _mock_heartbeat = self._run_main(running_result=True)
+        code, mock_scan, _mock_heartbeat, _stopped = self._run_main(running_result=True)
 
         self.assertEqual(code, 0)
         mock_scan.assert_called_once()
 
     def test_validation_runs_do_not_require_the_running_write(self):
         # Validation runs have no database report record, so they never notify.
-        code, mock_scan, mock_heartbeat = self._run_main(
+        code, mock_scan, mock_heartbeat, _stopped = self._run_main(
             running_result=False, uuid="validation_abc"
         )
 
