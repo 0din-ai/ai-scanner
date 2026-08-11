@@ -14,6 +14,9 @@ class RunGarakScan
 
   def initialize(report)
     @report = report
+    # Remember which attempt this instance is, independently of the row, which any
+    # other pod may change under us.
+    @execution_token = report.execution_token
   end
 
   def call
@@ -61,7 +64,11 @@ class RunGarakScan
     # and the file would be orphaned. Once call_async has been entered the process may
     # be alive and may not have read its --generator_option_file yet, so deleting it
     # would race a live scan; that process removes the file on its own exit paths.
-    remove_web_config_file unless @scan_process_may_be_running
+    unless @scan_process_may_be_running
+      # A replacement attempt owns the UUID-keyed credential file in that case.
+      @execution_attempt_replaced = execution_attempt_replaced? if @execution_attempt_replaced.nil?
+      remove_web_config_file unless @execution_attempt_replaced
+    end
     raise
   end
 
@@ -95,6 +102,7 @@ class RunGarakScan
       # to be current here, which is outside the with_tenant block below.
       report.assign_attributes(status: :starting, execution_token: token)
       report.changes_applied
+      @execution_token = token
     else
       Rails.logger.info(
         "[RunGarakScan] report #{report.id} was claimed by another process; " \
@@ -113,12 +121,61 @@ class RunGarakScan
   # update_columns: the report may be mid-failure elsewhere, and this must not fire
   # callbacks or fail on validation. Losing the revoke is not fatal -- the stale
   # reaper clears it -- so failure is logged rather than raised over the original error.
+  # Returns false when a DIFFERENT attempt owns the report -- this process must then
+  # touch neither the row nor the credential file -- true when the attempt was ours
+  # (or the row is gone), and nil when ownership could not be determined.
   def revoke_execution_token_after_launch_failure
-    report.update_columns(execution_token: nil)
+    Report.unscoped.transaction do
+      current_report = Report.unscoped.lock.find_by(id: report.id, company_id: report.company_id)
+      next true unless current_report
+      next false if current_report.execution_token.present? && current_report.execution_token != @execution_token
+
+      current_report.update_columns(execution_token: nil) if current_report.execution_token == @execution_token
+      true
+    end
   rescue StandardError => e
     Rails.logger.warn(
       "[RunGarakScan] failed to revoke execution token for #{report.uuid}: #{e.class}: #{e.message}"
     )
+    nil
+  end
+
+  def execution_attempt_replaced?
+    current_token = Report.unscoped.where(id: report.id, company_id: report.company_id).pick(:execution_token)
+    current_token.present? && current_token != @execution_token
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[RunGarakScan] failed to check execution ownership for #{report.uuid}: #{e.class}: #{e.message}"
+    )
+    nil
+  end
+
+  # Records a launch failure only while this attempt still owns the report. A user's
+  # stop, or a replacement attempt, can land between the process exiting and this
+  # write; an unconditional update would turn a stopped report into a failed one.
+  # Returns false when a different attempt has taken over.
+  def record_launch_failure(message)
+    Report.unscoped.transaction do
+      current_report = Report.unscoped.lock.find_by(id: report.id, company_id: report.company_id)
+      next true unless current_report
+      next false if current_report.execution_token.present? && current_report.execution_token != @execution_token
+      next true unless current_report.starting?
+
+      # Write through the instance we already hold, whose associations are loaded, and
+      # skip validation: this records a terminal failure state, touches nothing a
+      # validation guards, and must not be silently dropped -- `update` returning false
+      # would leave the report stuck in `starting` until the reaper timed it out.
+      report.assign_attributes(status: :failed, execution_token: nil, logs: message)
+      unless report.save(validate: false)
+        Rails.logger.warn("[RunGarakScan] could not record launch failure for #{report.uuid}")
+      end
+      true
+    end
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[RunGarakScan] failed to record launch failure for #{report.uuid}: #{e.class}: #{e.message}"
+    )
+    true
   end
 
   # Deletes the per-scan web config file written by temp_web_config_file_path.
@@ -144,16 +201,20 @@ class RunGarakScan
         on_spawn: -> { @scan_process_may_be_running = true }
       )
     rescue RunCommand::ImmediateExitError => e
-      # The process exited immediately, so it is definitively dead: releasing the
-      # attempt and deleting its credential file are both safe.
-      remove_web_config_file
+      # RunCommand raises this only after wait_thr confirms the process terminated, so
+      # nothing is racing us for the process itself. The report row is another matter:
+      # a stop or a replacement attempt can land between the exit and this write.
+      @scan_process_may_be_running = false
       Rails.logger.error("Scan process failed to start for report #{report.uuid}: #{e.message}")
       stderr_tail = read_log_tail
       message = "Scan process failed to start (exit status #{e.exit_status})."
       message += " Output: #{stderr_tail}" if stderr_tail.present?
-      report.update(status: :failed, execution_token: nil, logs: message)
+      @execution_attempt_replaced = record_launch_failure(message) == false
+      remove_web_config_file unless @execution_attempt_replaced
     rescue StandardError
-      revoke_execution_token_after_launch_failure unless @scan_process_may_be_running
+      unless @scan_process_may_be_running
+        @execution_attempt_replaced = revoke_execution_token_after_launch_failure == false
+      end
       raise
     end
   end

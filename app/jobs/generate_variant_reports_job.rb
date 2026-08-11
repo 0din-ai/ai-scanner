@@ -59,9 +59,24 @@ class GenerateVariantReportsJob < ApplicationJob
   rescue ActiveRecord::RecordNotUnique
     Rails.logger.info("Variant report already exists for parent #{parent_report.id}, skipping")
   rescue StandardError => e
-    child_report&.update(status: :failed, execution_token: nil) if child_report&.persisted?
+    record_variant_generation_failure(child_report) if child_report&.persisted?
     Rails.logger.error("Failed to create combined variant report: #{e.message}")
     Rails.logger.error(e.backtrace.join("\n"))
     raise
+  end
+
+  # A user's stop, or a replacement attempt, can land between the launch failing and
+  # this write. An unconditional update would turn a stopped report into a failed one,
+  # losing the fact that it was cancelled.
+  def record_variant_generation_failure(child_report)
+    child_report.with_lock do
+      next if child_report.completed? || child_report.failed? || child_report.stopped?
+
+      child_report.update(status: :failed, execution_token: nil)
+    end
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[GenerateVariantReports] could not record failure for report #{child_report.id}: #{e.message}"
+    )
   end
 end

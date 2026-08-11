@@ -69,6 +69,21 @@ RSpec.describe GenerateVariantReportsJob, type: :job do
         expect(child.variant_probes).to include(probe)
       end
 
+      it "does not overwrite a concurrent stop when variant generation fails" do
+        # The child is stopped between the launch and the failure being recorded; an
+        # unconditional write would turn the user's cancellation into a failure.
+        allow_any_instance_of(RunGarakScan).to receive(:call) do |instance|
+          Report.where(id: instance.report.id)
+                .update_all(status: Report.statuses[:stopped], execution_token: nil)
+          raise StandardError, "launch blew up"
+        end
+
+        expect { described_class.new.perform(report.id) }.to raise_error(StandardError, "launch blew up")
+
+        child = Report.find_by(parent_report_id: report.id)
+        expect(child.reload.status).to eq("stopped")
+      end
+
       it "calls RunGarakScan on the child report" do
         expect_any_instance_of(RunGarakScan).to receive(:call)
 
