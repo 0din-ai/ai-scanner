@@ -225,6 +225,7 @@ class CheckStaleReportsJob < ApplicationJob
     Report.transaction do
       report.update!(
         status: :pending,
+        execution_token: nil,
         retry_count: report.retry_count + 1,
         last_retry_at: Time.current,
         logs: append_log(
@@ -246,6 +247,7 @@ class CheckStaleReportsJob < ApplicationJob
 
     report.update!(
       status: :interrupted,
+      execution_token: nil,
       logs: append_log(logs_with_live_tail(report), "Interrupted: #{reason}")
     )
   end
@@ -255,6 +257,7 @@ class CheckStaleReportsJob < ApplicationJob
 
     report.update!(
       status: :failed,
+      execution_token: nil,
       logs: append_log(logs_with_live_tail(report), reason)
     )
   end

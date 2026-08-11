@@ -38,15 +38,38 @@ class RunCommand
     stdout
   end
 
-  def call_async(log_file: nil)
+  # on_spawn is invoked the moment a child process exists. Callers need that boundary
+  # to know whether a failure left something running: popen3 itself can raise without
+  # spawning anything at all (a missing interpreter, EAGAIN from process creation),
+  # and everything that can fail with a live child is either moved ahead of the spawn
+  # (the log file) or handled without raising (closing stdin).
+  def call_async(log_file: nil, on_spawn: nil)
     Rails.logger.info("RunCommand.call_async executing: #{sanitize_for_logging}")
 
-    stdin, stdout, stderr, wait_thr = Open3.popen3(env, *command)
-    stdin.close
-
+    # Open the log BEFORE spawning. Anything fallible between popen3 and the drain
+    # threads below can leave a live child whose stdout nobody reads: the process
+    # fills the pipe buffer and blocks forever, while its own heartbeat thread keeps
+    # the report looking healthy. Failing here instead means no child exists yet.
     log_io = if log_file
       FileUtils.mkdir_p(File.dirname(log_file))
       File.open(log_file, "a")
+    end
+
+    begin
+      stdin, stdout, stderr, wait_thr = Open3.popen3(env, *command)
+    rescue StandardError
+      log_io&.close
+      raise
+    end
+
+    on_spawn&.call
+
+    begin
+      stdin.close
+    rescue IOError, SystemCallError => e
+      # The child is already running; a failure to close its stdin is not a launch
+      # failure and must not be raised as one.
+      Rails.logger.warn("RunCommand: could not close child stdin: #{e.class}: #{e.message}")
     end
 
     stdout_thread = Thread.new do

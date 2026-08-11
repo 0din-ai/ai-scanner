@@ -17,6 +17,14 @@ RSpec.describe Reports::Stop do
   let(:report) { create(:report, scan: scan, target: target, status: :running, heartbeat_at: Time.current) }
 
   describe "#call" do
+    it "revokes the execution token so the scanner process cannot keep writing" do
+      report.update!(execution_token: SecureRandom.uuid)
+
+      described_class.new(report).call
+
+      expect(report.reload.execution_token).to be_nil
+    end
+
     it "changes report status to stopped" do
       described_class.new(report).call
       expect(report.reload.status).to eq("stopped")

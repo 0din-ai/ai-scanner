@@ -29,6 +29,8 @@ if "db_notifier" in sys.modules:
 
 import db_notifier  # noqa: E402
 
+TOKEN = "11111111-2222-3333-4444-555555555555"
+
 
 class TestNotifyReportRunningBroadcastJob(unittest.TestCase):
     def _make_mock_conn(self, rowcount=1, fetchone_result=None):
@@ -54,13 +56,22 @@ class TestNotifyReportRunningBroadcastJob(unittest.TestCase):
         queue_conn, queue_cur = self._make_mock_conn(fetchone_result=(123,))
         mock_pooled.side_effect = [primary_conn, queue_conn]
 
-        result = db_notifier.notify_report_running("report-uuid", pid=456)
+        result = db_notifier.notify_report_running("report-uuid", 456, TOKEN)
 
         self.assertTrue(result)
 
         update_sql, update_params = primary_cur.execute.call_args_list[0][0]
         self.assertIn("RETURNING id, company_id", update_sql)
-        self.assertEqual(update_params, (db_notifier.REPORT_STATUS_RUNNING, 456, "report-uuid"))
+        self.assertEqual(
+            update_params,
+            (
+                db_notifier.REPORT_STATUS_RUNNING,
+                456,
+                "report-uuid",
+                db_notifier.REPORT_STATUS_STARTING,
+                TOKEN,
+            ),
+        )
 
         tail_reset_sql, tail_reset_params = primary_cur.execute.call_args_list[1][0]
         self.assertIn("UPDATE report_debug_logs", tail_reset_sql)

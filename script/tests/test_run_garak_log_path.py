@@ -52,6 +52,9 @@ finally:
 run_garak = _run_garak
 
 
+TOKEN = "11111111-2222-3333-4444-555555555555"
+
+
 class TestRunGarakJournalSyncLogPath(unittest.TestCase):
     def setUp(self):
         self._saved_uuid = run_garak.current_report_uuid
@@ -86,7 +89,8 @@ class TestRunGarakJournalSyncLogPath(unittest.TestCase):
              patch.object(run_garak, "run_garak_scan", return_value=0), \
              patch.object(run_garak, "notify_report_ready_from_synced", return_value=True), \
              patch.object(run_garak, "notify_report_stopped", return_value=True), \
-             patch("sys.exit") as mock_exit:
+             patch("sys.exit") as mock_exit, \
+             patch.dict(os.environ, {"SCAN_EXECUTION_TOKEN": TOKEN}):
             run_garak.main()
 
         mock_journal_sync.assert_called_once_with(
@@ -94,6 +98,7 @@ class TestRunGarakJournalSyncLogPath(unittest.TestCase):
             run_garak.REPORTS_PATH / "report-uuid.report.jsonl",
             prefix="prefix-data",
             log_path=log_path,
+            execution_token=TOKEN,
         )
         journal_sync.start.assert_called_once()
         journal_sync.stop.assert_called_once()

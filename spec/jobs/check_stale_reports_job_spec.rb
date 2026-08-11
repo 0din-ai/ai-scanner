@@ -16,6 +16,43 @@ RSpec.describe CheckStaleReportsJob, type: :job do
   end
 
   describe "#perform" do
+    describe "execution ownership" do
+      # Whatever the old process does after this point must not land on the
+      # replacement attempt, so every transition out of a live scan revokes.
+      it "revokes the token when a stale report is interrupted" do
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345,
+                        heartbeat_at: 3.minutes.ago, retry_count: 0,
+                        execution_token: SecureRandom.uuid)
+
+        described_class.new.perform
+
+        expect(report.reload.status).to eq("interrupted")
+        expect(report.execution_token).to be_nil
+      end
+
+      it "revokes the token when a stale report is failed" do
+        report = create(:report, target: target, scan: scan, status: :running, pid: 12345,
+                        heartbeat_at: 3.minutes.ago, retry_count: 3,
+                        execution_token: SecureRandom.uuid)
+
+        described_class.new.perform
+
+        expect(report.reload.status).to eq("failed")
+        expect(report.execution_token).to be_nil
+      end
+
+      it "revokes the token when a report stuck in starting is retried" do
+        report = create(:report, target: target, scan: scan, status: :starting,
+                        retry_count: 0, execution_token: SecureRandom.uuid)
+        report.update_column(:updated_at, 10.minutes.ago)
+
+        described_class.new.perform
+
+        expect(report.reload.status).to eq("pending")
+        expect(report.execution_token).to be_nil
+      end
+    end
+
     describe "stale running reports" do
       it "marks report as interrupted when heartbeat is stale (first occurrence)" do
         stale_time = 3.minutes.ago

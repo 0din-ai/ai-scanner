@@ -6,14 +6,17 @@ This script runs a Garak scan with the provided parameters and communicates with
 via PostgreSQL database operations for multi-pod deployment support.
 
 Communication Flow:
-    1. notify_report_running: UPDATE reports SET status=1, pid=X
+    1. notify_report_running: claim the matching execution attempt as running
     2. notify_report_ready: INSERT into raw_report_data, enqueue ProcessReportJob
-    3. notify_report_stopped: UPDATE reports SET pid=NULL WHERE pid matches caller (PID-match guard)
+    3. notify_report_stopped: clear this attempt's PID and ownership (PID must match
+       this process, and the report must not be owned by a different attempt)
 
 Environment Variables:
     DATABASE_URL: PostgreSQL connection string (required)
         Format: postgresql://user:password@host:port/database
     REPORT_UUID: Report UUID for correlation (optional)
+    SCAN_EXECUTION_TOKEN: UUID Rails assigned to this scan attempt (required for
+        non-validation runs)
     SCAN_ID: Scan ID for correlation (optional)
     SCAN_NAME: Scan name for correlation (optional)
     TARGET_ID: Target ID for correlation (optional)
@@ -64,6 +67,7 @@ def remove_web_config_file(report_uuid):
 
 # Global variables for signal handler cleanup
 current_report_uuid = None
+current_execution_token = None
 current_heartbeat = None
 current_journal_sync = None
 
@@ -97,7 +101,8 @@ def signal_handler(signum, frame):
     if current_heartbeat:
         current_heartbeat.stop()
     if current_report_uuid:
-        notify_report_stopped(current_report_uuid)
+        if current_execution_token:
+            notify_report_stopped(current_report_uuid, current_execution_token)
         remove_web_config_file(current_report_uuid)
     sys.exit(1)
 
@@ -131,10 +136,10 @@ def run_garak_scan(garak_params):
         traceback.print_exc(file=sys.stderr)
         return 1
 
-def notify_report_running(report_uuid, pid):
+def notify_report_running(report_uuid, pid, execution_token):
     """Notify Rails that the report is running with the given PID via PostgreSQL."""
     try:
-        result = db_notify_running(report_uuid, pid)
+        result = db_notify_running(report_uuid, pid, execution_token)
         if result:
             print(f"Report {report_uuid} marked as running (pid={pid})")
         else:
@@ -145,10 +150,15 @@ def notify_report_running(report_uuid, pid):
         return False
 
 
-def notify_report_ready(report_uuid, prefix="", exit_code=None):
+def notify_report_ready(report_uuid, prefix="", exit_code=None, *, execution_token):
     """Store report data in database and enqueue processing job."""
     try:
-        result = db_notify_ready(report_uuid, prefix=prefix, exit_code=exit_code)
+        result = db_notify_ready(
+            report_uuid,
+            prefix=prefix,
+            exit_code=exit_code,
+            execution_token=execution_token,
+        )
         if result:
             print(f"Report {report_uuid} data stored and job enqueued")
         else:
@@ -159,10 +169,14 @@ def notify_report_ready(report_uuid, prefix="", exit_code=None):
         return False
 
 
-def notify_report_ready_from_synced(report_uuid, exit_code=None):
+def notify_report_ready_from_synced(report_uuid, exit_code=None, *, execution_token):
     """Enqueue processing job using already-synced raw_report_data."""
     try:
-        result = db_notify_ready_from_synced(report_uuid, exit_code=exit_code)
+        result = db_notify_ready_from_synced(
+            report_uuid,
+            exit_code=exit_code,
+            execution_token=execution_token,
+        )
         if result:
             print(f"Report {report_uuid} job enqueued (from synced data)")
         else:
@@ -173,10 +187,14 @@ def notify_report_ready_from_synced(report_uuid, exit_code=None):
         return False
 
 
-def notify_report_stopped(report_uuid):
-    """Clear PID from report in database (only if stored PID matches caller)."""
+def notify_report_stopped(report_uuid, execution_token):
+    """Release this execution attempt in the database.
+
+    Returns True when ownership was cleared, False on a definitive mismatch (another
+    attempt owns the report), and None when it could not be determined.
+    """
     try:
-        result = db_notify_stopped(report_uuid)
+        result = db_notify_stopped(report_uuid, execution_token=execution_token)
         if result:
             print(f"Report {report_uuid} PID cleared")
         else:
@@ -184,7 +202,7 @@ def notify_report_stopped(report_uuid):
         return result
     except Exception as e:
         print(f"Error notifying report stopped: {e}", file=sys.stderr)
-        return False
+        return None
 
 def main():
     """Main function to parse arguments and run the Garak scan."""
@@ -194,12 +212,14 @@ def main():
 
     report_uuid = sys.argv[1]
     garak_params = sys.argv[2:]
+    execution_token = os.environ.get('SCAN_EXECUTION_TOKEN', '').strip() or None
     scan_id = os.environ.get('SCAN_ID', 'unknown')
     scan_name = os.environ.get('SCAN_NAME', 'unknown')
     target_id = os.environ.get('TARGET_ID', 'unknown')
     target_name = os.environ.get('TARGET_NAME', 'unknown')
-    global current_report_uuid, current_heartbeat, current_journal_sync
+    global current_report_uuid, current_execution_token, current_heartbeat, current_journal_sync
     current_report_uuid = report_uuid
+    current_execution_token = execution_token
 
     # Get the current process PID
     current_pid = os.getpid()
@@ -213,6 +233,20 @@ def main():
     logger.info(f"Starting garak scan - Report: {report_uuid}, Scan: {scan_name}, "
                 f"Target: {target_name}")
 
+    if not is_validation and not execution_token:
+        # Without the token this process cannot prove which attempt it belongs to,
+        # and every write it makes would be rejected anyway. Fail here, with a
+        # reason, rather than running a whole scan whose results are discarded.
+        logger.error(
+            f"Refusing to start report {report_uuid} without SCAN_EXECUTION_TOKEN; "
+            "the process cannot prove ownership of this execution attempt"
+        )
+        # Rails always sets SCAN_EXECUTION_TOKEN for a claimed attempt, so an empty
+        # one means no attempt owned this report when we were launched -- there is no
+        # live sibling using the credential file, and leaving it would orphan it.
+        remove_web_config_file(report_uuid)
+        sys.exit(1)
+
     if not is_validation:
         # Notify Rails that the report is running with PID (also sets initial heartbeat_at).
         #
@@ -224,7 +258,7 @@ def main():
         # MAX_START_RETRIES times and finally records "Failed after N start attempts.
         # Each attempt timed out" -- which never happened; each process started fine.
         # Failing here costs one attempt instead of four and leaves an accurate reason.
-        if not notify_report_running(report_uuid, current_pid):
+        if not notify_report_running(report_uuid, current_pid, execution_token):
             logger.error(
                 f"Failed to mark report {report_uuid} as running (pid={current_pid}); "
                 f"aborting before the scan starts, because the heartbeat would terminate "
@@ -238,11 +272,26 @@ def main():
             # running. Rails also wrote the credential-bearing <uuid>_web.json before
             # launching us, and once it has accepted the process as started its own
             # rescue no longer removes it.
-            notify_report_stopped(report_uuid)
-            remove_web_config_file(report_uuid)
+            # notify_report_stopped tolerates a revoked (NULL) token, so this still
+            # releases a PID that was recorded before the failing statement. It only
+            # declines when a *different* attempt owns the report -- which is exactly
+            # when <uuid>_web.json belongs to that attempt, so it is left in place.
+            released = notify_report_stopped(report_uuid, execution_token)
+            if released is False:
+                # Definitive mismatch: a different attempt owns the report, and
+                # <uuid>_web.json is keyed on the report uuid alone, so that file is
+                # the live attempt's. Anything else -- cleared, or undetermined
+                # because the database did not answer -- must delete it, since no
+                # other cleanup path runs after this exit.
+                logger.warning(
+                    f"Leaving credential config for {report_uuid} in place: another "
+                    f"execution attempt owns this report and may be using it"
+                )
+            else:
+                remove_web_config_file(report_uuid)
             sys.exit(1)
 
-        heartbeat = HeartbeatThread(report_uuid)
+        heartbeat = HeartbeatThread(report_uuid, execution_token=execution_token)
         current_heartbeat = heartbeat
         heartbeat.start()
 
@@ -260,6 +309,7 @@ def main():
                 jsonl_path,
                 prefix=prefix,
                 log_path=log_path,
+                execution_token=execution_token,
             )
             current_journal_sync = journal_sync
             journal_sync.start()
@@ -282,7 +332,11 @@ def main():
 
             if sync_clean:
                 # Use synced variant — JSONL already in raw_report_data, just add logs + enqueue job
-                if not notify_report_ready_from_synced(report_uuid, exit_code=exit_code):
+                if not notify_report_ready_from_synced(
+                    report_uuid,
+                    exit_code=exit_code,
+                    execution_token=execution_token,
+                ):
                     logger.error(f"Failed to enqueue ProcessReportJob for {report_uuid}")
                     exit_code = 1
             else:
@@ -292,7 +346,12 @@ def main():
                     f"JournalSync did not stop cleanly for {report_uuid}, "
                     f"falling back to full JSONL read from disk"
                 )
-                if not notify_report_ready(report_uuid, prefix=prefix, exit_code=exit_code):
+                if not notify_report_ready(
+                    report_uuid,
+                    prefix=prefix,
+                    exit_code=exit_code,
+                    execution_token=execution_token,
+                ):
                     logger.error(f"Failed to enqueue ProcessReportJob for {report_uuid}")
                     exit_code = 1
 
@@ -311,7 +370,7 @@ def main():
             heartbeat.stop()
             current_heartbeat = None
         if not is_validation:
-            notify_report_stopped(report_uuid)
+            notify_report_stopped(report_uuid, execution_token)
         remove_web_config_file(report_uuid)
 
     sys.exit(exit_code)

@@ -18,14 +18,109 @@ RSpec.describe RunGarakScan, type: :service do
       allow(FileUtils).to receive(:mkdir_p)
     end
 
+    it 'mints an execution token when it is the one moving the report into starting' do
+      # The normal path claims the token in StartPendingScansJob and arrives already
+      # starting. A caller arriving in any other status would otherwise launch a
+      # process that cannot prove ownership, and the process refuses to run.
+      report.update!(status: :pending, execution_token: nil)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:execute_scan)
+
+      service.call
+
+      report.reload
+      expect(report.status).to eq("starting")
+      expect(report.execution_token).to be_present
+    end
+
+    it 'does not launch a second process when another pod claimed the report first' do
+      # GenerateVariantReportsJob and MockTargetSetupService create a pending report
+      # and call this service directly, so StartPendingScansJob can claim the very
+      # same row in between. A read-then-write mint would overwrite that attempt's
+      # token and start a second garak process for one report.
+      report.update!(status: :pending, execution_token: nil)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+
+      other_pod_token = SecureRandom.uuid
+      Report.where(id: report.id).update_all(status: :starting, execution_token: other_pod_token)
+
+      expect(service).not_to receive(:execute_scan)
+
+      service.call
+
+      expect(report.reload.execution_token).to eq(other_pod_token)
+    end
+
+    it 'keeps the execution token when the failure happens after the process is spawned' do
+      # call_async reports the spawn through on_spawn; an error after that can arrive
+      # with garak already running, and revoking then would make the live process fail
+      # its own running-claim and exit.
+      report.update!(status: :starting, execution_token: SecureRandom.uuid)
+      token = report.execution_token
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      # Stubbed so the spec does not depend on storage/config existing: build_argv
+      # writes a probes YAML there, and this block stubs FileUtils.mkdir_p away.
+      allow(service).to receive(:build_argv).and_return([ "python3", "script/run_garak.py", report.uuid ])
+      run_command = double("RunCommand")
+      allow(run_command).to receive(:call_async) do |on_spawn:, **|
+        on_spawn.call
+        raise Errno::ENOSPC, "log file"
+      end
+      allow(RunCommand).to receive(:new).and_return(run_command)
+
+      expect { service.call }.to raise_error(Errno::ENOSPC)
+
+      expect(report.reload.execution_token).to eq(token)
+    end
+
+    it 'releases the execution token when the failure happens before anything is spawned' do
+      # Nothing is running, so releasing lets a retry claim it immediately instead of
+      # waiting out the stuck-starting reaper.
+      report.update!(status: :starting, execution_token: SecureRandom.uuid)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      # Stubbed so the spec does not depend on storage/config existing: build_argv
+      # writes a probes YAML there, and this block stubs FileUtils.mkdir_p away.
+      allow(service).to receive(:build_argv).and_return([ "python3", "script/run_garak.py", report.uuid ])
+      allow(service).to receive(:build_env).and_raise(StandardError, "decryption failed")
+
+      expect { service.call }.to raise_error(StandardError, "decryption failed")
+
+      expect(report.reload.execution_token).to be_nil
+    end
+
+    it 'revokes the execution token when the process fails to start' do
+      report.update!(execution_token: SecureRandom.uuid)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      # Stubbed so the spec does not depend on storage/config existing: build_argv
+      # writes a probes YAML there, and this block stubs FileUtils.mkdir_p away.
+      allow(service).to receive(:build_argv).and_return([ "python3", "script/run_garak.py", report.uuid ])
+      run_command = double("RunCommand")
+      allow(run_command).to receive(:call_async).and_raise(
+        RunCommand::ImmediateExitError.new(127, "/opt/venv/bin/python3 script/run_garak.py")
+      )
+      allow(RunCommand).to receive(:new).and_return(run_command)
+
+      service.call
+
+      report.reload
+      expect(report.status).to eq("failed")
+      expect(report.execution_token).to be_nil
+    end
+
     it 'updates the report status to starting' do
       service = described_class.new(report)
       allow(service).to receive(:call).and_call_original
       allow(service).to receive(:execute_scan)
 
-      expect(report).to receive(:update).with(status: :starting)
-
       service.call
+
+      expect(report.reload.status).to eq("starting")
+      expect(report.execution_token).to be_present
     end
 
     it 'calls execute_scan for valid targets' do
@@ -33,9 +128,10 @@ RSpec.describe RunGarakScan, type: :service do
       allow(service).to receive(:call).and_call_original
 
       expect(service).to receive(:execute_scan)
-      expect(report).to receive(:update).with(status: :starting)
-
       service.call
+
+      expect(report.reload.status).to eq("starting")
+      expect(report.execution_token).to be_present
     end
 
     it 'aborts and marks the report failed when the target URL fails the SSRF recheck' do
@@ -68,6 +164,7 @@ RSpec.describe RunGarakScan, type: :service do
       expect(Rails.logger).to receive(:error).with("Cannot run scan for report #{bad_report.id} - target #{bad_target.id} (#{bad_target.name}) has 'bad' status. Validation text: #{bad_target.validation_text}")
       expect(bad_report).to receive(:update).with(
         status: :failed,
+        execution_token: nil,
         logs: "Scan failed: Target '#{bad_target.name}' validation failed. #{bad_target.validation_text}",
         failure_code: "target_validation_failed",
         failure_message: "Target '#{bad_target.name}' validation failed. #{bad_target.validation_text}",
@@ -91,6 +188,7 @@ RSpec.describe RunGarakScan, type: :service do
       expect(Rails.logger).to receive(:error).with("Cannot run scan for report #{bad_report.id} - target #{bad_target.id} (#{bad_target.name}) has 'bad' status. Validation text: ")
       expect(bad_report).to receive(:update).with(
         status: :failed,
+        execution_token: nil,
         logs: "Scan failed: Target '#{bad_target.name}' validation failed.",
         failure_code: "target_validation_failed",
         failure_message: "Target '#{bad_target.name}' validation failed.",
@@ -109,9 +207,10 @@ RSpec.describe RunGarakScan, type: :service do
       allow(service).to receive(:call).and_call_original
       allow(service).to receive(:execute_scan)
 
-      expect(good_report).to receive(:update).with(status: :starting)
-
       service.call
+
+      expect(good_report.reload.status).to eq("starting")
+      expect(good_report.execution_token).to be_present
     end
 
     it 'uses the same generated log path for the runner env and command output' do
@@ -126,7 +225,7 @@ RSpec.describe RunGarakScan, type: :service do
         .and_return(Pathname.new("/tmp/first.log"), Pathname.new("/tmp/second.log"))
 
       run_command = double("RunCommand")
-      expect(run_command).to receive(:call_async).with(log_file: "/tmp/first.log")
+      expect(run_command).to receive(:call_async).with(hash_including(log_file: "/tmp/first.log"))
       expect(RunCommand).to receive(:new) do |received_argv, env:|
         expect(received_argv).to eq(argv)
         captured_env = env
@@ -150,7 +249,7 @@ RSpec.describe RunGarakScan, type: :service do
         .and_return(Pathname.new("/tmp/first.log"), Pathname.new("/tmp/second.log"))
 
       run_command = double("RunCommand")
-      expect(run_command).to receive(:call_async).with(log_file: "/tmp/first.log").and_raise(
+      expect(run_command).to receive(:call_async).with(hash_including(log_file: "/tmp/first.log")).and_raise(
         RunCommand::ImmediateExitError.new(127, "/opt/venv/bin/python3 script/run_garak.py")
       )
       expect(RunCommand).to receive(:new).and_return(run_command)
@@ -180,6 +279,7 @@ RSpec.describe RunGarakScan, type: :service do
       expect(Rails.logger).to receive(:warn).with("Cannot run scan for report #{validating_report.id} - target #{validating_target.id} (#{validating_target.name}) is in 'validating' status")
       expect(validating_report).to receive(:update).with(
         status: :failed,
+        execution_token: nil,
         logs: "Scan failed: Target '#{validating_target.name}' is still being validated. Please wait for validation to complete before running scans.",
         failure_code: "target_validation_failed",
         failure_message: "Target '#{validating_target.name}' is still being validated. Please wait for validation to complete before running scans.",
@@ -205,6 +305,7 @@ RSpec.describe RunGarakScan, type: :service do
       expect(Rails.logger).to receive(:error).with("Cannot run scan for report #{unexpected_report.id} - target #{unexpected_target.id} (#{unexpected_target.name}) has unexpected status: unknown_status")
       expect(unexpected_report).to receive(:update).with(
         status: :failed,
+        execution_token: nil,
         logs: "Scan failed: Target '#{unexpected_target.name}' is not ready for scanning (status: unknown_status). Target must be validated successfully before running scans.",
         failure_code: "target_validation_failed",
         failure_message: "Target '#{unexpected_target.name}' is not ready for scanning (status: unknown_status). Target must be validated successfully before running scans.",
@@ -260,6 +361,34 @@ RSpec.describe RunGarakScan, type: :service do
     end
 
     describe '#build_env' do
+      it 'passes the execution token to the scan process' do
+        # The Python side refuses to run without it, and every DB write it makes
+        # is fenced on it.
+        report.update!(execution_token: SecureRandom.uuid)
+        service = described_class.new(report)
+
+        ActsAsTenant.with_tenant(report.company) do
+          env = service.send(:build_env)
+
+          expect(env["SCAN_EXECUTION_TOKEN"]).to eq(report.execution_token)
+        end
+      end
+
+      it 'sets the execution token unconditionally so tenant env vars cannot supply one' do
+        # merged_env_vars comes from tenant-controlled EnvironmentVariable rows and
+        # there is no reserved-name blocklist. Setting the key only when present would
+        # let a row named SCAN_EXECUTION_TOKEN survive and defeat the Python guard.
+        report.update!(execution_token: nil)
+        service = described_class.new(report)
+
+        ActsAsTenant.with_tenant(report.company) do
+          env = service.send(:build_env)
+
+          expect(env).to have_key("SCAN_EXECUTION_TOKEN")
+          expect(env["SCAN_EXECUTION_TOKEN"]).to eq("")
+        end
+      end
+
       it 'returns a hash of environment variables' do
         service = described_class.new(report)
 
@@ -362,6 +491,53 @@ RSpec.describe RunGarakScan, type: :service do
       # Cleanup any created config files
       Dir.glob(described_class::CONFIG_PATH.join("#{webchat_report.uuid}*")).each do |f|
         File.delete(f) if File.exist?(f)
+      end
+    end
+
+    describe '#call launch-failure credential cleanup' do
+      before do
+        allow(service).to receive(:call).and_call_original
+        allow(service).to receive(:all_probes_completed?).and_return(false)
+        allow(MonitoringService).to receive(:active?).and_return(false)
+        allow(webchat_target).to receive(:scan_launch_url_safe?).and_return(true)
+        webchat_target.update_column(:status, Target.statuses[:good])
+      end
+
+      it 'removes the web config when the failure happens before anything is spawned' do
+        allow(service).to receive(:build_argv).and_return([ 'echo' ])
+        allow(service).to receive(:build_env).and_raise(StandardError, 'decryption failed')
+
+        path = described_class::CONFIG_PATH.join("#{webchat_report.uuid}_web.json")
+        File.write(path, '{}')
+        webchat_report.update!(status: :starting, execution_token: SecureRandom.uuid)
+
+        expect { service.call }.to raise_error(StandardError, 'decryption failed')
+
+        # Nothing was spawned, so nothing will ever read or delete this file.
+        expect(File.exist?(path)).to be false
+        expect(webchat_report.reload.execution_token).to be_nil
+      end
+
+      it 'keeps the web config when the failure happens after the process is spawned' do
+        allow(service).to receive(:build_argv).and_return([ 'echo' ])
+        run_command = double("RunCommand")
+        allow(run_command).to receive(:call_async) do |on_spawn:, **|
+          on_spawn.call
+          raise StandardError, 'log file'
+        end
+        allow(RunCommand).to receive(:new).and_return(run_command)
+
+        path = described_class::CONFIG_PATH.join("#{webchat_report.uuid}_web.json")
+        File.write(path, '{}')
+        webchat_report.update!(status: :starting, execution_token: SecureRandom.uuid)
+        token = webchat_report.execution_token
+
+        expect { service.call }.to raise_error(StandardError, 'log file')
+
+        # call_async spawns before it opens the log file, so garak may be running and
+        # may not have read its --generator_option_file yet.
+        expect(File.exist?(path)).to be true
+        expect(webchat_report.reload.execution_token).to eq(token)
       end
     end
 
@@ -486,6 +662,8 @@ RSpec.describe RunGarakScan, type: :service do
         File.write(path, '{}')
 
         expect { service.call }.to raise_error(StandardError, 'launch failed')
+        # The stub raises without ever signalling a spawn through on_spawn, so no child
+        # exists: nothing will consume or delete the credential file, and cleanup runs.
         expect(File.exist?(path)).to be false
       end
 

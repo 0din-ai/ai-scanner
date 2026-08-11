@@ -17,6 +17,16 @@ RSpec.describe StartPendingScansJob, type: :job do
   end
 
   describe "#perform" do
+    it "mints an execution token when it claims a report" do
+      # The token is what lets the scanner process prove that the attempt it is
+      # writing for is still the attempt this pod claimed.
+      report = create(:report, target: target, scan: scan, status: :pending)
+
+      described_class.new.perform
+
+      expect(report.reload.execution_token).to be_present
+    end
+
     describe "available slots calculation" do
       before do
         allow(SettingsService).to receive(:parallel_scans_limit).and_return(5)

@@ -17,7 +17,7 @@ module Reports
     end
 
     def call
-      report.update(status: :stopped)
+      report.update(status: :stopped, execution_token: nil)
       Cleanup.new(report).call
       # Widget update handled by Report#broadcast_running_stats_if_needed callback
     end

@@ -46,24 +46,80 @@ class RunGarakScan
         MonitoringService.set_label(:scan_name, report.scan.name)
         MonitoringService.set_label(:target_name, target.name)
 
-        report.update(status: :starting) unless report.starting?
+        return unless start_execution_attempt!
 
         execute_scan
       end
     else
-      report.update(status: :starting) unless report.starting?
+      return unless start_execution_attempt!
+
       execute_scan
     end
   rescue StandardError
-    # The garak process never took ownership of the credential file (launch failure
-    # or a crash during module import/arg parsing), so the Python-side cleanup will
-    # never run. Remove the web config file (cookies/headers/storageState) here
-    # instead of orphaning it on disk, then re-raise so the caller marks the report failed.
-    remove_web_config_file
+    # Remove the credential-bearing web config (cookies/headers/storageState) only
+    # when nothing was spawned: in that case the Python-side cleanup will never run
+    # and the file would be orphaned. Once call_async has been entered the process may
+    # be alive and may not have read its --generator_option_file yet, so deleting it
+    # would race a live scan; that process removes the file on its own exit paths.
+    remove_web_config_file unless @scan_process_may_be_running
     raise
   end
 
   private
+
+  # Claim this report for one execution attempt, returning false when someone else
+  # already holds it.
+  #
+  # The normal path claims in StartPendingScansJob and arrives here already starting,
+  # so this is a no-op. A caller arriving in any other status (a variant child, a mock
+  # target) would otherwise launch a process that cannot prove ownership of the
+  # attempt, and the process refuses to run without a token.
+  #
+  # The claim is a single conditional UPDATE rather than a read-then-write: those
+  # callers create a *pending* report, which StartPendingScansJob is free to claim in
+  # between, and a read-then-write would overwrite that attempt's token and leave two
+  # garak processes running for one report.
+  def start_execution_attempt!
+    return true if report.starting?
+
+    token = SecureRandom.uuid
+    claimed = Report.where(id: report.id).where.not(status: :starting).update_all(
+      status: :starting,
+      execution_token: token,
+      updated_at: Time.current
+    ).positive?
+
+    if claimed
+      # Reflect the claim in memory rather than reloading: a reload would also drop
+      # the loaded target association and re-query it under whatever tenant happens
+      # to be current here, which is outside the with_tenant block below.
+      report.assign_attributes(status: :starting, execution_token: token)
+      report.changes_applied
+    else
+      Rails.logger.info(
+        "[RunGarakScan] report #{report.id} was claimed by another process; " \
+        "not launching a second scan for it"
+      )
+    end
+
+    claimed
+  end
+
+  # Release the attempt after a failure that happened BEFORE anything was spawned, so
+  # a retry can claim it immediately instead of waiting out the stuck-starting reaper.
+  # Never call this once the process may be alive: revoking under a running scanner
+  # makes its own running-claim match zero rows and the process exits.
+  #
+  # update_columns: the report may be mid-failure elsewhere, and this must not fire
+  # callbacks or fail on validation. Losing the revoke is not fatal -- the stale
+  # reaper clears it -- so failure is logged rather than raised over the original error.
+  def revoke_execution_token_after_launch_failure
+    report.update_columns(execution_token: nil)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[RunGarakScan] failed to revoke execution token for #{report.uuid}: #{e.class}: #{e.message}"
+    )
+  end
 
   # Deletes the per-scan web config file written by temp_web_config_file_path.
   # Safe no-op for API targets (no such file) or when it was never created.
@@ -80,14 +136,25 @@ class RunGarakScan
       env = build_env
       log_path = scan_log_path
       log_scan_debug_info(argv)
-      RunCommand.new(argv, env: env).call_async(log_file: log_path)
+      # on_spawn fires once a child actually exists. popen3 can raise before that -- a
+      # missing interpreter, EAGAIN from process creation -- and those failures leave
+      # nothing running, so the attempt and its credential file must be released.
+      RunCommand.new(argv, env: env).call_async(
+        log_file: log_path,
+        on_spawn: -> { @scan_process_may_be_running = true }
+      )
     rescue RunCommand::ImmediateExitError => e
+      # The process exited immediately, so it is definitively dead: releasing the
+      # attempt and deleting its credential file are both safe.
       remove_web_config_file
       Rails.logger.error("Scan process failed to start for report #{report.uuid}: #{e.message}")
       stderr_tail = read_log_tail
       message = "Scan process failed to start (exit status #{e.exit_status})."
       message += " Output: #{stderr_tail}" if stderr_tail.present?
-      report.update(status: :failed, logs: message)
+      report.update(status: :failed, execution_token: nil, logs: message)
+    rescue StandardError
+      revoke_execution_token_after_launch_failure unless @scan_process_may_be_running
+      raise
     end
   end
 
@@ -116,6 +183,10 @@ class RunGarakScan
       end
 
       env["REPORT_UUID"] = report.uuid
+      # Unconditional: merged_env_vars above is tenant-controlled and has no reserved
+      # name blocklist, so a conditional assignment would let a tenant row named
+      # SCAN_EXECUTION_TOKEN survive and defeat the scanner's fail-closed guard.
+      env["SCAN_EXECUTION_TOKEN"] = report.execution_token.to_s
       env["SCAN_ID"] = report.scan.id.to_s
       env["SCAN_NAME"] = report.scan.name
       env["TARGET_ID"] = target.id.to_s
@@ -152,6 +223,7 @@ class RunGarakScan
     sanitized = Reports::FailureClassifier.sanitize_text(error_message)
     report.update(
       status: :failed,
+      execution_token: nil,
       logs: "Scan failed: #{sanitized}",
       failure_code: "target_url_unsafe",
       failure_message: sanitized,
@@ -180,6 +252,7 @@ class RunGarakScan
     sanitized_error_message = Reports::FailureClassifier.sanitize_text(error_message)
     report.update(
       status: :failed,
+      execution_token: nil,
       logs: "Scan failed: #{sanitized_error_message}",
       failure_code: "target_validation_failed",
       failure_message: sanitized_error_message,
@@ -479,6 +552,9 @@ class RunGarakScan
       "enqueuing ProcessReportJob directly"
     )
     persist_existing_logs
+    # Non-raising: this scan is already finished, and losing the revoke here would
+    # otherwise strand a complete result set in `starting` until the reaper failed it.
+    revoke_execution_token_after_launch_failure
     ProcessReportJob.perform_later(report.id)
   end
 

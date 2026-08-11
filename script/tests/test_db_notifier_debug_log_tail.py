@@ -35,6 +35,8 @@ if cached_db_notifier is not None and (
 
 import db_notifier  # noqa: E402
 
+TOKEN = "11111111-2222-3333-4444-555555555555"
+
 
 class TestDebugLogTailBytesConfig(unittest.TestCase):
     def setUp(self):
@@ -165,6 +167,7 @@ class TestJournalSyncDebugLogTail(unittest.TestCase):
             "report-uuid",
             self.jsonl_path,
             log_path=self.log_path,
+            execution_token=TOKEN,
         )
 
     def _patch_pooled_connection(self, conn):
@@ -343,7 +346,7 @@ class TestJournalSyncDebugLogTail(unittest.TestCase):
 
         with self._patch_pooled_connection(conn), \
              patch.object(db_notifier, "_enqueue_broadcast_stats_job", return_value="job-id"):
-            self.assertTrue(db_notifier.notify_report_running("report-uuid", 456))
+            self.assertTrue(db_notifier.notify_report_running("report-uuid", 456, TOKEN))
 
         tail_reset_calls = self._sql_calls_containing(cursor, "UPDATE report_debug_logs")
         self.assertEqual(len(tail_reset_calls), 1)
@@ -364,7 +367,7 @@ class TestJournalSyncDebugLogTail(unittest.TestCase):
              patch.object(db_notifier, "get_log_file_path", return_value=self.log_path), \
              patch.object(db_notifier, "_enqueue_process_report_job", return_value="job-id"), \
              patch.object(db_notifier, "cleanup_scan_files"):
-            self.assertTrue(db_notifier.notify_report_ready_from_synced("report-uuid"))
+            self.assertTrue(db_notifier.notify_report_ready_from_synced("report-uuid", execution_token=TOKEN))
 
         raw_log_updates = self._sql_calls_containing(cursor, "UPDATE raw_report_data")
         self.assertEqual(len(raw_log_updates), 1)
@@ -380,7 +383,7 @@ class TestJournalSyncDebugLogTail(unittest.TestCase):
              patch.object(db_notifier, "get_log_file_path", return_value=self.log_path), \
              patch.object(db_notifier, "_enqueue_process_report_job", return_value="job-id"), \
              patch.object(db_notifier, "cleanup_scan_files"):
-            self.assertTrue(db_notifier.notify_report_ready_from_synced("report-uuid"))
+            self.assertTrue(db_notifier.notify_report_ready_from_synced("report-uuid", execution_token=TOKEN))
 
         raw_log_updates = self._sql_calls_containing(cursor, "UPDATE raw_report_data")
         self.assertEqual(len(raw_log_updates), 1)
@@ -403,7 +406,7 @@ class TestJournalSyncDebugLogTail(unittest.TestCase):
              patch.object(db_notifier, "_enqueue_process_report_job", return_value="job-id"), \
              patch.object(db_notifier, "cleanup_scan_files"):
             self.assertTrue(
-                db_notifier.notify_report_ready_from_synced("report-uuid", exit_code=0)
+                db_notifier.notify_report_ready_from_synced("report-uuid", exit_code=0, execution_token=TOKEN)
             )
 
         logs_data = self._sql_calls_containing(cursor, "UPDATE raw_report_data")[0][1][0]
@@ -426,7 +429,7 @@ class TestJournalSyncDebugLogTail(unittest.TestCase):
              patch.object(db_notifier, "_enqueue_process_report_job", return_value="job-id"), \
              patch.object(db_notifier, "cleanup_scan_files"):
             self.assertTrue(
-                db_notifier.notify_report_ready_from_synced("report-uuid", exit_code=1)
+                db_notifier.notify_report_ready_from_synced("report-uuid", exit_code=1, execution_token=TOKEN)
             )
 
         logs_data = self._sql_calls_containing(cursor, "UPDATE raw_report_data")[0][1][0]
@@ -443,7 +446,7 @@ class TestJournalSyncDebugLogTail(unittest.TestCase):
              patch.object(db_notifier, "get_log_file_path", return_value=self.log_path), \
              patch.object(db_notifier, "_enqueue_process_report_job", return_value="job-id"), \
              patch.object(db_notifier, "cleanup_scan_files"):
-            self.assertTrue(db_notifier.notify_report_ready_from_synced("report-uuid"))
+            self.assertTrue(db_notifier.notify_report_ready_from_synced("report-uuid", execution_token=TOKEN))
 
         logs_data = self._sql_calls_containing(cursor, "UPDATE raw_report_data")[0][1][0]
         self.assertEqual(logs_data, "plain logs\n")
