@@ -64,6 +64,7 @@ class TestSignalHandlerCleanup(unittest.TestCase):
              patch.object(run_garak, "current_journal_sync", None), \
              patch.object(run_garak, "current_heartbeat", None), \
              patch.object(run_garak, "notify_report_stopped", return_value=False), \
+             patch.object(run_garak, "execution_attempt_replaced", return_value=True), \
              patch.object(run_garak, "remove_web_config_file") as m_rm:
             with self.assertRaises(SystemExit):
                 run_garak.signal_handler(15, None)

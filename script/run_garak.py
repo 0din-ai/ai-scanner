@@ -40,6 +40,7 @@ from pathlib import Path
 
 from garak_plugin_cache_guard import install_plugin_cache_guard
 from db_notifier import (
+    execution_attempt_replaced as db_execution_attempt_replaced,
     notify_report_running as db_notify_running,
     notify_report_ready as db_notify_ready,
     notify_report_ready_from_synced as db_notify_ready_from_synced,
@@ -206,6 +207,16 @@ def notify_report_stopped(report_uuid, execution_token):
         print(f"Error notifying report stopped: {e}", file=sys.stderr)
         return None
 
+def execution_attempt_replaced(report_uuid, execution_token):
+    """True when a different attempt owns the report, False when it does not, None
+    when that could not be determined."""
+    try:
+        return db_execution_attempt_replaced(report_uuid, execution_token)
+    except Exception as e:
+        print(f"Error checking execution ownership: {e}", file=sys.stderr)
+        return None
+
+
 def release_attempt_and_cleanup_web_config(report_uuid, execution_token):
     """Release this attempt and remove its credential file unless superseded.
 
@@ -218,7 +229,11 @@ def release_attempt_and_cleanup_web_config(report_uuid, execution_token):
         return None
 
     released = notify_report_stopped(report_uuid, execution_token)
-    if released is False:
+
+    # Ask who owns the report rather than inferring it from the release result: that
+    # is also False on an ordinary PID mismatch, which the recovery path produces
+    # routinely, and nothing else would ever remove the file in that case.
+    if execution_attempt_replaced(report_uuid, execution_token) is True:
         logger.warning(
             f"Leaving credential config for {report_uuid} in place: another "
             f"execution attempt owns this report and may be using it"
