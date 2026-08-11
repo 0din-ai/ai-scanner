@@ -13,6 +13,17 @@ RSpec.describe RetryInterruptedReportsJob, type: :job do
   end
 
   describe "#perform" do
+    it "revokes the execution token of the interrupted attempt" do
+      report = create(:report, target: target, scan: scan, status: :interrupted,
+                      retry_count: 0, updated_at: 1.minute.ago,
+                      execution_token: SecureRandom.uuid)
+
+      described_class.new.perform
+
+      expect(report.reload.status).to eq("pending")
+      expect(report.execution_token).to be_nil
+    end
+
     describe "basic retry behavior" do
       it "moves interrupted reports back to pending after stabilization delay" do
         report = create(:report, target: target, scan: scan, status: :interrupted, retry_count: 0, updated_at: 1.minute.ago)

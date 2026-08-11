@@ -51,19 +51,23 @@ class TestRemoveWebConfigFile(unittest.TestCase):
                 run_garak.remove_web_config_file("nope")  # must not raise
 
 
+TOKEN = "11111111-2222-3333-4444-555555555555"
+
+
 class TestSignalHandlerCleanup(unittest.TestCase):
     def test_main_process_removes_web_config_on_signal(self):
         # An early SIGTERM (before the main try/finally) must still delete the
         # credential file from the parent signal handler.
         with patch.object(run_garak, "_main_pid", os.getpid()), \
              patch.object(run_garak, "current_report_uuid", "uuid-xyz"), \
+             patch.object(run_garak, "current_execution_token", TOKEN), \
              patch.object(run_garak, "current_journal_sync", None), \
              patch.object(run_garak, "current_heartbeat", None), \
              patch.object(run_garak, "notify_report_stopped") as m_stop, \
              patch.object(run_garak, "remove_web_config_file") as m_rm:
             with self.assertRaises(SystemExit):
                 run_garak.signal_handler(15, None)
-        m_stop.assert_called_once_with("uuid-xyz")
+        m_stop.assert_called_once_with("uuid-xyz", TOKEN)
         m_rm.assert_called_once_with("uuid-xyz")
 
 

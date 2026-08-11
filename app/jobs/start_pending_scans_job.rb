@@ -117,8 +117,15 @@ class StartPendingScansJob < ApplicationJob
   def claim_for_starting(report)
     updated_count = 0
     Report.transaction do
+      # The execution token identifies THIS start attempt. Container-local PIDs are
+      # reused by a replacement pod, so a PID alone cannot tell a live scan from a
+      # dead one; every write the scanner makes is fenced on this token instead.
       updated_count = Report.where(id: report.id, status: :pending)
-                            .update_all(status: :starting, updated_at: Time.current)
+                            .update_all(
+                              status: :starting,
+                              execution_token: SecureRandom.uuid,
+                              updated_at: Time.current
+                            )
       ReportDebugLog.clear_tail_for_report(report.id) if updated_count.positive?
     end
     claimed = updated_count.positive?

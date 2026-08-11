@@ -63,6 +63,36 @@ RSpec.describe RunCommand do
   end
 
   describe '#call_async' do
+    it 'prepares the log file before spawning, so a setup failure orphans nothing' do
+      # Anything fallible between popen3 and the pipe-drain threads can leave a live
+      # child whose stdout nobody reads: garak fills the 64K pipe buffer and blocks
+      # forever while its heartbeat thread keeps reporting the scan healthy.
+      allow(FileUtils).to receive(:mkdir_p).and_raise(Errno::EACCES)
+      expect(Open3).not_to receive(:popen3)
+
+      expect {
+        described_class.new([ 'echo', 'hi' ]).call_async(log_file: '/nope/async.log')
+      }.to raise_error(Errno::EACCES)
+    end
+
+    it 'reports the spawn before anything that can fail with a live child' do
+      # Callers use on_spawn to decide whether a failure left a process running, so it
+      # must fire the moment popen3 returns: closing stdin can itself raise with the
+      # child already alive, and that is not a launch failure.
+      spawned = false
+      stdin = instance_double(IO)
+      allow(stdin).to receive(:close).and_raise(Errno::EPIPE)
+      stdout = instance_double(IO, each_line: nil)
+      stderr = instance_double(IO, each_line: nil)
+      wait_thr = double("wait_thr", status: "sleep", pid: 4242)
+      allow(Open3).to receive(:popen3).and_return([ stdin, stdout, stderr, wait_thr ])
+
+      described_class.new([ 'echo', 'spawn boundary' ])
+        .call_async(on_spawn: -> { spawned = true })
+
+      expect(spawned).to be true
+    end
+
     it 'returns a process object' do
       command_service = RunCommand.new([ "echo", "async test" ])
       result = command_service.call_async

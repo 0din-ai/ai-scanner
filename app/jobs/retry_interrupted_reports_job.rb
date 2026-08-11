@@ -60,6 +60,7 @@ class RetryInterruptedReportsJob < ApplicationJob
         last_retry_at: Time.current,
         heartbeat_at: nil, # Reset heartbeat for fresh start
         pid: nil, # Clear stale PID so new run gets a fresh process identity
+        execution_token: nil, # Revoke writes from the interrupted process attempt
         logs: append_log(
           report.logs,
           "Auto-retry #{report.retry_count + 1}: Requeued after interruption"

@@ -59,7 +59,7 @@ class GenerateVariantReportsJob < ApplicationJob
   rescue ActiveRecord::RecordNotUnique
     Rails.logger.info("Variant report already exists for parent #{parent_report.id}, skipping")
   rescue StandardError => e
-    child_report&.update(status: :failed) if child_report&.persisted?
+    child_report&.update(status: :failed, execution_token: nil) if child_report&.persisted?
     Rails.logger.error("Failed to create combined variant report: #{e.message}")
     Rails.logger.error(e.backtrace.join("\n"))
     raise

@@ -43,6 +43,9 @@ if "db_notifier" in sys.modules:
 
 import db_notifier  # noqa: E402
 
+# Rails mints this when it claims the attempt; every scanner write is fenced on it.
+TOKEN = "11111111-2222-3333-4444-555555555555"
+
 
 class TestNotifyReportStoppedPidGuard(unittest.TestCase):
     """notify_report_stopped only clears PID when stored PID matches caller."""
@@ -68,7 +71,7 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         mock_pooled.return_value = mock_conn
 
         my_pid = os.getpid()
-        result = db_notifier.notify_report_stopped("test-uuid-owner")
+        result = db_notifier.notify_report_stopped("test-uuid-owner", execution_token=TOKEN)
 
         self.assertTrue(result)
 
@@ -77,7 +80,7 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         executed_params = mock_cur.execute.call_args[0][1]
 
         self.assertIn("AND pid = %s", executed_sql)
-        self.assertEqual(executed_params, ("test-uuid-owner", my_pid))
+        self.assertEqual(executed_params, ("test-uuid-owner", my_pid, TOKEN))
 
     @patch("db_notifier.pooled_connection")
     def test_mismatched_pid_does_not_clear(self, mock_pooled):
@@ -86,14 +89,14 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         mock_pooled.return_value = mock_conn
 
         # Pass a PID that would be different from stored PID
-        result = db_notifier.notify_report_stopped("test-uuid-child", expected_pid=99999)
+        result = db_notifier.notify_report_stopped("test-uuid-child", expected_pid=99999, execution_token=TOKEN)
 
         self.assertFalse(result)
 
         executed_sql = mock_cur.execute.call_args[0][0]
         executed_params = mock_cur.execute.call_args[0][1]
         self.assertIn("AND pid = %s", executed_sql)
-        self.assertEqual(executed_params, ("test-uuid-child", 99999))
+        self.assertEqual(executed_params, ("test-uuid-child", 99999, TOKEN))
 
     @patch("db_notifier.pooled_connection")
     def test_explicit_expected_pid_overrides_getpid(self, mock_pooled):
@@ -102,12 +105,12 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         mock_pooled.return_value = mock_conn
 
         explicit_pid = 12345
-        result = db_notifier.notify_report_stopped("test-uuid-explicit", expected_pid=explicit_pid)
+        result = db_notifier.notify_report_stopped("test-uuid-explicit", expected_pid=explicit_pid, execution_token=TOKEN)
 
         self.assertTrue(result)
 
         executed_params = mock_cur.execute.call_args[0][1]
-        self.assertEqual(executed_params, ("test-uuid-explicit", explicit_pid))
+        self.assertEqual(executed_params, ("test-uuid-explicit", explicit_pid, TOKEN))
 
     @patch("db_notifier.pooled_connection")
     def test_defaults_to_current_pid(self, mock_pooled):
@@ -115,7 +118,7 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         mock_conn, mock_cur = self._make_mock_conn(rowcount=1)
         mock_pooled.return_value = mock_conn
 
-        result = db_notifier.notify_report_stopped("test-uuid-default")
+        result = db_notifier.notify_report_stopped("test-uuid-default", execution_token=TOKEN)
 
         executed_params = mock_cur.execute.call_args[0][1]
         self.assertEqual(executed_params[1], os.getpid())
@@ -125,7 +128,7 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         """Database errors are caught and return False."""
         mock_pooled.side_effect = Exception("connection failed")
 
-        result = db_notifier.notify_report_stopped("test-uuid-err")
+        result = db_notifier.notify_report_stopped("test-uuid-err", execution_token=TOKEN)
         self.assertFalse(result)
 
     @patch("db_notifier.pooled_connection")
@@ -138,13 +141,13 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         parent_pid = os.getpid()
         child_pid = parent_pid + 1  # Would be different after fork
 
-        result = db_notifier.notify_report_stopped("test-uuid-fork", expected_pid=child_pid)
+        result = db_notifier.notify_report_stopped("test-uuid-fork", expected_pid=child_pid, execution_token=TOKEN)
 
         self.assertFalse(result)
         executed_sql = mock_cur.execute.call_args[0][0]
         executed_params = mock_cur.execute.call_args[0][1]
         self.assertIn("AND pid = %s", executed_sql)
-        self.assertEqual(executed_params, ("test-uuid-fork", child_pid))
+        self.assertEqual(executed_params, ("test-uuid-fork", child_pid, TOKEN))
 
 
 if __name__ == "__main__":

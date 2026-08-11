@@ -7,9 +7,11 @@ for multi-pod deployment support. Python writes to shared database, Rails
 reads and processes via Solid Queue jobs.
 
 Functions:
-    notify_report_running(report_uuid, pid): Mark report as running with PID
-    notify_report_ready(report_uuid): Store report data and enqueue processing job
-    notify_report_stopped(report_uuid): Clear PID from report
+    notify_report_running(report_uuid, pid, execution_token): Claim running state
+    notify_report_ready(report_uuid, *, execution_token): Store data and hand off
+    notify_report_ready_from_synced(report_uuid, *, execution_token): Hand off
+    notify_report_stopped(report_uuid, expected_pid=None, *, execution_token):
+        Release this attempt's PID and ownership
 
 Dependencies:
     psycopg2-binary>=2.9.0
@@ -67,7 +69,26 @@ STATUS_PROCESSING = 1
 # Note: STATUS_COMPLETED not needed - records are deleted after processing
 
 # Report status enum values (matching Rails Report model)
+REPORT_STATUS_PENDING = 0
 REPORT_STATUS_RUNNING = 1
+REPORT_STATUS_PROCESSING = 2
+REPORT_STATUS_FAILED = 4
+REPORT_STATUS_STOPPED = 5
+REPORT_STATUS_STARTING = 6
+REPORT_STATUS_INTERRUPTED = 7
+
+# Statuses in which a write from an attempt whose token Rails already revoked is
+# still wanted: the report is either in flight or queued to be retried, so keeping
+# its progress is the point. A stopped or failed report has been cleaned up
+# deliberately -- Reports::Cleanup deletes its raw_report_data -- and writing again
+# would resurrect exactly what the user cancelled. A report already handed off to
+# processing is owned by that job.
+RESUMABLE_STATUSES = [
+    REPORT_STATUS_PENDING,
+    REPORT_STATUS_RUNNING,
+    REPORT_STATUS_STARTING,
+    REPORT_STATUS_INTERRUPTED,
+]
 
 # Live execution log tail sync configuration
 DEFAULT_DEBUG_LOG_TAIL_BYTES = 131072
@@ -229,7 +250,7 @@ class HeartbeatThread:
     allowing Rails to detect stale/crashed scans in multi-pod deployments.
 
     Usage:
-        heartbeat = HeartbeatThread(report_uuid)
+        heartbeat = HeartbeatThread(report_uuid, execution_token=token)
         heartbeat.start()
         # ... run scan ...
         heartbeat.stop()
@@ -237,15 +258,17 @@ class HeartbeatThread:
 
     DEFAULT_INTERVAL = 30  # seconds
 
-    def __init__(self, report_uuid: str, interval: int = None):
+    def __init__(self, report_uuid: str, *, execution_token: str, interval: int = None):
         """
         Initialize heartbeat thread.
 
         Args:
             report_uuid: UUID of the report to send heartbeats for
+            execution_token: UUID Rails minted when it claimed this scan attempt
             interval: Seconds between heartbeats (default: 30)
         """
         self.report_uuid = report_uuid
+        self.execution_token = execution_token
         self.interval = interval if interval is not None else self.DEFAULT_INTERVAL
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -337,9 +360,13 @@ class HeartbeatThread:
                         """
                         UPDATE reports
                         SET heartbeat_at = NOW()
-                        WHERE uuid = %s AND status = %s
+                        WHERE uuid = %s AND status = %s AND execution_token = %s
                         """,
-                        (self.report_uuid, REPORT_STATUS_RUNNING),
+                        (
+                            self.report_uuid,
+                            REPORT_STATUS_RUNNING,
+                            self.execution_token,
+                        ),
                     )
                     rows_affected = cur.rowcount
                 conn.commit()
@@ -373,7 +400,7 @@ class JournalSyncThread:
     tail to report_debug_logs for live debug streaming.
 
     Usage:
-        journal = JournalSyncThread(report_uuid, jsonl_path)
+        journal = JournalSyncThread(report_uuid, jsonl_path, execution_token=token)
         journal.start()
         # ... run scan ...
         journal.final_sync()  # After garak completes
@@ -389,6 +416,8 @@ class JournalSyncThread:
         prefix: str = "",
         log_path: Optional[Path] = None,
         interval: int = None,
+        *,
+        execution_token: str,
     ):
         """
         Initialize journal sync thread.
@@ -401,6 +430,7 @@ class JournalSyncThread:
             interval: Seconds between sync cycles (default: 10)
         """
         self.report_uuid = report_uuid
+        self.execution_token = execution_token
         self.jsonl_path = jsonl_path
         self.prefix = prefix
         self.log_path = Path(log_path) if log_path else None
@@ -612,20 +642,36 @@ class JournalSyncThread:
             return False
 
     def _load_report_id(self) -> Optional[int]:
-        """Resolve and memoize the database report id."""
-        if self._report_id is not None:
-            return self._report_id
+        """Resolve the report id unless a *different* attempt now owns the report.
 
+        Deliberately not memoized: a replacement attempt can claim the report at any
+        point, and re-checking each cycle is what stops this process from writing
+        over that attempt's data.
+
+        A NULL token is accepted on purpose. Rails revokes the token when an attempt
+        ends, and the final flush on SIGTERM runs right after exactly that: the stale
+        reaper marks the report interrupted, the heartbeat then terminates this
+        process, and stop() flushes. Requiring a token match here would silently
+        discard every probe result produced since the last periodic sync.
+        """
         with pooled_connection("primary") as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id FROM reports WHERE uuid = %s",
-                    (self.report_uuid,),
+                    """
+                    SELECT id FROM reports
+                    WHERE uuid = %s
+                      AND (
+                        execution_token = %s
+                        OR (execution_token IS NULL AND status = ANY(%s))
+                      )
+                    """,
+                    (self.report_uuid, self.execution_token, RESUMABLE_STATUSES),
                 )
                 result = cur.fetchone()
                 if not result:
                     logger.warning(
-                        f"JournalSync: report not found: {self.report_uuid}"
+                        f"JournalSync: report {self.report_uuid} is no longer "
+                        f"owned by this execution attempt"
                     )
                     return None
                 self._report_id = result[0]
@@ -1104,7 +1150,7 @@ def _enqueue_broadcast_stats_job(company_id: int, queue_conn) -> int:
     return job_id
 
 
-def notify_report_running(report_uuid: str, pid: int) -> bool:
+def notify_report_running(report_uuid: str, pid: int, execution_token: str) -> bool:
     """
     Update report status to running with PID using pooled connection.
 
@@ -1115,6 +1161,7 @@ def notify_report_running(report_uuid: str, pid: int) -> bool:
     Args:
         report_uuid: UUID of the report
         pid: Process ID of the garak scanner
+        execution_token: UUID Rails minted when it claimed this scan attempt
 
     Returns:
         True on success, False on failure
@@ -1127,10 +1174,16 @@ def notify_report_running(report_uuid: str, pid: int) -> bool:
                     """
                     UPDATE reports
                     SET status = %s, pid = %s, heartbeat_at = NOW(), updated_at = NOW()
-                    WHERE uuid = %s
+                    WHERE uuid = %s AND status = %s AND execution_token = %s
                     RETURNING id, company_id
                     """,
-                    (REPORT_STATUS_RUNNING, pid, report_uuid),
+                    (
+                        REPORT_STATUS_RUNNING,
+                        pid,
+                        report_uuid,
+                        REPORT_STATUS_STARTING,
+                        execution_token,
+                    ),
                 )
                 report_row = cur.fetchone()
 
@@ -1176,7 +1229,9 @@ def notify_report_running(report_uuid: str, pid: int) -> bool:
         return False
 
 
-def notify_report_stopped(report_uuid: str, expected_pid: int = None) -> bool:
+def notify_report_stopped(
+    report_uuid: str, expected_pid: int = None, *, execution_token: str
+) -> bool:
     """
     Clear PID from report using pooled connection (owner-process guard).
 
@@ -1190,7 +1245,8 @@ def notify_report_stopped(report_uuid: str, expected_pid: int = None) -> bool:
         expected_pid: PID to match against stored PID. Defaults to os.getpid().
 
     Returns:
-        True if PID was cleared, False on mismatch or failure
+        True if ownership was cleared, False on a definitive PID/token mismatch,
+        None when the attempt could not be determined (database error)
     """
     my_pid = os.getpid()
     pid_to_match = expected_pid if expected_pid is not None else my_pid
@@ -1202,10 +1258,11 @@ def notify_report_stopped(report_uuid: str, expected_pid: int = None) -> bool:
                 cur.execute(
                     """
                     UPDATE reports
-                    SET pid = NULL, updated_at = NOW()
+                    SET pid = NULL, execution_token = NULL, updated_at = NOW()
                     WHERE uuid = %s AND pid = %s
+                      AND (execution_token = %s OR execution_token IS NULL)
                     """,
-                    (report_uuid, pid_to_match),
+                    (report_uuid, pid_to_match, execution_token),
                 )
                 rows_affected = cur.rowcount
             conn.commit()
@@ -1221,8 +1278,11 @@ def notify_report_stopped(report_uuid: str, expected_pid: int = None) -> bool:
             return True
 
     except Exception as e:
+        # None, not False: the caller cannot tell a definitive "another attempt owns
+        # this report" from "the database did not answer", and the two call for
+        # opposite handling of the report's credential file.
         logger.error(f"Error in notify_report_stopped: {e}")
-        return False
+        return None
 
 
 def _enqueue_process_report_job(report_id: int, queue_conn) -> int:
@@ -1325,7 +1385,13 @@ def _append_authoritative_completion_marker(
     return f"{logs_data}{separator}{marker}\n"
 
 
-def notify_report_ready(report_uuid: str, prefix: str = "", exit_code: Optional[int] = None) -> bool:
+def notify_report_ready(
+    report_uuid: str,
+    prefix: str = "",
+    exit_code: Optional[int] = None,
+    *,
+    execution_token: str,
+) -> bool:
     """
     Store report data in database and enqueue processing job using pooled connections.
 
@@ -1430,11 +1496,26 @@ def notify_report_ready(report_uuid: str, prefix: str = "", exit_code: Optional[
                 timeout_cur.execute("SET statement_timeout = '30s'")
 
             with primary_conn.cursor() as cur:
-                # Get report ID from UUID
-                cur.execute("SELECT id FROM reports WHERE uuid = %s", (report_uuid,))
+                # Resolve the report only while this attempt still owns it, so a
+                # superseded process cannot finalize data over a replacement run.
+                cur.execute(
+                    """
+                    SELECT id FROM reports
+                    WHERE uuid = %s
+                      AND (
+                        execution_token = %s
+                        OR (execution_token IS NULL AND status = ANY(%s))
+                      )
+                    FOR UPDATE
+                    """,
+                    (report_uuid, execution_token, RESUMABLE_STATUSES),
+                )
                 result = cur.fetchone()
                 if not result:
-                    logger.error(f"Report not found: {report_uuid}")
+                    logger.error(
+                        f"Report {report_uuid} is owned by a different execution "
+                        f"attempt; refusing to finalize over it"
+                    )
                     return False
 
                 report_id = result[0]
@@ -1500,7 +1581,12 @@ def notify_report_ready(report_uuid: str, prefix: str = "", exit_code: Optional[
         return False
 
 
-def notify_report_ready_from_synced(report_uuid: str, exit_code: Optional[int] = None) -> bool:
+def notify_report_ready_from_synced(
+    report_uuid: str,
+    exit_code: Optional[int] = None,
+    *,
+    execution_token: str,
+) -> bool:
     """
     Enqueue ProcessReportJob using already-synced raw_report_data.
 
@@ -1552,11 +1638,23 @@ def notify_report_ready_from_synced(report_uuid: str, exit_code: Optional[int] =
 
             with primary_conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id FROM reports WHERE uuid = %s", (report_uuid,)
+                    """
+                    SELECT id FROM reports
+                    WHERE uuid = %s
+                      AND (
+                        execution_token = %s
+                        OR (execution_token IS NULL AND status = ANY(%s))
+                      )
+                    FOR UPDATE
+                    """,
+                    (report_uuid, execution_token, RESUMABLE_STATUSES),
                 )
                 result = cur.fetchone()
                 if not result:
-                    logger.error(f"Report not found: {report_uuid}")
+                    logger.error(
+                        f"Report {report_uuid} is owned by a different execution "
+                        f"attempt; refusing to finalize over it"
+                    )
                     return False
 
                 report_id = result[0]

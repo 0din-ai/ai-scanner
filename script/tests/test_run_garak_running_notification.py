@@ -57,9 +57,13 @@ finally:
     else:
         sys.modules["db_notifier"] = _original_db_notifier
 
+# Rails mints this when it claims the attempt and passes it in the process env.
+TOKEN = "11111111-2222-3333-4444-555555555555"
+
 
 class TestRunningNotificationFailureIsFatal(unittest.TestCase):
-    def _run_main(self, running_result, uuid="report-uuid-123", config_dir=None):
+    def _run_main(self, running_result, uuid="report-uuid-123", config_dir=None, token=TOKEN,
+                  stopped_result=True):
         # run_garak is imported once per process, so whichever test module imports it
         # first supplies these module-level constants. Pin them here (as Path, since
         # run_garak builds paths with `/`) so this test does not depend on that order.
@@ -74,10 +78,15 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
              patch.object(run_garak, "JournalSyncThread"), \
              patch.object(run_garak, "notify_report_ready", return_value=True), \
              patch.object(run_garak, "notify_report_ready_from_synced", return_value=True), \
-             patch.object(run_garak, "notify_report_stopped", return_value=True) as mock_stopped, \
+             patch.object(run_garak, "notify_report_stopped", return_value=stopped_result) as mock_stopped, \
              patch.object(run_garak, "load_existing_jsonl_prefix", return_value=""), \
              patch.object(run_garak, "get_log_file_path", return_value=tmp / "report.log"), \
-             patch.object(sys, "argv", ["run_garak.py", uuid]):
+             patch.object(sys, "argv", ["run_garak.py", uuid]), \
+             patch.dict(os.environ, {}):
+            if token:
+                os.environ["SCAN_EXECUTION_TOKEN"] = token
+            else:
+                os.environ.pop("SCAN_EXECUTION_TOKEN", None)
             with self.assertRaises(SystemExit) as ctx:
                 run_garak.main()
         return ctx.exception.code, mock_scan, mock_heartbeat, mock_stopped
@@ -113,10 +122,60 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
         code, _scan, _hb, mock_stopped = self._run_main(running_result=False)
 
         self.assertEqual(code, 1)
-        mock_stopped.assert_called_once_with("report-uuid-123")
+        mock_stopped.assert_called_once_with("report-uuid-123", TOKEN)
 
     def test_still_runs_the_scan_when_the_running_write_succeeds(self):
         code, mock_scan, _mock_heartbeat, _stopped = self._run_main(running_result=True)
+
+        self.assertEqual(code, 0)
+        mock_scan.assert_called_once()
+
+    def test_keeps_the_credential_config_when_another_attempt_owns_the_report(self):
+        # <uuid>_web.json is keyed on the report UUID alone, so it is the same file a
+        # replacement attempt is already using. notify_report_stopped declining is how
+        # this process learns it is no longer the owner.
+        config_dir = Path(tempfile.mkdtemp()) / "config"
+        config_dir.mkdir(parents=True)
+        web_config = config_dir / "report-uuid-123_web.json"
+        web_config.write_text("{}")
+
+        self._run_main(running_result=False, config_dir=config_dir, stopped_result=False)
+
+        self.assertTrue(
+            web_config.exists(),
+            "a superseded process deleted the live attempt's credential file",
+        )
+
+    def test_removes_the_credential_config_when_ownership_cleanup_errors(self):
+        # A None result means the release could not be determined -- a database outage,
+        # say -- not that another attempt owns the report. Only a definitive mismatch
+        # may keep credentials on disk; nothing else runs after this exit.
+        config_dir = Path(tempfile.mkdtemp()) / "config"
+        config_dir.mkdir(parents=True)
+        web_config = config_dir / "report-uuid-123_web.json"
+        web_config.write_text('{"cookies": [{"name": "session", "value": "secret"}]}')
+
+        self._run_main(running_result=False, config_dir=config_dir, stopped_result=None)
+
+        self.assertFalse(web_config.exists(), "credential web config left on disk")
+
+    def test_refuses_to_start_without_an_execution_token(self):
+        # Rails could only omit the token if the attempt was already revoked. Every
+        # write this process makes would be rejected, so running the scan would burn
+        # a full scan's work to produce nothing. Fail immediately, with a reason.
+        code, mock_scan, mock_heartbeat, _stopped = self._run_main(
+            running_result=True, token=None
+        )
+
+        self.assertEqual(code, 1)
+        mock_scan.assert_not_called()
+        mock_heartbeat.assert_not_called()
+
+    def test_validation_runs_do_not_need_an_execution_token(self):
+        # Validation runs have no report row to own, so there is nothing to fence.
+        code, mock_scan, _hb, _stopped = self._run_main(
+            running_result=True, uuid="validation_abc", token=None
+        )
 
         self.assertEqual(code, 0)
         mock_scan.assert_called_once()

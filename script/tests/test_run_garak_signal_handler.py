@@ -60,12 +60,14 @@ _orig_sigterm = signal.getsignal(signal.SIGTERM)
 _orig_sigint = signal.getsignal(signal.SIGINT)
 
 try:
-    import run_garak  # noqa: E402  (registers global SIGTERM/SIGINT handlers)
+    import run_garak  # noqa: E402 (registers global SIGTERM/SIGINT handlers)
 finally:
     if _original_db_notifier is None:
         sys.modules.pop("db_notifier", None)
     else:
         sys.modules["db_notifier"] = _original_db_notifier
+
+TOKEN = "11111111-2222-3333-4444-555555555555"
 
 
 class TestParentSignalHandler(unittest.TestCase):
@@ -73,24 +75,27 @@ class TestParentSignalHandler(unittest.TestCase):
 
     def setUp(self):
         self._saved_uuid = run_garak.current_report_uuid
+        self._saved_token = run_garak.current_execution_token
         self._saved_hb = run_garak.current_heartbeat
         self._saved_js = run_garak.current_journal_sync
 
     def tearDown(self):
         run_garak.current_report_uuid = self._saved_uuid
+        run_garak.current_execution_token = self._saved_token
         run_garak.current_heartbeat = self._saved_hb
         run_garak.current_journal_sync = self._saved_js
 
     def test_parent_calls_notify_report_stopped(self):
         """Parent process performs cleanup when signal_handler fires."""
         run_garak.current_report_uuid = "parent-test-uuid"
+        run_garak.current_execution_token = TOKEN
         run_garak.current_heartbeat = None
         run_garak.current_journal_sync = None
 
         with patch.object(run_garak, "notify_report_stopped", return_value=True) as mock_stopped:
             with self.assertRaises(SystemExit):
                 run_garak.signal_handler(signal.SIGTERM, None)
-            mock_stopped.assert_called_once_with("parent-test-uuid")
+            mock_stopped.assert_called_once_with("parent-test-uuid", TOKEN)
 
     def test_parent_stops_heartbeat_and_journal_sync(self):
         """Parent process stops heartbeat and journal sync threads."""
@@ -117,11 +122,13 @@ class TestChildSignalHandlerSafety(unittest.TestCase):
 
     def setUp(self):
         self._saved_uuid = run_garak.current_report_uuid
+        self._saved_token = run_garak.current_execution_token
         self._saved_hb = run_garak.current_heartbeat
         self._saved_js = run_garak.current_journal_sync
 
     def tearDown(self):
         run_garak.current_report_uuid = self._saved_uuid
+        run_garak.current_execution_token = self._saved_token
         run_garak.current_heartbeat = self._saved_hb
         run_garak.current_journal_sync = self._saved_js
 
@@ -138,13 +145,16 @@ class TestChildSignalHandlerSafety(unittest.TestCase):
         # Replace notify_report_stopped with a version that writes a marker
         original_fn = run_garak.notify_report_stopped
 
-        def tracking_stopped(uuid):
+        def tracking_stopped(uuid, execution_token=None):
             with open(marker_file, "w") as f:
                 f.write(f"cleanup_called_by_pid_{os.getpid()}")
             return True
 
         run_garak.notify_report_stopped = tracking_stopped
         run_garak.current_report_uuid = "child-test-uuid"
+        # Without this the parent-cleanup branch skips notify_report_stopped on its
+        # own, and the test would pass even with the fork guard removed.
+        run_garak.current_execution_token = TOKEN
         run_garak.current_heartbeat = None
         run_garak.current_journal_sync = None
 
