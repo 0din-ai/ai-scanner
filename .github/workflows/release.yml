@@ -51,7 +51,16 @@ jobs:
         id: semantic
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release${{ inputs.dry_run && ' --dry-run' || '' }}
+          # Passed through the environment rather than interpolated into the script:
+          # `${{ }}` inside a `run:` is the shape of a shell-injection bug even when,
+          # as here, the expression can only ever yield a constant.
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            npx semantic-release --dry-run
+          else
+            npx semantic-release
+          fi
 
   build-amd64:
     needs: release
