@@ -1285,6 +1285,38 @@ def notify_report_stopped(
         return None
 
 
+def execution_attempt_replaced(report_uuid: str, execution_token: str):
+    """Has a DIFFERENT attempt taken ownership of this report?
+
+    notify_report_stopped returning False is not evidence of this on its own: it also
+    returns False when the stored PID no longer matches, which happens routinely when
+    the recovery path clears the PID before the old process reaches its cleanup. Only
+    a different, non-null token means someone else owns the report -- and therefore
+    owns the UUID-keyed files that belong to it.
+
+    Returns True when another attempt owns it, False when this attempt does or nobody
+    does, and None when ownership could not be determined.
+    """
+    try:
+        with pooled_connection("primary") as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT execution_token FROM reports WHERE uuid = %s",
+                    (report_uuid,),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            return False
+
+        current_token = row[0]
+        return current_token is not None and str(current_token) != str(execution_token)
+
+    except Exception as e:
+        logger.error(f"Error checking execution ownership for {report_uuid}: {e}")
+        return None
+
+
 def _enqueue_process_report_job(report_id: int, queue_conn) -> int:
     """
     Enqueue ProcessReportJob in Solid Queue.

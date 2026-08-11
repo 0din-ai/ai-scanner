@@ -63,7 +63,7 @@ TOKEN = "11111111-2222-3333-4444-555555555555"
 
 class TestRunningNotificationFailureIsFatal(unittest.TestCase):
     def _run_main(self, running_result, uuid="report-uuid-123", config_dir=None, token=TOKEN,
-                  stopped_result=True):
+                  stopped_result=True, replaced_result=False):
         # run_garak is imported once per process, so whichever test module imports it
         # first supplies these module-level constants. Pin them here (as Path, since
         # run_garak builds paths with `/`) so this test does not depend on that order.
@@ -79,6 +79,7 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
              patch.object(run_garak, "notify_report_ready", return_value=True), \
              patch.object(run_garak, "notify_report_ready_from_synced", return_value=True), \
              patch.object(run_garak, "notify_report_stopped", return_value=stopped_result) as mock_stopped, \
+             patch.object(run_garak, "execution_attempt_replaced", return_value=replaced_result), \
              patch.object(run_garak, "load_existing_jsonl_prefix", return_value=""), \
              patch.object(run_garak, "get_log_file_path", return_value=tmp / "report.log"), \
              patch.object(sys, "argv", ["run_garak.py", uuid]), \
@@ -139,7 +140,12 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
         web_config = config_dir / "report-uuid-123_web.json"
         web_config.write_text("{}")
 
-        self._run_main(running_result=False, config_dir=config_dir, stopped_result=False)
+        self._run_main(
+            running_result=False,
+            config_dir=config_dir,
+            stopped_result=False,
+            replaced_result=True,
+        )
 
         self.assertTrue(
             web_config.exists(),
@@ -156,6 +162,25 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
         web_config.write_text('{"cookies": [{"name": "session", "value": "secret"}]}')
 
         self._run_main(running_result=False, config_dir=config_dir, stopped_result=None)
+
+        self.assertFalse(web_config.exists(), "credential web config left on disk")
+
+    def test_removes_the_credential_config_when_only_the_pid_no_longer_matches(self):
+        # notify_report_stopped also returns False when the stored PID no longer
+        # matches -- RetryInterruptedReportsJob clears both the PID and the token
+        # before the old process reaches this cleanup. Nobody else owns the file then,
+        # and nothing else will ever remove it.
+        config_dir = Path(tempfile.mkdtemp()) / "config"
+        config_dir.mkdir(parents=True)
+        web_config = config_dir / "report-uuid-123_web.json"
+        web_config.write_text('{"cookies": [{"name": "session", "value": "secret"}]}')
+
+        self._run_main(
+            running_result=False,
+            config_dir=config_dir,
+            stopped_result=False,
+            replaced_result=False,
+        )
 
         self.assertFalse(web_config.exists(), "credential web config left on disk")
 

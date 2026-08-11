@@ -18,6 +18,46 @@ RSpec.describe RunGarakScan, type: :service do
       allow(FileUtils).to receive(:mkdir_p)
     end
 
+    it 'does not overwrite a concurrent stop when the process exits immediately' do
+      # The user can stop the scan between the launch failing and this handler
+      # running. An unconditional write would turn that stopped report into a failed
+      # one, losing the fact that the user cancelled it.
+      report.update!(status: :starting, execution_token: SecureRandom.uuid)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:build_argv).and_return([ "python3", "script/run_garak.py", report.uuid ])
+      run_command = double("RunCommand")
+      allow(run_command).to receive(:call_async) do |**|
+        Report.where(id: report.id).update_all(status: Report.statuses[:stopped], execution_token: nil)
+        raise RunCommand::ImmediateExitError.new(127, "python3")
+      end
+      allow(RunCommand).to receive(:new).and_return(run_command)
+
+      service.call
+
+      expect(report.reload.status).to eq("stopped")
+    end
+
+    it 'does not fail a report a replacement attempt has already claimed' do
+      report.update!(status: :starting, execution_token: SecureRandom.uuid)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:build_argv).and_return([ "python3", "script/run_garak.py", report.uuid ])
+      replacement_token = SecureRandom.uuid
+      run_command = double("RunCommand")
+      allow(run_command).to receive(:call_async) do |**|
+        Report.where(id: report.id).update_all(execution_token: replacement_token)
+        raise RunCommand::ImmediateExitError.new(127, "python3")
+      end
+      allow(RunCommand).to receive(:new).and_return(run_command)
+
+      service.call
+
+      report.reload
+      expect(report.status).to eq("starting")
+      expect(report.execution_token).to eq(replacement_token)
+    end
+
     it 'mints an execution token when it is the one moving the report into starting' do
       # The normal path claims the token in StartPendingScansJob and arrives already
       # starting. A caller arriving in any other status would otherwise launch a
@@ -496,6 +536,10 @@ RSpec.describe RunGarakScan, type: :service do
 
     describe '#call launch-failure credential cleanup' do
       before do
+        # Before the first `service` reference: RunGarakScan memoizes the report's
+        # execution token at construction, and a token appearing afterwards is
+        # correctly read as a replacement attempt having claimed the report.
+        webchat_report.update!(status: :starting, execution_token: SecureRandom.uuid)
         allow(service).to receive(:call).and_call_original
         allow(service).to receive(:all_probes_completed?).and_return(false)
         allow(MonitoringService).to receive(:active?).and_return(false)
@@ -509,7 +553,6 @@ RSpec.describe RunGarakScan, type: :service do
 
         path = described_class::CONFIG_PATH.join("#{webchat_report.uuid}_web.json")
         File.write(path, '{}')
-        webchat_report.update!(status: :starting, execution_token: SecureRandom.uuid)
 
         expect { service.call }.to raise_error(StandardError, 'decryption failed')
 
@@ -529,7 +572,6 @@ RSpec.describe RunGarakScan, type: :service do
 
         path = described_class::CONFIG_PATH.join("#{webchat_report.uuid}_web.json")
         File.write(path, '{}')
-        webchat_report.update!(status: :starting, execution_token: SecureRandom.uuid)
         token = webchat_report.execution_token
 
         expect { service.call }.to raise_error(StandardError, 'log file')

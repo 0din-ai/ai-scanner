@@ -40,6 +40,7 @@ from pathlib import Path
 
 from garak_plugin_cache_guard import install_plugin_cache_guard
 from db_notifier import (
+    execution_attempt_replaced as db_execution_attempt_replaced,
     notify_report_running as db_notify_running,
     notify_report_ready as db_notify_ready,
     notify_report_ready_from_synced as db_notify_ready_from_synced,
@@ -101,9 +102,11 @@ def signal_handler(signum, frame):
     if current_heartbeat:
         current_heartbeat.stop()
     if current_report_uuid:
-        if current_execution_token:
-            notify_report_stopped(current_report_uuid, current_execution_token)
-        remove_web_config_file(current_report_uuid)
+        # An early SIGTERM (before the main try/finally is entered) would otherwise
+        # skip the finally cleanup, orphaning the credential-bearing <uuid>_web.json.
+        release_attempt_and_cleanup_web_config(
+            current_report_uuid, current_execution_token
+        )
     sys.exit(1)
 
 signal.signal(signal.SIGTERM, signal_handler)
@@ -204,6 +207,43 @@ def notify_report_stopped(report_uuid, execution_token):
         print(f"Error notifying report stopped: {e}", file=sys.stderr)
         return None
 
+def execution_attempt_replaced(report_uuid, execution_token):
+    """True when a different attempt owns the report, False when it does not, None
+    when that could not be determined."""
+    try:
+        return db_execution_attempt_replaced(report_uuid, execution_token)
+    except Exception as e:
+        print(f"Error checking execution ownership: {e}", file=sys.stderr)
+        return None
+
+
+def release_attempt_and_cleanup_web_config(report_uuid, execution_token):
+    """Release this attempt and remove its credential file unless superseded.
+
+    A definitive ownership mismatch means the UUID-keyed file belongs to a newer
+    attempt and must be left alone. Unknown ownership still deletes it, so
+    credentials are not left behind when the database is unavailable.
+    """
+    if not execution_token:
+        remove_web_config_file(report_uuid)
+        return None
+
+    released = notify_report_stopped(report_uuid, execution_token)
+
+    # Ask who owns the report rather than inferring it from the release result: that
+    # is also False on an ordinary PID mismatch, which the recovery path produces
+    # routinely, and nothing else would ever remove the file in that case.
+    if execution_attempt_replaced(report_uuid, execution_token) is True:
+        logger.warning(
+            f"Leaving credential config for {report_uuid} in place: another "
+            f"execution attempt owns this report and may be using it"
+        )
+        return False
+
+    remove_web_config_file(report_uuid)
+    return released
+
+
 def main():
     """Main function to parse arguments and run the Garak scan."""
     if len(sys.argv) < 2:
@@ -276,19 +316,7 @@ def main():
             # releases a PID that was recorded before the failing statement. It only
             # declines when a *different* attempt owns the report -- which is exactly
             # when <uuid>_web.json belongs to that attempt, so it is left in place.
-            released = notify_report_stopped(report_uuid, execution_token)
-            if released is False:
-                # Definitive mismatch: a different attempt owns the report, and
-                # <uuid>_web.json is keyed on the report uuid alone, so that file is
-                # the live attempt's. Anything else -- cleared, or undetermined
-                # because the database did not answer -- must delete it, since no
-                # other cleanup path runs after this exit.
-                logger.warning(
-                    f"Leaving credential config for {report_uuid} in place: another "
-                    f"execution attempt owns this report and may be using it"
-                )
-            else:
-                remove_web_config_file(report_uuid)
+            release_attempt_and_cleanup_web_config(report_uuid, execution_token)
             sys.exit(1)
 
         heartbeat = HeartbeatThread(report_uuid, execution_token=execution_token)
