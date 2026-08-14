@@ -117,7 +117,11 @@
         end
       },
       render: ->(report) {
-        content_tag(:span, report.formatted_asr, class: "text-sm font-semibold #{asr_color_class(report.attack_success_rate)}")
+        # Text and colour from one figure: attack_success_rate rounds across colour
+        # thresholds and collapses an uncalculable rate to 0, which coloured "N/A" as
+        # though it were a perfect score.
+        figure = report.asr
+        content_tag(:span, asr_display(figure), class: "text-sm font-semibold #{asr_color_class(figure.percent)}")
       }
     },
     {

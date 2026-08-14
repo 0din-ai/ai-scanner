@@ -428,6 +428,11 @@ class Report < ApplicationRecord
     detector_results.sum(:total)
   end
 
+  # Numeric ASR for charts, sorting and aggregates, which need a comparable number.
+  #
+  # Returns 0 when nothing was measurable, so it CANNOT distinguish "no attack
+  # succeeded" from "no attacks were evaluated" -- never render it directly. Display
+  # goes through #asr and ReportsHelper#asr_display, which keep those apart.
   def attack_success_rate
     total = cached_total
     passed = cached_passed
@@ -435,9 +440,16 @@ class Report < ApplicationRecord
     (passed.to_f / total * 100).round(2)
   end
 
-  def formatted_asr
-    asr = attack_success_rate
-    asr == 0 ? "N/A" : "#{asr}%"
+  # The canonical reading every surface renders, and the only place the numerator and
+  # denominator are chosen: detector_results, which is what ASR has always meant here
+  # and what the aggregates use. Returning a figure rather than a Float keeps "nothing
+  # succeeded" and "nothing was measurable" apart -- see Reports::AsrFigure.
+  def asr
+    Reports::AsrFigure.new(
+      numerator: cached_passed,
+      denominator: cached_total,
+      partial: partial_results?
+    )
   end
 
   # The most recent prior completed parent (non-variant) report of the same
@@ -470,10 +482,20 @@ class Report < ApplicationRecord
   # NOTE: calls attack_success_rate on self and on the prior report; each
   # falls back to two detector_results queries when not preloaded.
   # Multi-report callers should preload.
+  # Movement against the previous run, or nil when there is nothing to compare.
+  #
+  # Computed from the figures rather than attack_success_rate, which collapses an
+  # unmeasurable report to 0: subtracting that reported "50 pts vs last scan" beside an
+  # ASR of "N/A" -- a movement away from a number that was never stated.
   def asr_delta_vs_previous
     prev = previous_completed_report
     return nil unless prev
-    (attack_success_rate - prev.attack_success_rate).round(2)
+
+    current_figure = asr
+    previous_figure = prev.asr
+    return nil unless current_figure.calculable? && previous_figure.calculable?
+
+    (current_figure.percent - previous_figure.percent).round(2)
   end
 
   def total_successful_attacks

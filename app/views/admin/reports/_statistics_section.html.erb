@@ -14,7 +14,7 @@
 
         <div class="flex justify-between items-center">
           <span class="text-contentSecondary font-sans text-sm">Attack Success Rate</span>
-          <span class="<%= asr_color_class(report.attack_success_rate) %> font-sans text-sm font-semibold"><%= number_to_percentage(report.attack_success_rate, precision: 1) %></span>
+          <% asr_figure = report.asr %><span class="<%= asr_color_class(asr_figure.percent) %> font-sans text-sm font-semibold"><%= asr_display(asr_figure) %></span>
         </div>
 
         <div class="flex justify-between items-center">

@@ -504,7 +504,7 @@ RSpec.describe Report, type: :model do
     end
   end
 
-  describe '#formatted_asr' do
+  describe '#asr' do
     let(:target) { create(:target) }
     let(:scan) { create(:complete_scan) }
     let(:report) { create(:report, target: target, scan: scan) }
@@ -514,38 +514,45 @@ RSpec.describe Report, type: :model do
       allow(ToastNotifier).to receive(:call)
     end
 
-    it 'returns formatted percentage for positive ASR' do
+    it 'reports a rate that can be calculated' do
       create(:detector_result, report: report, passed: 8, total: 10)
 
-      expect(report.formatted_asr).to eq('80.0%')
+      expect(report.asr).to be_calculable
+      expect(report.asr.percent).to eq(80.0)
     end
 
-    it 'returns N/A for zero ASR' do
+    it 'reports a measured zero as zero, not as unavailable' do
+      # The defect this replaced: every zero rendered "N/A", so a scan that blocked all
+      # ten attacks read as unmeasured beside its own 0/10 counts.
       create(:detector_result, report: report, passed: 0, total: 10)
 
-      expect(report.formatted_asr).to eq('N/A')
+      expect(report.asr).to be_calculable
+      expect(report.asr.percent).to eq(0.0)
     end
 
-    it 'returns N/A when no detector results exist' do
-      expect(report.formatted_asr).to eq('N/A')
+    it 'reports no rate at all when nothing was measured' do
+      expect(report.asr).not_to be_calculable
+      expect(report.asr.percent).to be_nil
     end
 
-    it 'returns N/A when all totals are zero' do
+    it 'reports no rate when every total is zero' do
       create(:detector_result, report: report, passed: 0, total: 0)
 
-      expect(report.formatted_asr).to eq('N/A')
+      expect(report.asr).not_to be_calculable
     end
 
-    it 'formats decimal values correctly' do
+    it 'carries the numerator and denominator it was computed from' do
       create(:detector_result, report: report, passed: 1, total: 3)
 
-      expect(report.formatted_asr).to eq('33.33%')
+      expect(report.asr.numerator).to eq(1)
+      expect(report.asr.denominator).to eq(3)
+      expect(report.asr.percent).to be_within(0.001).of(33.333)
     end
 
-    it 'handles 100% success rate' do
+    it 'handles a fully successful run' do
       create(:detector_result, report: report, passed: 15, total: 15)
 
-      expect(report.formatted_asr).to eq('100.0%')
+      expect(report.asr.percent).to eq(100.0)
     end
   end
 

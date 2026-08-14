@@ -127,7 +127,11 @@ module Admin
 
       reports.each do |report|
         dates << report.created_at.strftime("%m/%d")
-        asr_values << report.attack_success_rate.round(1)
+        # From the canonical figure, not attack_success_rate: that is already rounded to
+        # 2dp, so rounding again moved the value (12/961 plotted 1.3 while the page said
+        # 1.2). nil leaves a gap for a report with nothing to measure -- a plotted 0
+        # would read as a perfect result where the page says N/A.
+        asr_values << report.asr.percent&.round(1)
         successful_attacks << report.total_successful_attacks
       end
 

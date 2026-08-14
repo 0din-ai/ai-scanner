@@ -403,13 +403,22 @@ module Scans
 
       return { data_points: [], trend: "insufficient_data" } if recent_reports.count < 2
 
-      data_points = recent_reports.map do |report|
+      # From the canonical figure: attack_success_rate collapses a report with nothing
+      # measurable to 0, which reads here as a perfect score and can invent a large
+      # "improving" trend while the report pages show N/A for that same report. A report
+      # with no rate contributes no point rather than a misleading one.
+      data_points = recent_reports.filter_map do |report|
+        figure = report.asr
+        next unless figure.calculable?
+
         {
           date: report.created_at.to_date.iso8601,
-          asr: report.attack_success_rate,
+          asr: figure.percent.round(2),
           report_id: report.id
         }
       end
+
+      return { data_points: data_points, trend: "insufficient_data" } if data_points.size < 2
 
       # Calculate trend direction
       first_asr = data_points.first[:asr]
