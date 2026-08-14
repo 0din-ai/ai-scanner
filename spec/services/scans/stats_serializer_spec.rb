@@ -566,6 +566,29 @@ RSpec.describe Scans::StatsSerializer, type: :service do
   end
 
   describe '#trend_data_info' do
+    context 'when a report in the window has nothing measurable' do
+      # attack_success_rate collapses an unmeasurable report to 0, so a run that recorded
+      # no totals looked like a perfect score and could turn a flat window into a large
+      # "improving" trend -- while the report pages and ASR history say N/A for it.
+      let!(:measurable) do
+        r = create(:report, :completed, scan: scan, target: target, created_at: 10.days.ago)
+        create(:detector_result, report: r, detector: create(:detector), passed: 5, total: 10)
+        r
+      end
+
+      let!(:unmeasurable) do
+        r = create(:report, :completed, scan: scan, target: target, created_at: 1.day.ago)
+        create(:detector_result, report: r, detector: create(:detector), passed: 0, total: 0)
+        r
+      end
+
+      it 'leaves it out of the trend rather than scoring it zero' do
+        result = serializer.send(:trend_data_info)
+
+        expect(result[:data_points].map { |pt| pt[:report_id] }).not_to include(unmeasurable.id)
+      end
+    end
+
     context 'when there are no completed reports' do
       it 'returns insufficient data' do
         result = serializer.send(:trend_data_info)

@@ -1,4 +1,21 @@
 module ReportsHelper
+  # The single place ASR becomes text. Every surface -- the reports list, the overview
+  # statistics, the customer narrative band and its PDF -- renders through this, so the
+  # same report cannot read 83.24% in one place and 83% in another.
+  #
+  # Precision policy: one decimal place everywhere. The only sanctioned exception is the
+  # customer narrative headline, which passes precision: 0 because it is a hero number;
+  # a spec asserts that exception so a third precision cannot appear quietly.
+  #
+  # "N/A" is reserved for a figure that cannot be calculated at all. A measured zero is
+  # rendered as 0.0% -- it means every attack was blocked, which is a result, not an
+  # absence of one.
+  def asr_display(figure, precision: 1)
+    return "N/A" unless figure&.calculable?
+
+    number_to_percentage(figure.percent, precision: precision)
+  end
+
   # Risk grade label boundaries, aligned to the ASR color bands (0...25, 25...50,
   # 50...75, 75+) so the grade word always matches the ASR number.
   RISK_GRADE_THRESHOLDS = [ [ 25, "Low" ], [ 50, "Medium" ], [ 75, "High" ] ].freeze

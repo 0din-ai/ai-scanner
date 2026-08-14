@@ -92,7 +92,7 @@ RSpec.describe Reports::Process, type: :service do
       end
 
       it 'marks evals without a completion row as partial' do
-        # This is report 4599: garak died mid-run after recording real results.
+        # garak died mid-run after recording real results.
         run_with([ init_line, attempt_line, eval_line ], logs: 'Garak scan completed - Exit code: 1')
 
         expect(report.status).to eq('failed')

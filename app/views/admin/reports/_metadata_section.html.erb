@@ -63,7 +63,9 @@
         <div class="flex items-center gap-2">
           <span class="text-contentSecondary font-sans text-sm min-w-[50px]">Status:</span>
           <div class="flex items-center gap-2">
-            <%= status_tag(report.status) %>
+            <%# Same helper the reports list uses, so lifecycle and completeness cannot be
+                labelled differently on the two surfaces. %>
+            <%= report_lifecycle_tags(report) %>
             <% if report.interrupted? && report.retry_count > 0 %>
               <span class="text-xs text-contentTertiary">(retry <%= report.retry_count %>/<%= CheckStaleReportsJob::MAX_INTERRUPT_RETRIES %>)</span>
             <% end %>

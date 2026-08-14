@@ -2,9 +2,13 @@
   Auto-computed narrative band — leads the customer report.
   locals: report (decorated Report), pdf_mode (boolean)
 %>
-<% asr = report.attack_success_rate %>
+<%# One figure for the whole band: each Report#asr runs two SUM queries when the
+    relation was not loaded with_detector_stats. %>
+<% figure = report.asr %>
 <% has_scores = report.detector_results.exists? %>
-<% grade = report_risk_grade_label(asr) %>
+<%# Detector rows can exist while their totals sum to zero, leaving nothing to rate.
+    Grading that from attack_success_rate put "Low Risk" beside an ASR of "N/A". %>
+<% grade = figure.calculable? ? report_risk_grade_label(figure.percent) : nil %>
 <%# No delta for a partial report: its rate covers only the work that was recorded,
     so comparing it with a completed scan reports a movement that is an artefact of
     the scan stopping early. %>
@@ -16,12 +20,12 @@
 
     <div class="flex flex-wrap items-center gap-3 mb-4">
       <% if grade %>
-        <span class="inline-flex items-center px-3 py-1 rounded-lg font-bold text-sm <%= report_risk_grade_classes(asr) %>">
+        <span class="inline-flex items-center px-3 py-1 rounded-lg font-bold text-sm <%= report_risk_grade_classes(figure.percent) %>">
           <%= grade %> Risk
         </span>
       <% end %>
       <span class="flex items-baseline gap-1">
-        <span class="<%= pdf_mode ? 'text-xl font-bold text-gray-900' : 'text-2xl font-bold text-gray-900' %>"><%= asr.round %>%</span>
+        <span class="<%= pdf_mode ? 'text-xl font-bold text-gray-900' : 'text-2xl font-bold text-gray-900' %>"><%= asr_display(figure, precision: 0) %></span>
         <span class="text-xs text-gray-500">attack success rate</span>
       </span>
       <% if report.partial_results? %>
