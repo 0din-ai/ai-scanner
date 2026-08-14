@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_11_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_13_231500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -297,6 +297,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_120000) do
     t.string "name", null: false
     t.integer "parent_report_id"
     t.integer "pid"
+    t.integer "planned_probe_count"
+    t.string "result_completeness"
     t.integer "retry_count", default: 0, null: false
     t.integer "scan_id", null: false
     t.datetime "start_time"
@@ -305,6 +307,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_120000) do
     t.datetime "updated_at", null: false
     t.string "uuid", null: false
     t.string "variant_probe_name"
+    t.index ["company_id", "result_completeness"], name: "index_reports_on_company_id_and_result_completeness"
     t.index ["company_id"], name: "index_reports_on_company_id"
     t.index ["failure_code"], name: "index_reports_on_failure_code"
     t.index ["heartbeat_at"], name: "index_reports_on_heartbeat_running_only", where: "(status = 1)"

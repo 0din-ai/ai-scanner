@@ -3,6 +3,35 @@
 module AdminHelper
   # Status tag helper for admin views
   # Usage: status_tag("Active", :ok) or status_tag("Pending")
+  # Whether there is anything to open: a finished scan, or a run that stopped early
+  # but retained usable evidence. Gating the Details and PDF links on completed?
+  # alone hides exactly the partial reports the new notice exists to explain.
+  def report_has_viewable_results?(report)
+    return true if report.completed?
+
+    # Read once: each predicate re-derives completeness for an unclassified row, and
+    # every derivation queries probe_results. This runs on every row of the index.
+    completeness = report.result_completeness
+    return true if completeness == "partial" || completeness == "complete"
+
+    # Completeness is left unresolved when there is no plan to compare the results
+    # against. They are real either way, so they stay reachable.
+    completeness.nil? && report.probe_results.exists?
+  end
+
+  # Renders the report's lifecycle and, when it applies, its result completeness.
+  # They are shown as two tags because they answer different questions: how the run
+  # ended, and whether what it left behind is usable evidence.
+  def report_lifecycle_tags(report)
+    tags = [ status_tag(report.status) ]
+
+    if report.partial_results?
+      tags << status_tag("partial results", :warning)
+    end
+
+    safe_join(tags, " ")
+  end
+
   def status_tag(text, status = nil)
     # Map status to CSS classes
     status_classes = case status

@@ -35,6 +35,13 @@
         <%= render partial: 'reports/failure_summary', locals: { report: report, admin: true } %>
       <% end %>
 
+      <% if report.partial_results? %>
+        <%#- Admin opens reports through this view, so it needs the same explanation:
+            otherwise a partial report with no failure metadata reads as an ordinary
+            failed one. -%>
+        <%= render partial: 'reports/partial_results_notice', locals: { report: report } %>
+      <% end %>
+
       <%= render partial: 'admin/reports/statistics_section', locals: { report: report } %>
 
       <% if show_activity_stream_for_report?(report, params: params, user: current_user) %>

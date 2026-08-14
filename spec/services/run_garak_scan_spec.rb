@@ -152,6 +152,52 @@ RSpec.describe RunGarakScan, type: :service do
       expect(report.execution_token).to be_nil
     end
 
+    it 'records the probe plan for this run before launching' do
+      # The scan's probe list is mutable, so the plan has to be captured at launch;
+      # reading it later can only describe a plan the run never had.
+      report.update!(status: :pending, execution_token: nil, planned_probe_count: nil)
+      scan.probes = create_list(:probe, 4)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:build_argv).and_return([ "python3", "script/run_garak.py", report.uuid ])
+      allow(RunCommand).to receive(:new).and_return(double("RunCommand", call_async: nil))
+
+      service.call
+
+      expect(report.reload.planned_probe_count).to eq(4)
+    end
+
+    it 'raises the recorded plan when a retry executes probes added since the first attempt' do
+      # AutoUpdateScanProbesJob can add probes to a scan between attempts, and a
+      # resumed run executes them. processed_scope counts results from every attempt,
+      # so a plan frozen at the first launch would render as "7 of 5 probes".
+      report.update!(status: :pending, execution_token: nil, planned_probe_count: 5)
+      scan.probes = create_list(:probe, 7)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:build_argv).and_return([ "python3", "script/run_garak.py", report.uuid ])
+      allow(RunCommand).to receive(:new).and_return(double("RunCommand", call_async: nil))
+
+      service.call
+
+      expect(report.reload.planned_probe_count).to eq(7)
+    end
+
+    it 'never lowers a recorded plan the run has already exceeded' do
+      # A scan edited down after the fact must not retroactively shrink the plan a
+      # completed run was measured against.
+      report.update!(status: :pending, execution_token: nil, planned_probe_count: 9)
+      scan.probes = create_list(:probe, 2)
+      service = described_class.new(report)
+      allow(service).to receive(:call).and_call_original
+      allow(service).to receive(:build_argv).and_return([ "python3", "script/run_garak.py", report.uuid ])
+      allow(RunCommand).to receive(:new).and_return(double("RunCommand", call_async: nil))
+
+      service.call
+
+      expect(report.reload.planned_probe_count).to eq(9)
+    end
+
     it 'updates the report status to starting' do
       service = described_class.new(report)
       allow(service).to receive(:call).and_call_original

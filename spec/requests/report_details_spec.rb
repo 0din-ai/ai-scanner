@@ -4,6 +4,127 @@ RSpec.describe "ReportDetails", type: :request do
   let(:company) { create(:company) }
   let(:report) { create(:report, :completed, company: company) }
 
+  describe "partial result presentation" do
+    let(:company) { create(:company) }
+    let(:user) { ActsAsTenant.with_tenant(company) { create(:user, :super_admin, company: company) } }
+    let(:probe) { ActsAsTenant.with_tenant(company) { create(:probe) } }
+    let(:detector) { ActsAsTenant.with_tenant(company) { create(:detector) } }
+
+    def build_report(status:, completeness:, with_results: true, failure_code: nil)
+      ActsAsTenant.with_tenant(company) do
+        report = create(:report, company: company, status: status,
+                                 result_completeness: completeness, failure_code: failure_code)
+        if with_results
+          create(:probe_result, report: report, probe: probe, detector: detector, passed: 5, total: 10)
+          # The narrative band (ASR headline, delta) only renders when detector
+          # results exist, so a fixture without one never exercises it.
+          create(:detector_result, report: report, detector: detector, passed: 5, total: 10)
+        end
+        report
+      end
+    end
+
+    before do
+      user.update!(current_company: company)
+      sign_in user
+      ActsAsTenant.current_tenant = company
+    end
+
+    it "labels a failed report that retained results as partial" do
+      report = build_report(status: :failed, completeness: :partial)
+
+      get report_detail_path(report)
+
+      expect(response.body).to match(/partial/i)
+    end
+
+    it "labels a partial report even when no failure_code was recorded" do
+      # 142 of 200 such reports in production have no failure_code, so gating the
+      # explanation on failed_with_reason? leaves most of them silently unlabelled.
+      report = build_report(status: :failed, completeness: :partial, failure_code: nil)
+
+      get report_detail_path(report)
+
+      expect(response.body).to match(/partial/i)
+    end
+
+    it "does not tell a completed run that it failed to finish" do
+      # A run that emitted its completion row and timing but lost eval rows is
+      # completed and partial. Telling the customer it "did not finish" reports the
+      # wrong execution outcome on the report page and in the PDF.
+      report = build_report(status: :completed, completeness: :partial)
+
+      get report_detail_path(report)
+
+      expect(response.body).to match(/partial/i)
+      expect(response.body).not_to match(/did not finish/i)
+      expect(response.body).not_to match(/ended before completing/i)
+    end
+
+    it "does not tell a run that finished but lost its timing that it stopped early" do
+      # attempts, evals and a completion row, but unusable timing: Reports::Process
+      # marks that failed and partial though the scan ran to completion. The notice is
+      # worded to hold for every partial case rather than asserting when it ended.
+      report = build_report(status: :failed, completeness: :partial,
+                            failure_code: "scan_incomplete_results")
+
+      get report_detail_path(report)
+
+      expect(response.body).to match(/partial/i)
+      expect(response.body).not_to match(/did not finish/i)
+      expect(response.body).not_to match(/ended before completing/i)
+    end
+
+    it "shows how much of the planned work was processed" do
+      report = build_report(status: :failed, completeness: :partial)
+      # The plan is the one recorded when the run was prepared, not the scan's
+      # current probe list, which may have changed since.
+      report.update!(planned_probe_count: 2)
+
+      get report_detail_path(report)
+
+      expect(response.body).to include("1 of 2")
+    end
+
+    it "does not compare a partial report against a previous completed scan" do
+      # The notice says partial metrics are not comparable with a completed scan, so
+      # rendering a "vs last scan" delta beside them contradicts it and can report a
+      # movement that is an artefact of the scan stopping early.
+      report = build_report(status: :failed, completeness: :partial)
+      allow_any_instance_of(Report).to receive(:asr_delta_vs_previous).and_return(12.0)
+
+      get report_detail_path(report)
+
+      expect(response.body).not_to match(/vs last scan/i)
+    end
+
+    it "labels a partial report on the admin detail page too" do
+      # Admin opens reports through a different view; a partial report with no failure
+      # metadata otherwise reads there as an ordinary failed report.
+      report = build_report(status: :failed, completeness: :partial)
+
+      get report_path(report)
+
+      expect(response.body).to match(/partial/i)
+    end
+
+    it "does not label a completed report as partial" do
+      report = build_report(status: :completed, completeness: :complete)
+
+      get report_detail_path(report)
+
+      expect(response.body).not_to match(/partial/i)
+    end
+
+    it "labels a stopped report that retained results as partial" do
+      report = build_report(status: :stopped, completeness: :partial)
+
+      get report_detail_path(report)
+
+      expect(response.body).to match(/partial/i)
+    end
+  end
+
   describe "GET /report_details/:id (cross-tenant isolation)" do
     let(:company_a) { create(:company) }
     let(:company_b) { create(:company) }

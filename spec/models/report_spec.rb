@@ -1058,6 +1058,27 @@ RSpec.describe Report, type: :model do
       expect(current.previous_completed_report).to eq(newer)
     end
 
+    it 'skips a completed run that only holds partial results' do
+      # A finished run that dropped eval rows is completed but partial. Using it as the
+      # baseline reports a movement that is an artefact of the missing work -- the very
+      # comparison the partial notice tells the reader not to make.
+      whole = create(:report, :completed, company: company, target: target, scan: scan,
+                     created_at: 3.days.ago, result_completeness: :complete)
+      create(:report, :completed, company: company, target: target, scan: scan,
+             created_at: 1.day.ago, result_completeness: :partial)
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+
+      expect(current.previous_completed_report).to eq(whole)
+    end
+
+    it 'still uses a completed run that predates the completeness column' do
+      legacy = create(:report, :completed, company: company, target: target, scan: scan,
+                      created_at: 2.days.ago, result_completeness: nil)
+      current = create(:report, :completed, company: company, target: target, scan: scan)
+
+      expect(current.previous_completed_report).to eq(legacy)
+    end
+
     it 'ignores reports for a different target' do
       other_target = create(:target, company: company)
       other_scan = build(:scan, company: company).tap do |s|
@@ -1147,6 +1168,355 @@ RSpec.describe Report, type: :model do
       create(:detector_result, report: current, passed: 2, total: 10) # 20%
 
       expect(current.asr_delta_vs_previous).to eq(-30.0)
+    end
+  end
+
+  describe "result completeness" do
+    # Completeness is now recorded as a report reaches a terminal state, so a row that
+    # predates the column -- the case this whole describe is about -- has to be made
+    # deliberately rather than by omitting the attribute.
+    def legacy(report)
+      report.update_columns(result_completeness: nil)
+      report.reload
+    end
+
+    describe "when the column was never written" do
+      # Reports can reach a terminal state without going through Reports::Process --
+      # an unsafe target, a launch failure, a stop, the stale reaper -- and a rolling
+      # deploy leaves in-flight reports to be finished by old workers. Those rows have
+      # no stored completeness, and must still read correctly rather than silently
+      # counting as complete.
+      let(:nc_scan) { create(:complete_scan) }
+      let(:nc_target) { create(:target) }
+
+      it "reads a failed report holding results as partial" do
+        report = create(:report, scan: nc_scan, target: nc_target, status: :failed, result_completeness: nil)
+        create(:probe_result, report: report, probe: create(:probe))
+
+        legacy(report)
+
+        expect(report).to be_partial_results
+      end
+
+      it "reads a failed report with nothing recorded as none" do
+        report = create(:report, scan: nc_scan, target: nc_target, status: :failed, result_completeness: nil)
+
+        legacy(report)
+
+        expect(report).not_to be_partial_results
+        expect(report).to be_none_results
+      end
+
+      it "reads a completed report short of its recorded plan as partial" do
+        # A new launcher records the plan, then an old processor finishes the run during
+        # a rollout and leaves the column unset. Reading that as complete would contradict
+        # what the live path stores for the very same evidence.
+        report = create(:report, scan: nc_scan, target: nc_target, status: :completed,
+                                 result_completeness: nil, planned_probe_count: 3)
+        create(:probe_result, report: report, probe: create(:probe))
+
+        legacy(report)
+
+        expect(report).to be_partial_results
+      end
+
+      it "reads a completed report that covered its recorded plan as complete" do
+        report = create(:report, scan: nc_scan, target: nc_target, status: :completed,
+                                 result_completeness: nil, planned_probe_count: 1)
+        create(:probe_result, report: report, probe: create(:probe))
+
+        legacy(report)
+
+        expect(report).to be_complete_results
+      end
+
+      it "reads a completed report as complete" do
+        report = create(:report, scan: nc_scan, target: nc_target, status: :completed, result_completeness: nil)
+
+        legacy(report)
+
+        expect(report).to be_complete_results
+        expect(report).not_to be_partial_results
+      end
+
+      it "reads a provider-classified failure that fell short of its plan as partial" do
+        # nc_scan plans two probes, so one result is positive proof the run stopped
+        # early -- whichever failure the classifier attributed it to.
+        report = create(:report, scan: nc_scan, target: nc_target, status: :failed,
+                                 result_completeness: nil, failure_code: "provider_rate_limited")
+        create(:probe_result, report: report, probe: create(:probe))
+
+        legacy(report)
+
+        expect(report).to be_partial_results
+      end
+
+      it "reads a provider-classified failure that produced its whole plan as complete" do
+        # apply_terminal_provider_failure_metadata can mark a run :failed on the
+        # strength of the logs after it produced every row. Counting its results
+        # against the plan settles that without guessing.
+        report = create(:report, scan: nc_scan, target: nc_target, status: :failed,
+                                 result_completeness: nil, failure_code: "provider_rate_limited")
+        2.times { create(:probe_result, report: report, probe: create(:probe)) }
+
+        legacy(report)
+
+        expect(report).to be_complete_results
+        expect(report).not_to be_partial_results
+      end
+
+      it "keeps a run the classifier called incomplete as partial despite a full count" do
+        # scan_incomplete_results asserts incompleteness directly: the run ended without
+        # its completion row or usable timing. A full probe count does not overturn that,
+        # since what went missing was never a probe result.
+        report = create(:report, scan: nc_scan, target: nc_target, status: :failed,
+                                 result_completeness: nil, failure_code: "scan_incomplete_results")
+        2.times { create(:probe_result, report: report, probe: create(:probe)) }
+
+        legacy(report)
+
+        expect(report).to be_partial_results
+      end
+
+      it "declines to classify a provider-classified failure with no plan to compare against" do
+        # A variant report that never recorded its variant_count has no denominator,
+        # so the ambiguity the failure code carries is genuine and left unresolved.
+        parent = create(:report, scan: nc_scan, target: nc_target, status: :completed)
+        report = create(:report, scan: nc_scan, target: nc_target, status: :failed,
+                                 result_completeness: nil, failure_code: "provider_rate_limited",
+                                 parent_report_id: parent.id)
+        create(:probe_result, report: report, probe: create(:probe))
+
+        legacy(report)
+
+        expect(report.result_completeness).to be_nil
+      end
+
+      it "prefers the stored value when there is one" do
+        report = create(:report, scan: nc_scan, target: nc_target, status: :failed, result_completeness: :none)
+        create(:probe_result, report: report, probe: create(:probe))
+
+        expect(report).not_to be_partial_results
+      end
+    end
+
+    describe ".backfill_result_completeness!" do
+      it "leaves an in-flight report alone" do
+        # A report still being worked on gets its completeness from the worker that
+        # finishes it. Classifying it here would stamp a value that worker never
+        # revisits -- and during an upgrade that worker is still the old version.
+        %i[pending starting running processing].each do |status|
+          report = create(:report, scan: bf_scan, target: bf_target, status: status, result_completeness: nil)
+
+          legacy(report)
+
+          Report.backfill_result_completeness!
+
+          expect(report.reload.result_completeness).to be_nil
+        end
+      end
+
+      # 200 production reports predate this column. They carry no completeness signal
+      # of their own, so it is reconstructed from whether any results were recorded.
+      let(:bf_scan) { create(:complete_scan) }
+      let(:bf_target) { create(:target) }
+
+      it "marks completed reports complete" do
+        report = create(:report, scan: bf_scan, target: bf_target, status: :completed, result_completeness: nil)
+
+        legacy(report)
+
+        Report.backfill_result_completeness!
+
+        expect(report.reload.result_completeness).to eq("complete")
+      end
+
+      it "marks a failed report holding results partial" do
+        report = create(:report, scan: bf_scan, target: bf_target, status: :failed, result_completeness: nil)
+        create(:probe_result, report: report, probe: create(:probe))
+
+        legacy(report)
+
+        Report.backfill_result_completeness!
+
+        expect(report.reload.result_completeness).to eq("partial")
+      end
+
+      it "marks a failed report with nothing recorded as none" do
+        report = create(:report, scan: bf_scan, target: bf_target, status: :failed, result_completeness: nil)
+
+        legacy(report)
+
+        Report.backfill_result_completeness!
+
+        expect(report.reload.result_completeness).to eq("none")
+      end
+
+      it "classifies a provider failure that recorded nothing as none" do
+        # The ambiguity is only about whether retained results are complete. With no
+        # results at all there is nothing to be ambiguous about, and leaving it NULL
+        # would mean this row is never classified on any run.
+        report = create(:report, scan: bf_scan, target: bf_target, status: :failed,
+                                 result_completeness: nil, failure_code: "provider_rate_limited")
+
+        legacy(report)
+
+        Report.backfill_result_completeness!
+
+        expect(report.reload.result_completeness).to eq("none")
+      end
+
+      it "records a failure that produced its whole plan as complete" do
+        # apply_terminal_provider_failure_metadata can turn a run that produced every
+        # attempt, eval and completion row into :failed on the strength of the logs.
+        # Inferring "partial" from not-completed-with-results would put a false "scan
+        # did not finish" banner on valid data and drop it from Average ASR, so the
+        # result count is compared against the plan instead of guessing from status.
+        report = create(:report, scan: bf_scan, target: bf_target, status: :failed,
+                                 result_completeness: nil, failure_code: "provider_rate_limited")
+        2.times { create(:probe_result, report: report, probe: create(:probe)) }
+
+        legacy(report)
+
+        Report.backfill_result_completeness!
+
+        expect(report.reload.result_completeness).to eq("complete")
+      end
+
+      it "records a failure that fell short of its plan as partial" do
+        report = create(:report, scan: bf_scan, target: bf_target, status: :failed,
+                                 result_completeness: nil, failure_code: "provider_rate_limited")
+        create(:probe_result, report: report, probe: create(:probe))
+
+        legacy(report)
+
+        Report.backfill_result_completeness!
+
+        expect(report.reload.result_completeness).to eq("partial")
+      end
+
+      it "leaves a failure with no plan to compare against unclassified" do
+        parent = create(:report, scan: bf_scan, target: bf_target, status: :completed)
+        report = create(:report, scan: bf_scan, target: bf_target, status: :failed,
+                                 result_completeness: nil, failure_code: "provider_rate_limited",
+                                 parent_report_id: parent.id)
+        create(:probe_result, report: report, probe: create(:probe))
+
+        legacy(report)
+
+        Report.backfill_result_completeness!
+
+        expect(report.reload.result_completeness).to be_nil
+      end
+
+      it "leaves an already-classified report untouched" do
+        report = create(:report, scan: bf_scan, target: bf_target, status: :failed, result_completeness: :partial)
+
+        Report.backfill_result_completeness!
+
+        expect(report.reload.result_completeness).to eq("partial")
+      end
+    end
+
+    # Execution lifecycle (status) and result completeness are separate concepts.
+    # A failed scan can still carry usable partial evidence, and the UI must be able
+    # to tell that apart from a failure with nothing to show and from a finished scan.
+    let(:target) { create(:target) }
+    let(:scan) { create(:complete_scan) }
+
+    it "treats a completed scan as complete" do
+      report = create(:report, scan: scan, target: target, status: :completed, result_completeness: :complete)
+
+      expect(report).to be_complete_results
+      expect(report).not_to be_partial_results
+    end
+
+    it "treats a failed scan that produced results as partial" do
+      report = create(:report, scan: scan, target: target, status: :failed, result_completeness: :partial)
+
+      expect(report).to be_partial_results
+      expect(report).to be_failed
+    end
+
+    it "treats a failed scan with nothing recorded as having no results" do
+      report = create(:report, scan: scan, target: target, status: :failed, result_completeness: :none)
+
+      expect(report).not_to be_partial_results
+      expect(report.result_completeness).to eq("none")
+    end
+
+    it "treats a stopped scan that produced results as partial" do
+      # Stopped scans retain no results today, but the same grid must cover them.
+      report = create(:report, scan: scan, target: target, status: :stopped, result_completeness: :partial)
+
+      expect(report).to be_partial_results
+      expect(report).to be_stopped
+    end
+
+    describe "#processed_scope and #planned_scope" do
+      it "reports processed work against the plan recorded for the run" do
+        report = create(:report, scan: scan, target: target, status: :failed,
+                                 result_completeness: :partial, planned_probe_count: 3)
+        create_list(:probe, 2).each { |probe| create(:probe_result, report: report, probe: probe) }
+
+        expect(report.processed_scope).to eq(2)
+        expect(report.planned_scope).to eq(3)
+        expect(report.processed_scope_summary).to eq("2 of 3 probes")
+      end
+
+      it "never renders a ratio the processed count exceeds" do
+        # A scan edited between attempts of a resumed run can leave the recorded plan
+        # below what was actually processed. "7 of 5 probes" is not a fact about
+        # anything, so the ratio is dropped rather than shown impossible.
+        report = create(:report, scan: scan, target: target, status: :failed,
+                                 result_completeness: :partial, planned_probe_count: 2)
+        create_list(:probe, 3).each { |probe| create(:probe_result, report: report, probe: probe) }
+
+        expect(report.processed_scope_summary).to eq("3 probes")
+      end
+
+      it "uses the plan recorded when the run was prepared" do
+        report = create(:report, scan: scan, target: target, status: :failed,
+                                 result_completeness: :partial, planned_probe_count: 10)
+        # The scan's list has since changed; the recorded plan is what this run had.
+        scan.probes = create_list(:probe, 3)
+
+        expect(report.planned_scope).to eq(10)
+      end
+
+      it "counts variants, not probes, for a variant report" do
+        # A variant child executes mapped threat variants and records one result per
+        # variant, so calling them probes misstates what was measured.
+        parent = create(:report, scan: scan, target: target, status: :completed)
+        report = create(:report, scan: scan, target: target, status: :failed,
+                                 result_completeness: :partial, parent_report_id: parent.id,
+                                 planned_probe_count: 8)
+        create_list(:probe, 5).each { |probe| create(:probe_result, report: report, probe: probe) }
+
+        expect(report.processed_scope_summary).to eq("5 of 8 variants")
+      end
+
+      it "withholds the ratio when no plan was recorded for the run" do
+        # Every report created before the column has no plan. Reading the scan's
+        # current list instead would claim a ratio against probes it never ran --
+        # AutoUpdateScanProbesJob adds probes, and a variant child runs mapped
+        # variants rather than the scan's own probes.
+        report = create(:report, scan: scan, target: target, status: :failed,
+                                 result_completeness: :partial, planned_probe_count: nil)
+        scan.probes = create_list(:probe, 4)
+        create_list(:probe, 3).each { |probe| create(:probe_result, report: report, probe: probe) }
+
+        expect(report.planned_scope).to be_nil
+        expect(report.processed_scope_summary).to eq("3 probes")
+      end
+
+      it "reports processed work with no planned scope when the scan has no probes" do
+        report = create(:report, scan: scan, target: target, status: :failed, result_completeness: :partial)
+        scan.probes = []
+
+        expect(report.processed_scope).to eq(0)
+        expect(report.planned_scope).to be_nil
+      end
     end
   end
 end

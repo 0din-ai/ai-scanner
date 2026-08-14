@@ -2,7 +2,10 @@
   action_buttons = []
 
   # View Full Report (only for completed reports)
-  if report.completed?
+  # Offered whenever the run left usable evidence -- a finished scan, or one that
+  # stopped early but retained results. Gating on completed? alone made the partial
+  # report and its explanation unreachable.
+  if report_has_viewable_results?(report)
     action_buttons << {
       label: "View Report",
       path: report_detail_path(report),

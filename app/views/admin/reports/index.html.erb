@@ -98,7 +98,7 @@
       label: "Status",
       type: :custom,
       sortable: true,
-      render: ->(report) { status_tag(report.status) }
+      render: ->(report) { report_lifecycle_tags(report) }
     },
     {
       key: :asr,
@@ -159,7 +159,9 @@
           end
         end
 
-        if report.completed?
+        # Usable evidence, not just a finished scan: a partial report's notice and
+        # metrics are only reachable if this link is offered.
+        if report_has_viewable_results?(report)
           links << link_to(report_detail_path(report), target: "_blank", class: "inline-flex items-center gap-1 text-xs text-actionButton hover:text-textMuted transition-colors cursor-pointer") do
             safe_join([content_tag(:span, "", class: "icon icon-sm icon-external-link"), "Details"])
           end
