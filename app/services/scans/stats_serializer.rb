@@ -65,11 +65,12 @@ module Scans
 
     def attacks_info
       # Aggregate attack stats from all completed reports
+      # probe_results, matching Report#asr and the scan average: one row per attack.
       totals = completed_reports
-        .joins(:detector_results)
+        .joins(:probe_results)
         .select(
-          "SUM(detector_results.passed) as total_passed",
-          "SUM(detector_results.total) as total_tests"
+          "SUM(probe_results.passed) as total_passed",
+          "SUM(probe_results.total) as total_tests"
         )
         .take
 
@@ -79,12 +80,12 @@ module Scans
 
       # Per-target breakdown (single grouped query instead of N+1)
       grouped = completed_reports
-        .joins(:detector_results)
+        .joins(:probe_results)
         .group(:target_id)
         .pluck(
           Arel.sql("reports.target_id"),
-          Arel.sql("SUM(detector_results.passed)"),
-          Arel.sql("SUM(detector_results.total)")
+          Arel.sql("SUM(probe_results.passed)"),
+          Arel.sql("SUM(probe_results.total)")
         )
         .each_with_object({}) do |(tid, passed, total), hash|
           hash[tid] = { passed: passed.to_i, total: total.to_i }
@@ -337,11 +338,12 @@ module Scans
       return { grade: "N/A", score: nil, description: "No completed scans" } if completed_reports.empty?
 
       # Calculate overall ASR (lower is better for security)
+      # probe_results, matching Report#asr and the scan average: one row per attack.
       totals = completed_reports
-        .joins(:detector_results)
+        .joins(:probe_results)
         .select(
-          "SUM(detector_results.passed) as total_passed",
-          "SUM(detector_results.total) as total_tests"
+          "SUM(probe_results.passed) as total_passed",
+          "SUM(probe_results.total) as total_tests"
         )
         .take
 

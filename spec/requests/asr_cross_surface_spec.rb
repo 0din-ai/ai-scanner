@@ -90,6 +90,7 @@ RSpec.describe "ASR consistency across report surfaces", type: :request do
     report = build_report(status: :failed, completeness: :partial, passed: 5959, total: 7866)
     ActsAsTenant.with_tenant(company) do
       create(:detector_result, report: report, detector: create(:detector), passed: 1, total: 1)
+      create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 1, total: 1)
     end
 
     get report_detail_path(report)
@@ -126,6 +127,7 @@ RSpec.describe "ASR consistency across report surfaces", type: :request do
       r = create(:report, company: company, scan: scan, target: target,
                           status: :completed, result_completeness: :complete)
       create(:detector_result, report: r, detector: detector, passed: 0, total: 0)
+      create(:probe_result, report: r, probe: create(:probe), detector: detector, passed: 0, total: 0)
       r
     end
 
@@ -144,10 +146,12 @@ RSpec.describe "ASR consistency across report surfaces", type: :request do
                                  created_at: 2.days.ago)
       create(:probe_result, report: previous, probe: probe, detector: detector, passed: 5, total: 10)
       create(:detector_result, report: previous, detector: detector, passed: 5, total: 10)
+      create(:probe_result, report: previous, probe: create(:probe), detector: detector, passed: 5, total: 10)
 
       current = create(:report, company: company, scan: scan, target: target,
                                 status: :completed, result_completeness: :complete)
       create(:detector_result, report: current, detector: detector, passed: 0, total: 0)
+      create(:probe_result, report: current, probe: create(:probe), detector: detector, passed: 0, total: 0)
 
       expect(current.asr).not_to be_calculable
       expect(current.asr_delta_vs_previous).to be_nil
@@ -160,10 +164,12 @@ RSpec.describe "ASR consistency across report surfaces", type: :request do
                                  status: :completed, result_completeness: :complete,
                                  created_at: 2.days.ago)
       create(:detector_result, report: previous, detector: detector, passed: 5, total: 10)
+      create(:probe_result, report: previous, probe: create(:probe), detector: detector, passed: 5, total: 10)
 
       current = create(:report, company: company, scan: scan, target: target,
                                 status: :completed, result_completeness: :complete)
       create(:detector_result, report: current, detector: detector, passed: 8, total: 10)
+      create(:probe_result, report: current, probe: create(:probe), detector: detector, passed: 8, total: 10)
 
       expect(current.asr_delta_vs_previous).to eq(30.0)
     end

@@ -85,14 +85,17 @@ class Scan < ApplicationRecord
 
       # Single SQL query with GROUP BY to avoid N+1 queries
       # Aggregates passed/total per report, then calculates attack rate
-      # Uses LEFT JOIN to include reports even if they have no detector_results
+      # Summed over probe_results, the same source Report#asr uses: pooling detector rows
+      # counted one attack once per detector judging it, so this scan average disagreed
+      # with the rate on every report page it averages.
+      # Uses LEFT JOIN to include reports even if they have no results
       results = reports.completed
-        .left_joins(:detector_results)
+        .left_joins(:probe_results)
         .group("reports.id")
         .select(
           "reports.id",
-          "COALESCE(SUM(detector_results.passed), 0) as total_passed",
-          "COALESCE(SUM(detector_results.total), 0) as total_count"
+          "COALESCE(SUM(probe_results.passed), 0) as total_passed",
+          "COALESCE(SUM(probe_results.total), 0) as total_count"
         )
 
       return 0.0 if results.empty?
