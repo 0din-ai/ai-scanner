@@ -16,6 +16,69 @@ RSpec.describe Stats::AverageAsrScore do
     # tenant explicitly at call time (the aggregate is tenant-scoped).
     subject { ActsAsTenant.with_tenant(company) { described_class.new(days: 30).call } }
 
+    context 'when a report holds only partial results' do
+      # A scan that died mid-run leaves real but incomplete evidence. Averaging it
+      # with finished scans silently mixes partial data into a headline number, so
+      # partial reports are excluded from the aggregate entirely.
+      let!(:complete_report) do
+        create(:report, scan: scan, target: target, company: company,
+                        status: :completed, result_completeness: :complete).tap do |report|
+          create(:probe_result, report: report, probe: probe, detector: detector, passed: 4, total: 10)
+        end
+      end
+
+      let!(:partial_report) do
+        create(:report, scan: scan, target: target, company: company,
+                        status: :failed, result_completeness: :partial).tap do |report|
+          create(:probe_result, report: report, probe: probe, detector: detector, passed: 10, total: 10)
+        end
+      end
+
+      it 'excludes the partial report from the average' do
+        # Both included would average (40 + 100) / 2 = 70.0
+        expect(subject[:score]).to eq(40.0)
+      end
+
+      it 'excludes the partial report from the time series' do
+        rates = subject[:data][:rates].reject(&:zero?)
+
+        expect(rates).to all eq(40.0)
+      end
+    end
+
+    context 'when a report reaches a terminal state outside Reports::Process' do
+      # A stop records completeness through the Report hook, so the aggregate only has to
+      # read the column -- it does not restate the rule in SQL. This is the end-to-end
+      # proof of that: stop a run holding partial results and it leaves the average.
+      let!(:complete_report) do
+        create(:report, scan: scan, target: target, company: company,
+                        status: :completed, result_completeness: :complete).tap do |report|
+          create(:probe_result, report: report, probe: probe, detector: detector, passed: 4, total: 10)
+        end
+      end
+
+      it 'excludes a stopped run that kept only some of its results' do
+        stopped = create(:report, scan: scan, target: target, company: company, status: :running,
+                                  planned_probe_count: 5)
+        create(:probe_result, report: stopped, probe: probe, detector: detector, passed: 10, total: 10)
+        stopped.update!(status: :stopped)
+
+        expect(stopped.reload.result_completeness).to eq('partial')
+        # Counted it would average (40 + 100) / 2 = 70.0
+        expect(subject[:score]).to eq(40.0)
+      end
+
+      it 'still counts a stopped run that produced everything it planned' do
+        stopped = create(:report, scan: scan, target: target, company: company, status: :running,
+                                  planned_probe_count: 1)
+        create(:probe_result, report: stopped, probe: probe, detector: detector, passed: 10, total: 10)
+        stopped.update!(status: :stopped)
+
+        expect(stopped.reload.result_completeness).to eq('complete')
+        expect(subject[:score]).to eq(70.0)
+      end
+    end
+
     context 'when no reports exist' do
       it 'returns zero score with empty data' do
         result = subject

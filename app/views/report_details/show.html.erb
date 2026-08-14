@@ -76,6 +76,10 @@
     <%= render partial: 'reports/failure_summary', locals: { report: @report, pdf_mode: pdf_mode } %>
   <% end %>
 
+  <% if @report.partial_results? %>
+    <%= render partial: "reports/partial_results_notice", locals: { report: @report, pdf_mode: pdf_mode } %>
+  <% end %>
+
   <%= render partial: 'report_details/narrative_band', locals: { report: @report, pdf_mode: pdf_mode } %>
 
   <% if @report.detector_results.exists? %>

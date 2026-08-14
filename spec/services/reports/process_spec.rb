@@ -32,6 +32,155 @@ RSpec.describe Reports::Process, type: :service do
       allow(ToastNotifier).to receive(:call)
     end
 
+    describe 'result completeness' do
+      # process_jsonl_data already distinguishes these cases in order to pick a
+      # status; the completeness they imply must survive rather than being folded
+      # into `failed`, because a failure that produced usable evidence has to be
+      # presented differently from one that produced nothing.
+      # The probe must exist for an eval row to persist a probe result, and the logs
+      # decide whether garak exited cleanly -- both are what the branches key on.
+      let!(:completeness_probe) { create(:probe, name: 'TestProbe') }
+
+      def run_with(lines, logs: 'Garak scan completed - Exit code: 0')
+        RawReportData.where(report_id: report.id).delete_all
+        RawReportData.create!(report_id: report.id, jsonl_data: lines.join("\n"), logs_data: logs, status: 'pending')
+        service.call
+        report.reload
+      end
+
+      let(:init_line) { { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json }
+      let(:attempt_line) do
+        { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a1', prompt: 'p',
+          outputs: [ 'o' ], notes: { score_percentage: 70 } }.to_json
+      end
+      let(:eval_line) do
+        { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe',
+          passed: 3, total_evaluated: 10 }.to_json
+      end
+      let(:completion_line) { { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json }
+
+      it 'marks a clean run complete' do
+        run_with([ init_line, attempt_line, eval_line, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('complete')
+      end
+
+      it 'marks eval rows without their attempt as partial' do
+        # process_eval persists a ProbeResult on its own, so a malformed or missing
+        # attempt row still leaves usable evidence. Storing "none" there would
+        # contradict the results sitting in the database.
+        run_with([ init_line, eval_line ], logs: 'Garak scan completed - Exit code: 1')
+
+        expect(report.status).to eq('failed')
+        expect(report.result_completeness).to eq('partial')
+      end
+
+      it 'marks a run with no attempts as having no results' do
+        run_with([ init_line ])
+
+        expect(report.status).to eq('failed')
+        expect(report.result_completeness).to eq('none')
+      end
+
+      it 'marks attempts without evals as having no results' do
+        # Evals are what persist probe results, so there is nothing to show yet.
+        run_with([ init_line, attempt_line ])
+
+        expect(report.status).to eq('failed')
+        expect(report.result_completeness).to eq('none')
+      end
+
+      it 'marks evals without a completion row as partial' do
+        # This is report 4599: garak died mid-run after recording real results.
+        run_with([ init_line, attempt_line, eval_line ], logs: 'Garak scan completed - Exit code: 1')
+
+        expect(report.status).to eq('failed')
+        expect(report.result_completeness).to eq('partial')
+      end
+
+      it 'marks a completed run with unusable timing as partial' do
+        run_with([ attempt_line, eval_line, completion_line ], logs: 'Garak scan completed - Exit code: 1')
+
+        expect(report.status).to eq('failed')
+        expect(report.result_completeness).to eq('partial')
+      end
+
+      it 'marks a finished run that lost an eval row to malformed counts as partial' do
+        # evals_processed is set by the first eval that persists, so a run whose other
+        # eval rows were rejected still reaches the success branch. That probe's data
+        # is gone for good, so the results on offer are not the whole picture.
+        malformed = { entry_type: 'eval', detector: 'detector.test_detector',
+                      probe: '0din.TestProbe', passed: nil, total_evaluated: nil }.to_json
+
+        run_with([ init_line, attempt_line, eval_line, malformed, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('partial')
+      end
+
+      it 'marks a finished run short of its recorded plan as partial' do
+        # We pass --skip_unknown to garak, so a probe it does not recognise is skipped
+        # silently: no eval row arrives to be dropped, and another probe still sets the
+        # flags. One ProbeResult exists per planned probe, so a short count is the only
+        # evidence that a selected probe produced nothing.
+        report.update!(planned_probe_count: 3)
+
+        run_with([ init_line, attempt_line, eval_line, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('partial')
+      end
+
+      it 'marks a finished run that covered its recorded plan as complete' do
+        report.update!(planned_probe_count: 1)
+
+        run_with([ init_line, attempt_line, eval_line, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('complete')
+      end
+
+      it 'does not call a resumed run partial when a retry recorded the lost eval' do
+        # Resumed scans concatenate segments. A malformed eval is not treated as
+        # completed work, so the retry runs that probe again and records it. The final
+        # state holds every planned result, and that is what the report is judged on.
+        malformed = { entry_type: 'eval', detector: 'detector.test_detector',
+                      probe: '0din.TestProbe', passed: nil, total_evaluated: nil }.to_json
+        report.update!(planned_probe_count: 1)
+
+        run_with([ init_line, attempt_line, malformed, eval_line, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('complete')
+      end
+
+      it 'does not treat a rejected non-eval row as lost results' do
+        # process_completion rejects malformed rows with the same symbol. Concatenated
+        # retry data can carry a bad completion row ahead of a good one, and no eval
+        # was lost there -- calling that partial would drop a whole scan from ASR.
+        bad_completion = { entry_type: 'completion' }.to_json
+
+        run_with([ init_line, attempt_line, eval_line, bad_completion, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('complete')
+      end
+
+      it 'marks a finished run whose eval names an unresolvable probe as partial' do
+        # The probe or detector no longer resolves, so garak evaluated work this report
+        # cannot show. In production a completed run records exactly one result per
+        # planned probe, so a dropped row is a real gap rather than routine noise.
+        unresolvable = { entry_type: 'eval', detector: 'detector.test_detector',
+                         probe: '0din.NoSuchProbe', passed: 3, total_evaluated: 10 }.to_json
+
+        run_with([ init_line, attempt_line, eval_line, unresolvable, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('partial')
+      end
+    end
+
     context 'when raw_report_data does not exist' do
       before do
         # Ensure no raw_report_data exists

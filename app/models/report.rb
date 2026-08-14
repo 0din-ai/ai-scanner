@@ -62,6 +62,40 @@ class Report < ApplicationRecord
     interrupted: 7
   }
 
+  # Result completeness is independent of the execution lifecycle above. A scan can
+  # fail or be stopped and still leave usable partial evidence; presenting that the
+  # same way as a finished scan is what this separation exists to prevent.
+  #
+  # Prefixed so the predicates read as completeness rather than status
+  # (`complete_results?`, not `complete?`).
+  enum :result_completeness, {
+    complete: "complete",
+    partial: "partial",
+    none: "none"
+  }, suffix: :results
+
+  # The stored value is authoritative, but it is not always present: a report can reach
+  # a terminal state without passing through Reports::Process (an unsafe target, a
+  # launch failure, a stop, the stale reaper), and during a rolling deploy an
+  # old-version worker finishes in-flight reports without writing the column. Reading
+  # those as "not partial" would silently present partial evidence as final, so the
+  # predicates fall back to deriving it. Same rule as the backfill, one definition.
+  def result_completeness
+    super.presence || derived_result_completeness
+  end
+
+  def complete_results?
+    result_completeness == "complete"
+  end
+
+  def partial_results?
+    result_completeness == "partial"
+  end
+
+  def none_results?
+    result_completeness == "none"
+  end
+
   # Status constants
   # - processing/starting are internal transition states, not shown to users
   # - interrupted is visible so users can monitor auto-retry behavior
@@ -71,6 +105,81 @@ class Report < ApplicationRecord
   DEBUG_STREAM_LIVE_TAIL_STATUSES = %w[running processing].freeze
   DEBUG_STREAM_POLLING_STATUSES = (DEBUG_BROADCAST_ACTIVE_STATUSES + %w[pending]).freeze
   UNKNOWN_TARGET_NAME = "Unknown target".freeze
+
+  # Failure codes the classifier assigns from log evidence. It can apply them to a run
+  # that produced every attempt, eval and completion row, so such a report has complete
+  # results despite a failed status. Nothing recorded afterwards distinguishes that from
+  # a genuine mid-run stop, so the backfill declines to guess and leaves them unset.
+  PROVIDER_CLASSIFIED_FAILURE_CODES = %w[
+    provider_model_unavailable
+    provider_payment_required
+    provider_auth_failed
+    provider_rejected_request
+    provider_rate_limited
+    provider_service_unavailable
+  ].freeze
+
+  # Codes that assert incompleteness in their own right: the classifier saw a run end
+  # without finishing. What went missing there may be a completion row or usable
+  # timing rather than a probe result, so a full probe count cannot overturn it.
+  # legacy_stale_processing is no longer written, but historical rows carry it.
+  INCOMPLETE_ASSERTING_FAILURE_CODES = %w[
+    scan_incomplete_results
+    legacy_stale_processing
+  ].freeze
+
+  # Statuses a report can no longer move on from. Anything else is still being worked
+  # on, and gets its completeness from the worker that finishes it -- classifying it
+  # here would stamp a value that worker never revisits, and during an upgrade that
+  # worker is still running the previous version.
+  TERMINAL_STATUSES_FOR_BACKFILL = %i[completed failed stopped].freeze
+
+  # Terminal states are reached from several places besides Reports::Process -- a stop,
+  # the stale reaper, a launch failure, a failed variant child -- and each of those would
+  # otherwise leave completeness unset forever. Recording it as the status changes means a
+  # terminal report always carries the value, so every reader can simply check the column.
+  # The ASR aggregate depends on that: it is one SQL round trip over many rows and cannot
+  # call this model per row, so an unset column there would mean restating this whole rule
+  # in SQL and keeping the two in step.
+  #
+  # Results are always persisted before the terminal transition (Reports::Process writes
+  # them in the same transaction; a stop or reaper acts on a run that already produced
+  # whatever it produced), so the evidence is complete by the time this reads it.
+  before_save :record_result_completeness_on_terminal_status
+
+  def record_result_completeness_on_terminal_status
+    return unless will_save_change_to_status?
+    # Reports::Process assigns the value from what it saw in the JSONL, which is richer
+    # evidence than anything derivable afterwards -- never overwrite it.
+    return if self[:result_completeness].present?
+    return unless TERMINAL_STATUSES_FOR_BACKFILL.any? { |terminal| status == terminal.to_s }
+
+    derived = compute_derived_result_completeness
+    self[:result_completeness] = derived if derived.present?
+  end
+
+  def self.backfill_result_completeness!(batch_size: 1000)
+    terminal = statuses.values_at(*TERMINAL_STATUSES_FOR_BACKFILL.map(&:to_s))
+
+    where(result_completeness: nil, status: terminal).in_batches(of: batch_size) do |batch|
+      batch.where(status: statuses[:completed]).update_all(result_completeness: "complete")
+
+      unfinished = batch.where.not(status: statuses[:completed])
+      counts = ProbeResult.where(report_id: unfinished.select(:id)).group(:report_id).count
+
+      # Rows holding nothing are settled in one statement; only those holding results
+      # need the plan compared against, and they are a small minority of terminal runs.
+      unfinished.where.not(id: counts.keys).update_all(result_completeness: "none") if counts.any?
+      next unfinished.update_all(result_completeness: "none") if counts.empty?
+
+      unfinished.where(id: counts.keys).includes(scan: :probes).find_each do |report|
+        completeness = report.completeness_from_evidence(counts[report.id].to_i)
+        # nil means the evidence does not settle it; left NULL so a later run with a
+        # recorded plan can classify it rather than freezing a guess.
+        report.update_columns(result_completeness: completeness) if completeness
+      end
+    end
+  end
 
   def self.ransackable_attributes(auth_object = nil)
     [ "company_id", "failure_code", "name", "created_at", "id", "status", "target_id", "updated_at", "uuid", "asr" ]
@@ -86,6 +195,117 @@ class Report < ApplicationRecord
 
   def historical_target_name
     historical_target&.name || UNKNOWN_TARGET_NAME
+  end
+
+  # Number of probes this run actually produced results for.
+  def processed_scope
+    probe_results.count
+  end
+
+  # Number of probes this run set out to execute, or nil when that is unknown.
+  # Returned separately from processed_scope so callers can show the processed count
+  # alone rather than assert a ratio they cannot support.
+  #
+  # Read from the plan recorded when the run was prepared, never from the scan's
+  # current probe list: that list is mutable (an edit, or AutoUpdateScanProbesJob
+  # adding probes afterwards), and a variant child executes mapped variants rather
+  # than the scan's own probes. Reports created before the column have no recorded
+  # plan, and no ratio is claimed for them.
+  def planned_scope
+    planned = planned_probe_count
+    return nil if planned.nil? || planned.zero?
+
+    planned
+  end
+
+  # The probe count this run will actually execute: mapped variants for a variant
+  # child, the scan's selected probes otherwise.
+  def planned_probe_count_for_run
+    return variant_count if is_variant_report?
+
+    scan&.probes&.count
+  end
+
+  # Best available evidence of the plan, used to judge completeness rather than to
+  # display a ratio. Falls back to the scan's current probe list for rows predating
+  # planned_probe_count: that list can have changed since the run, so it informs a
+  # classification we would otherwise have to guess at, but never a figure shown to
+  # the user -- planned_scope stays strict for that.
+  def evidenced_planned_scope
+    recorded = planned_probe_count
+    return recorded unless recorded.nil? || recorded.zero?
+
+    planned_probe_count_for_run
+  end
+
+  # The one rule both the live derivation and the backfill apply, so a report
+  # classified as it finishes and one classified afterwards cannot disagree.
+  #
+  # Counting results against the plan is what makes a failure code unnecessary here:
+  # a short result set is positive proof the run stopped early, and a full one proves
+  # it produced everything asked of it -- including the provider-classified failures
+  # that apply_terminal_provider_failure_metadata marks :failed on the strength of the
+  # logs after every row was written. Only when there is no plan to compare against
+  # does that ambiguity survive, and then nothing is claimed.
+  def completeness_from_evidence(processed)
+    return "none" if processed.zero?
+    return "partial" if INCOMPLETE_ASSERTING_FAILURE_CODES.include?(failure_code)
+
+    planned = evidenced_planned_scope
+    return processed < planned ? "partial" : "complete" if planned.present? && planned.positive?
+    return nil if PROVIDER_CLASSIFIED_FAILURE_CODES.include?(failure_code)
+
+    "partial"
+  end
+
+  # Completeness inferred from what the run left behind, for rows with no stored value.
+  # Memoized: the admin index calls several predicates per row, and each derivation
+  # queries probe_results.
+  def derived_result_completeness
+    return @derived_result_completeness if defined?(@derived_result_completeness)
+
+    @derived_result_completeness = compute_derived_result_completeness
+  end
+
+  def reload(*)
+    remove_instance_variable(:@derived_result_completeness) if defined?(@derived_result_completeness)
+    super
+  end
+
+  def compute_derived_result_completeness
+    # Only terminal reports have a completeness to infer. A run still in flight may
+    # yet produce results, and calling it "none" would be a claim we cannot make.
+    return nil unless TERMINAL_STATUSES_FOR_BACKFILL.any? { |terminal| status == terminal.to_s }
+
+    # A completed run is complete unless the plan recorded at launch says otherwise --
+    # the same judgement Reports::Process makes, so a row an old processor left unset
+    # cannot read differently from one written by the current code. Only the recorded
+    # plan counts here, never the scan's current list: historical completed rows have
+    # no recorded plan and must not be judged against a list that has grown since.
+    if completed?
+      planned = planned_probe_count.to_i
+      return "complete" unless planned.positive?
+
+      return processed_scope < planned ? "partial" : "complete"
+    end
+
+    completeness_from_evidence(processed_scope)
+  end
+
+  # Human-readable completed scope. Falls back to the processed count alone when the
+  # planned scope is unknown, rather than asserting a ratio we cannot support.
+  def processed_scope_summary
+    processed = processed_scope
+    planned = planned_scope
+    # A variant child executes mapped threat variants and records one result per
+    # variant, so calling those probes would misstate what was measured.
+    unit = is_variant_report? ? "variant" : "probe"
+    # A scan edited between attempts of a resumed run can leave the recorded plan below
+    # what was processed, and "7 of 5 probes" states something that cannot be true. The
+    # processed count is the fact we hold either way, so the ratio is simply dropped.
+    return "#{processed} of #{planned} #{unit.pluralize}" if planned && processed <= planned
+
+    "#{processed} #{unit.pluralize(processed)}"
   end
 
   def failed_with_reason?
@@ -232,6 +452,12 @@ class Report < ApplicationRecord
     scan.reports
         .parent_reports
         .completed
+        # A finished run that dropped eval rows is completed but partial. Comparing
+        # against it reports a movement that is an artefact of the missing work -- the
+        # very comparison the partial notice tells the reader not to make. Rows written
+        # before the column are complete by virtue of being completed, so NULL stays
+        # eligible; <> alone would discard them, being unknown for NULL.
+        .where("reports.result_completeness IS NULL OR reports.result_completeness <> 'partial'")
         .where(target_id: target_id)
         .where.not(id: id)
         .where("reports.created_at < ?", created_at)

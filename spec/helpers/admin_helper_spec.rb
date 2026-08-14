@@ -3,6 +3,95 @@
 require "rails_helper"
 
 RSpec.describe AdminHelper, type: :helper do
+  describe "#report_has_viewable_results?" do
+    # The partial notice, metrics and PDF are only reachable if the list and header
+    # offer the links. Gating them on completed? hides exactly the reports this
+    # change exists to explain.
+    let(:vr_scan) { create(:complete_scan) }
+    let(:vr_target) { create(:target) }
+
+    it "is true for a completed report" do
+      report = create(:report, scan: vr_scan, target: vr_target, status: :completed, result_completeness: :complete)
+
+      expect(helper.report_has_viewable_results?(report)).to be true
+    end
+
+    it "is true for a failed report holding partial results" do
+      report = create(:report, scan: vr_scan, target: vr_target, status: :failed, result_completeness: :partial)
+
+      expect(helper.report_has_viewable_results?(report)).to be true
+    end
+
+    it "is true when completeness is unknown but results exist" do
+      # A failure with no plan to compare against stays unclassified. Its results are
+      # real either way, and hiding the links would make them unreachable.
+      parent = create(:report, scan: vr_scan, target: vr_target, status: :completed)
+      report = create(:report, scan: vr_scan, target: vr_target, status: :failed,
+                               result_completeness: nil, failure_code: "provider_rate_limited",
+                               parent_report_id: parent.id)
+      create(:probe_result, report: report, probe: create(:probe))
+      # Completeness is recorded as a report turns terminal, so an unresolved row has to
+      # be made deliberately: this one has results but no denominator to judge them by.
+      report.update_columns(result_completeness: nil)
+
+      expect(helper.report_has_viewable_results?(report.reload)).to be true
+    end
+
+    it "is false for a failed report with nothing recorded" do
+      report = create(:report, scan: vr_scan, target: vr_target, status: :failed, result_completeness: :none)
+
+      expect(helper.report_has_viewable_results?(report)).to be false
+    end
+
+    it "resolves an unclassified row without re-deriving for every predicate" do
+      # The admin index renders this helper and the lifecycle tags on every row. A row
+      # that stays unclassified falls through each predicate in turn, and re-deriving
+      # per call means a fresh probe_results query each time -- ~5 a row, so a 20-row
+      # page pays ~100 extra queries.
+      parent = create(:report, scan: vr_scan, target: vr_target, status: :completed)
+      report = create(:report, scan: vr_scan, target: vr_target, status: :failed,
+                               result_completeness: nil, failure_code: "provider_rate_limited",
+                               parent_report_id: parent.id)
+      create(:probe_result, report: report, probe: create(:probe))
+      report.reload
+
+      queries = 0
+      counter = ->(_n, _s, _f, _i, payload) { queries += 1 if payload[:sql].to_s.include?("probe_results") }
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+        helper.report_has_viewable_results?(report)
+        helper.report_lifecycle_tags(report)
+      end
+
+      expect(queries).to be <= 2
+    end
+  end
+
+  describe "#report_lifecycle_tags" do
+    # Lifecycle and completeness are separate facts, so the list shows both: a failed
+    # report holding partial evidence must not read the same as one holding nothing.
+    let(:scan) { create(:complete_scan) }
+    let(:target) { create(:target) }
+
+    it "shows only the lifecycle for a completed report" do
+      report = create(:report, scan: scan, target: target, status: :completed, result_completeness: :complete)
+
+      expect(helper.report_lifecycle_tags(report)).to match(/completed/i)
+      expect(helper.report_lifecycle_tags(report)).not_to match(/partial/i)
+    end
+
+    it "marks a failed report holding results as partial" do
+      report = create(:report, scan: scan, target: target, status: :failed, result_completeness: :partial)
+
+      expect(helper.report_lifecycle_tags(report)).to match(/partial/i)
+    end
+
+    it "does not mark a failed report with no results as partial" do
+      report = create(:report, scan: scan, target: target, status: :failed, result_completeness: :none)
+
+      expect(helper.report_lifecycle_tags(report)).not_to match(/partial/i)
+    end
+  end
+
   describe "#status_tag" do
     describe "explicit status" do
       it "renders ok status with green styling" do

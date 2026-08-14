@@ -1,0 +1,38 @@
+<%#
+  Shown when a scan ended early but left usable evidence.
+
+  Deliberately NOT gated on failure_code: most partial reports never recorded one,
+  so gating on `failed_with_reason?` would leave them silently indistinguishable
+  from a finished scan. locals: report, pdf_mode (boolean)
+%>
+<%
+  pdf_mode = local_assigns.fetch(:pdf_mode, false)
+  container_class = pdf_mode ? "px-6 py-5 bg-amber-50 border-b border-amber-200" : "px-8 py-6 bg-amber-50 border-b border-amber-200"
+
+  # Worded to hold for every way a report becomes partial, rather than asserting when
+  # the run ended: it may have stopped early, finished but lost eval rows, finished
+  # without usable timing, or had a probe skipped. Status alone cannot tell those apart,
+  # and the specific cause is already shown in the Reason line below when one is known.
+  heading = "Partial results — some of this scan's work was not recorded"
+  lead = "This report covers only part of what the scan set out to measure."
+%>
+
+<div class="<%= container_class %>" role="status" data-partial-results-notice>
+  <div class="flex gap-3">
+    <span class="icon icon-md icon-warning shrink-0 text-amber-600"></span>
+    <div class="min-w-0">
+      <h2 class="text-base font-semibold text-amber-900"><%= heading %></h2>
+      <p class="mt-1 text-sm leading-6 text-amber-800">
+        <%= lead %> The findings below are real, but they cover only what was recorded:
+        <strong><%= report.processed_scope_summary %></strong>.
+        Every metric on this page is calculated from that recorded work alone, so it is not
+        comparable with a scan whose results are complete.
+      </p>
+      <% if report.failure_code.present? || report.failure_message.present? %>
+        <p class="mt-2 text-sm text-amber-900">
+          <span class="font-medium">Reason:</span> <%= report.user_failure_message %>
+        </p>
+      <% end %>
+    </div>
+  </div>
+</div>

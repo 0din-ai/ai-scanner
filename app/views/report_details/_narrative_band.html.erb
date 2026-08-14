@@ -5,7 +5,10 @@
 <% asr = report.attack_success_rate %>
 <% has_scores = report.detector_results.exists? %>
 <% grade = report_risk_grade_label(asr) %>
-<% delta = report.asr_delta_vs_previous %>
+<%# No delta for a partial report: its rate covers only the work that was recorded,
+    so comparing it with a completed scan reports a movement that is an artefact of
+    the scan stopping early. %>
+<% delta = report.partial_results? ? nil : report.asr_delta_vs_previous %>
 <% findings = report.top_findings %>
 <% if has_scores %>
   <div data-narrative-band class="<%= pdf_mode ? 'px-6 py-5 bg-white border-b border-gray-200' : 'px-8 py-6 bg-gradient-to-r from-indigo-50 via-white to-white border-b border-gray-200' %>">
@@ -21,6 +24,15 @@
         <span class="<%= pdf_mode ? 'text-xl font-bold text-gray-900' : 'text-2xl font-bold text-gray-900' %>"><%= asr.round %>%</span>
         <span class="text-xs text-gray-500">attack success rate</span>
       </span>
+      <% if report.partial_results? %>
+        <%# The rate is computed from recorded work only; say so next to the number itself.
+            A completed run can be partial too (results it measured but could not record),
+            so the reason is phrased to fit both rather than asserting it stopped early. %>
+        <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 text-amber-900"
+              title="Calculated from <%= report.processed_scope_summary %> — this scan's results are incomplete">
+          partial — <%= report.processed_scope_summary %>
+        </span>
+      <% end %>
       <% unless delta.nil? %>
         <% pts = delta.round %>
         <% worse = pts.positive? %>

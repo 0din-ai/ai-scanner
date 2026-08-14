@@ -108,6 +108,27 @@ module Reports
       report.failure_details = {}
     end
 
+    # A finished run is complete unless something it measured is missing. Two ways that
+    # happens: an eval row garak produced that we could not record, or a probe from the
+    # plan that produced no eval at all -- we pass --skip_unknown, so a probe garak does
+    # not recognise is skipped silently and no row arrives to be dropped. ProbeResult is
+    # unique per probe, so a short count means a planned probe left nothing behind.
+    #
+    # The recorded plan judges the final state, which is what a resumed scan needs: its
+    # segments are concatenated, so an eval invalid in one segment is re-run and recorded
+    # in a later one. The dropped-row flag cannot see that recovery and would call a whole
+    # run partial, so it only speaks for runs launched without a plan.
+    #
+    # Judged against the plan recorded at launch and never the scan's current probe list:
+    # that list keeps growing afterwards, so a completed run would look short and be
+    # flagged wrongly.
+    def completed_run_completeness(evals_dropped)
+      planned = report.planned_probe_count.to_i
+      return ProbeResult.where(report_id: report.id).count < planned ? :partial : :complete if planned.positive?
+
+      evals_dropped ? :partial : :complete
+    end
+
     def process_jsonl_data(jsonl_string, mark_processing: true)
       report.update!(status: :processing) if mark_processing
 
@@ -116,6 +137,7 @@ module Reports
       valid_lines = 0
       attempts_processed = false
       evals_processed = false
+      evals_dropped = false
       completion_processed = false
 
       jsonl_string.each_line do |line|
@@ -147,7 +169,14 @@ module Reports
             process_attempt(data)
             attempts_processed = true
           when "eval"
-            evals_processed = true if process_eval(data)
+            # An eval garak evaluated but we could not record -- an invalid row, or a
+            # probe that no longer resolves. Either way that probe's numbers are gone
+            # for good, so the run finished without leaving the whole picture.
+            if process_eval(data)
+              evals_processed = true
+            else
+              evals_dropped = true
+            end
           when "completion"
             completion_processed = true if process_completion(data) == :processed
           else
@@ -172,23 +201,38 @@ module Reports
       # Having attempts/evals without completion means garak exited early after
       # producing partial data; keep those probe results for diagnosis, but do
       # not present the report as completed with an unknown duration.
+      #
+      # Each branch records result completeness alongside the status. The two are
+      # separate facts: the status says how the run ended, completeness says whether
+      # what it left behind is usable evidence. Only eval rows persist probe results,
+      # so a run that never reached them has nothing to show (`none`), while one that
+      # produced evals but never finished has real, partial evidence.
       if !attempts_processed
         Rails.logger.warn "Report #{report.id}: No attempts found in report, marking as failed"
         report.status = :failed
+        # process_eval persists a probe result on its own, so an eval row that arrived
+        # without its attempt still left usable evidence behind. Completeness follows
+        # what was actually recorded, not which row type was missing.
+        report.result_completeness = evals_processed ? :partial : :none
       elsif !evals_processed
         Rails.logger.warn "Report #{report.id}: Attempts found but no eval results - scan may have been interrupted, marking as failed"
         report.status = :failed
+        report.result_completeness = :none
       elsif !completion_processed
         Rails.logger.warn "Report #{report.id}: Attempts and eval results found but no completion row - scan exited before completion, marking as failed"
         report.status = :failed
+        report.result_completeness = :partial
       elsif report.start_time.blank? || report.end_time.blank?
         Rails.logger.warn "Report #{report.id}: Completion found but scan timing is incomplete, marking as failed"
         report.status = :failed
+        report.result_completeness = :partial
       elsif processed && valid_lines > 0
         report.status = :completed
+        report.result_completeness = completed_run_completeness(evals_dropped)
       else
         Rails.logger.warn "Report #{report.id}: No probe results created despite processing lines, marking as failed"
         report.status = :failed
+        report.result_completeness = :none
       end
 
       finalize_failed_report_timing

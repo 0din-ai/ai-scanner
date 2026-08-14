@@ -103,6 +103,7 @@ class RunGarakScan
       report.assign_attributes(status: :starting, execution_token: token)
       report.changes_applied
       @execution_token = token
+      record_planned_probe_count!
     else
       Rails.logger.info(
         "[RunGarakScan] report #{report.id} was claimed by another process; " \
@@ -124,6 +125,28 @@ class RunGarakScan
   # Returns false when a DIFFERENT attempt owns the report -- this process must then
   # touch neither the row nor the credential file -- true when the attempt was ours
   # (or the row is gone), and nil when ownership could not be determined.
+  # Capture what this run set out to execute, while it is still true. The scan's
+  # probe list can change afterwards (an edit, AutoUpdateScanProbesJob), so a count
+  # read later describes a plan this run never had.
+  #
+  # Raised but never lowered. AutoUpdateScanProbesJob can add probes between attempts
+  # and a resumed run executes them, while processed_scope counts results from every
+  # attempt -- a plan frozen at the first launch would render as "7 of 5 probes". A
+  # scan edited down must equally not shrink a plan this report already exceeded.
+  def record_planned_probe_count!
+    planned = report.planned_probe_count_for_run
+    return if planned.nil? || planned.zero?
+
+    recorded = report.planned_probe_count
+    return if recorded.present? && recorded >= planned
+
+    report.update_columns(planned_probe_count: planned)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[RunGarakScan] failed to record planned probe count for #{report.uuid}: #{e.class}: #{e.message}"
+    )
+  end
+
   def revoke_execution_token_after_launch_failure
     Report.unscoped.transaction do
       current_report = Report.unscoped.lock.find_by(id: report.id, company_id: report.company_id)

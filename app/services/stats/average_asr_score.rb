@@ -3,6 +3,14 @@ module Stats
     DEFAULT_WINDOW = 30.days.freeze
 
     SQL_SUCCESS_RATE = "(SUM(probe_results.passed)::float / SUM(probe_results.total)::float * 100)".freeze
+
+    # Reports are classified as they reach a terminal state -- Reports::Process from the
+    # JSONL it read, and a Report before_save hook for every other terminal path -- so the
+    # aggregate only has to read the column. NULL means a run still in flight, which was
+    # always counted, or a row a previous version wrote mid-upgrade; the backfill
+    # migration classifies historical rows.
+    NOT_PARTIAL_SQL = "(reports.result_completeness IS NULL OR reports.result_completeness <> 'partial')".freeze
+
     TIME_GROUP_FORMATS = {
       "week" => "TO_CHAR(reports.created_at, 'IYYY-IW')",
       "month" => "TO_CHAR(reports.created_at, 'YYYY-MM')",
@@ -36,6 +44,7 @@ module Stats
           FROM reports
           INNER JOIN probe_results ON probe_results.report_id = reports.id
           WHERE probe_results.total > 0 AND reports.company_id = :company_id #{date_condition}
+            AND #{NOT_PARTIAL_SQL}
           GROUP BY reports.id
         ) subquery
       SQL
@@ -95,6 +104,7 @@ module Stats
       # by company_id explicitly (nil => no rows), mirroring the scalar average.
       query = Report.where(company_id: ActsAsTenant.current_tenant&.id)
                     .joins(:probe_results).where("probe_results.total > 0")
+                    .where(NOT_PARTIAL_SQL)
       since_date.present? ? query.where("reports.created_at >= ?", since_date) : query
     end
 
