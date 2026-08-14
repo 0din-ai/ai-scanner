@@ -45,6 +45,63 @@ RSpec.describe Admin::ScansController, type: :controller do
       expect(response.body).to include("group-hover:opacity-100")
       expect(response.body).to include("group-focus-within:opacity-100")
     end
+
+    it "exposes a single 'New Scan' creation action on the populated view" do
+      get :index
+
+      assert_select "a[href=?]", new_scan_path, text: /\ANew Scan\z/, count: 1
+    end
+
+    context "when there are no scans" do
+      before { ActsAsTenant.with_tenant(company) { Scan.destroy_all } }
+
+      it "shows the empty-state guidance message" do
+        get :index
+
+        expect(response.body).to include("No scans found")
+      end
+
+      it "exposes exactly one 'New Scan' creation action pointing at /scans/new" do
+        get :index
+
+        assert_select "a[href=?]", new_scan_path, text: /\ANew Scan\z/, count: 1
+      end
+
+      it "does not render the duplicate 'Create Scan' action" do
+        get :index
+
+        expect(response.body).not_to include("Create Scan")
+      end
+    end
+
+    context "when quota is exhausted" do
+      before do
+        allow_any_instance_of(Company).to receive(:scan_allowed?).and_return(false)
+      end
+
+      it "does not show the header 'New Scan' action" do
+        get :index
+
+        doc = Nokogiri::HTML(response.body)
+        header = doc.at_css("#custom-page-header")
+
+        expect(header.css("a[href='#{new_scan_path}']").select { |node| node.text.squish == "New Scan" }).to be_empty
+      end
+
+      context "and there are no scans" do
+        before { ActsAsTenant.with_tenant(company) { Scan.destroy_all } }
+
+        it "shows exactly one 'New Scan' action in the empty state so scheduled creation stays reachable" do
+          get :index
+
+          doc = Nokogiri::HTML(response.body)
+          creation_links = doc.css("a[href='#{new_scan_path}']").select { |node| node.text.squish == "New Scan" }
+
+          expect(creation_links.size).to eq(1)
+          expect(response.body).not_to include("Create Scan")
+        end
+      end
+    end
   end
 
   describe "GET #new" do

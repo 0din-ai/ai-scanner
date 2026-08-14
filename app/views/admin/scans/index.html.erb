@@ -187,6 +187,6 @@
       batch_actions: [:rerun, :delete],
       batch_form_url: batch_scans_path(scope: @current_scope),
       empty_message: "No scans found",
-      empty_action: { label: "Create Scan", path: new_scan_path }
+      empty_action: (@quota_exhausted ? { label: "New Scan", path: new_scan_path } : nil)
   %>
 </div>
