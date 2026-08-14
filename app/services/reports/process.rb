@@ -122,11 +122,22 @@ module Reports
     # Judged against the plan recorded at launch and never the scan's current probe list:
     # that list keeps growing afterwards, so a completed run would look short and be
     # flagged wrongly.
-    def completed_run_completeness(evals_dropped)
-      planned = report.planned_probe_count.to_i
-      return ProbeResult.where(report_id: report.id).count < planned ? :partial : :complete if planned.positive?
+    # Two independent ways a finished run can still be missing something, so both are
+    # checked: an eval row we could not record, and a planned probe that produced none.
+    #
+    # Row count alone cannot see the first: a probe judged by two detectors still leaves
+    # one ProbeResult when one of them is dropped, yet the lost detector may have carried
+    # the higher passed count, which is the one kept.
+    def completed_run_completeness(lost_eval_keys, unidentifiable_eval_dropped)
+      return :partial if lost_eval_keys.any?
 
-      evals_dropped ? :partial : :complete
+      planned = report.planned_probe_count.to_i
+      # An unidentifiable rejection is judged by the plan instead -- but only when there
+      # is one. Without a recorded plan there is nothing to fall back on, and treating the
+      # loss as nothing would present an incomplete run as whole.
+      return unidentifiable_eval_dropped ? :partial : :complete unless planned.positive?
+
+      ProbeResult.where(report_id: report.id).count < planned ? :partial : :complete
     end
 
     def process_jsonl_data(jsonl_string, mark_processing: true)
@@ -137,7 +148,9 @@ module Reports
       valid_lines = 0
       attempts_processed = false
       evals_processed = false
-      evals_dropped = false
+      dropped_eval_keys = Set.new
+      recorded_eval_keys = Set.new
+      unidentifiable_eval_dropped = false
       completion_processed = false
 
       jsonl_string.each_line do |line|
@@ -172,10 +185,21 @@ module Reports
             # An eval garak evaluated but we could not record -- an invalid row, or a
             # probe that no longer resolves. Either way that probe's numbers are gone
             # for good, so the run finished without leaving the whole picture.
+            #
+            # Keyed on the probe and detector the row belongs to, so a resumed scan that
+            # re-runs the probe clears its own earlier rejection. A row rejected for
+            # missing those fields has no key to clear later, so it is tracked separately
+            # rather than stranding a fully recovered run as partial. Strings only:
+            # recorded keys always hold strings, so a non-string like probe: 123 is
+            # present? yet could never be matched by the retry that clears it.
+            key = [ data["probe"], data["detector"] ]
             if process_eval(data)
               evals_processed = true
+              recorded_eval_keys << key
+            elsif key.all? { |part| part.is_a?(String) && part.present? }
+              dropped_eval_keys << key
             else
-              evals_dropped = true
+              unidentifiable_eval_dropped = true
             end
           when "completion"
             completion_processed = true if process_completion(data) == :processed
@@ -228,7 +252,10 @@ module Reports
         report.result_completeness = :partial
       elsif processed && valid_lines > 0
         report.status = :completed
-        report.result_completeness = completed_run_completeness(evals_dropped)
+        report.result_completeness = completed_run_completeness(
+          dropped_eval_keys - recorded_eval_keys,
+          unidentifiable_eval_dropped
+        )
       else
         Rails.logger.warn "Report #{report.id}: No probe results created despite processing lines, marking as failed"
         report.status = :failed

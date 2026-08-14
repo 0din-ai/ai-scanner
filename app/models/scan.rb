@@ -89,7 +89,11 @@ class Scan < ApplicationRecord
       # counted one attack once per detector judging it, so this scan average disagreed
       # with the rate on every report page it averages.
       # Uses LEFT JOIN to include reports even if they have no results
+      # Excludes runs holding only partial results, matching Stats::AverageAsrScore: an
+      # incomplete run's rate covers recorded work alone. This figure is stored, displayed
+      # and sorted on, so it has to agree with the aggregate the dashboard shows.
       results = reports.completed
+        .where("reports.result_completeness IS NULL OR reports.result_completeness <> 'partial'")
         .left_joins(:probe_results)
         .group("reports.id")
         .select(

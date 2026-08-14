@@ -31,6 +31,7 @@ class RecalculateScanAvgSuccessfulAttacks < ActiveRecord::Migration[8.1]
     Scan.reset_column_information
     Scan.where(id: Report.completed.select(:scan_id)).find_each(batch_size: 500) do |scan|
       ActsAsTenant.without_tenant do
+        scan.with_lock do
         rates = Report.completed
                       .where(scan_id: scan.id)
                       .left_joins(:detector_results)
@@ -41,6 +42,7 @@ class RecalculateScanAvgSuccessfulAttacks < ActiveRecord::Migration[8.1]
 
         value = rates.any? ? (rates.sum / rates.size).round(2) : 0.0
         scan.update_column(:avg_successful_attacks, value)
+        end
       end
     end
   end

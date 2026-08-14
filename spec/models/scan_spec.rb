@@ -243,6 +243,27 @@ RSpec.describe Scan, type: :model do
       end
     end
 
+    context 'with a completed report holding only partial results' do
+      # A completed run can be partial when processing loses an eval. Average ASR excludes
+      # those because an incomplete run is not comparable; this cached figure is displayed
+      # and sorted on in the scans list, so it has to agree.
+      before do
+        whole = create(:report, scan: scan, target: scan.targets.first, status: :completed,
+                                result_completeness: :complete)
+        create(:probe_result, report: whole, probe: create(:probe), detector: create(:detector),
+                              passed: 20, total: 50)
+
+        partial = create(:report, scan: scan, target: scan.targets.last, status: :completed,
+                                  result_completeness: :partial)
+        create(:probe_result, report: partial, probe: create(:probe), detector: create(:detector),
+                              passed: 100, total: 100)
+      end
+
+      it 'averages only the runs whose results are whole' do
+        expect(scan.calculate_avg_successful_attacks).to eq(40.0)
+      end
+    end
+
     context 'with reports having zero total' do
       before do
         report1 = create(:report, scan: scan, target: scan.targets.first, status: :completed)
