@@ -29,7 +29,7 @@ module Admin
       base_scope = base_scope.where(scan_id: params[:scan_id]) if params[:scan_id]
 
       # Apply ransack search with pre-calculated detector stats to avoid N+1 queries
-      @q = base_scope.includes(:target, :scan).with_detector_stats.ransack(params[:q])
+      @q = base_scope.includes(:target, :scan).with_result_stats.ransack(params[:q])
       @pagy, @reports = pagy(apply_sorting(@q.result))
 
       # Calculate scope counts for tabs
@@ -107,10 +107,10 @@ module Admin
     def asr_history
       authorize @report
       # Get ASR history for this scan - last 10 reports or current report if alone
-      # with_detector_stats provides cached_passed/cached_total to avoid N+1 on attack_success_rate
+      # with_result_stats provides cached_passed/cached_total to avoid N+1 on the ASR figure
       reports = Report.where(scan_id: @report.scan_id)
                       .where(status: :completed)
-                      .with_detector_stats
+                      .with_result_stats
                       .order(created_at: :desc)
                       .limit(10)
                       .reverse
@@ -271,19 +271,22 @@ module Admin
       if params[:order]&.include?("asr")
         direction = params[:order].include?("desc") ? "DESC" : "ASC"
 
+        # Ordered by the same totals the ASR column displays. Sorting on detector rows
+        # while displaying probe rows left the table visibly out of order: a report can
+        # show 80% and sort as 70%.
         scope.joins(Arel.sql(<<~SQL.squish))
           LEFT JOIN (
             SELECT report_id,
               SUM(passed) as passed_count,
               SUM(total) as total_count
-            FROM detector_results
+            FROM probe_results
             GROUP BY report_id
-          ) detector_totals ON reports.id = detector_totals.report_id
+          ) result_totals ON reports.id = result_totals.report_id
         SQL
         .order(Arel.sql(<<~SQL.squish))
           CASE
-            WHEN COALESCE(detector_totals.total_count, 0) = 0 THEN 0
-            ELSE (CAST(COALESCE(detector_totals.passed_count, 0) AS FLOAT) / detector_totals.total_count * 100)
+            WHEN COALESCE(result_totals.total_count, 0) = 0 THEN 0
+            ELSE (CAST(COALESCE(result_totals.passed_count, 0) AS FLOAT) / result_totals.total_count * 100)
           END #{direction}
         SQL
       elsif params.dig(:q, :s)

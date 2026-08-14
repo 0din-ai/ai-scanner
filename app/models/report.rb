@@ -26,15 +26,18 @@ class Report < ApplicationRecord
   scope :parent_reports, -> { where(parent_report_id: nil) }
   scope :child_reports_only, -> { where.not(parent_report_id: nil) }
 
-  # Pre-calculate detector stats to avoid N+1 queries on index pages
-  # Adds virtual attributes: cached_passed, cached_total
-  scope :with_detector_stats, -> {
-    left_joins(:detector_results)
+
+  # Pre-calculate result stats to avoid N+1 queries on index pages.
+  # Adds virtual attributes: cached_passed, cached_total.
+  #
+  # Summed over probe_results, one row per attack: see #cached_total.
+  scope :with_result_stats, -> {
+    left_joins(:probe_results)
       .group("reports.id")
       .select(
         "reports.*",
-        "COALESCE(SUM(detector_results.passed), 0) as cached_passed",
-        "COALESCE(SUM(detector_results.total), 0) as cached_total"
+        "COALESCE(SUM(probe_results.passed), 0) as cached_passed",
+        "COALESCE(SUM(probe_results.total), 0) as cached_total"
       )
   }
 
@@ -419,13 +422,18 @@ class Report < ApplicationRecord
   # Cached accessor for passed count - uses preloaded value if available, otherwise queries
   def cached_passed
     return read_attribute(:cached_passed).to_i if has_attribute?(:cached_passed)
-    detector_results.sum(:passed)
+    probe_results.sum(:passed)
   end
 
   # Cached accessor for total count - uses preloaded value if available, otherwise queries
+  # Summed over probe_results because an attack is one prompt sent to the model, not one
+  # detector's verdict on it. detector_results holds a row per detector, so pooling them
+  # counted a single attack once per detector judging it: ASR then moved when a probe
+  # gained a detector even though the target behaved identically, and the headline
+  # disagreed with the probes tab and dashboard Average ASR, which both sum probe_results.
   def cached_total
     return read_attribute(:cached_total).to_i if has_attribute?(:cached_total)
-    detector_results.sum(:total)
+    probe_results.sum(:total)
   end
 
   # Numeric ASR for charts, sorting and aggregates, which need a comparable number.

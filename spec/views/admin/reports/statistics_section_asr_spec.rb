@@ -17,6 +17,7 @@ RSpec.describe "admin/reports/_statistics_section", type: :view do
   def asr_cell(passed:, total:)
     report = create(:report, company: company, scan: scan, target: target, status: :completed)
     create(:detector_result, report: report, detector: detector, passed: passed, total: total) if total.positive?
+    create(:probe_result, report: report, probe: create(:probe), detector: detector, passed: passed, total: total) if total.positive?
     render partial: "admin/reports/statistics_section", locals: { report: report }
 
     label = Nokogiri::HTML.fragment(rendered).css("span").find { |s| s.text.strip == "Attack Success Rate" }

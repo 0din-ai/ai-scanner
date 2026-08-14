@@ -140,6 +140,7 @@ RSpec.describe "ReportDetails", type: :request do
     it "allows a user to view their own company report when detector results are present" do
       report_a = create(:report, :completed, company: company_a)
       create(:detector_result, report: report_a, passed: 3, total: 10)
+      create(:probe_result, report: report_a, probe: create(:probe), detector: create(:detector), passed: 3, total: 10)
 
       sign_in user_a
       get report_detail_path(report_a)
@@ -312,7 +313,9 @@ RSpec.describe "ReportDetails", type: :request do
                                  scan: scan, created_at: 1.day.ago)
         ActsAsTenant.with_tenant(company) do
           create(:detector_result, report: previous_report, passed: 2, total: 10) # 20%
+          create(:probe_result, report: previous_report, probe: create(:probe), detector: create(:detector), passed: 2, total: 10)
           create(:detector_result, report: current_report, passed: 6, total: 10)  # 60%
+          create(:probe_result, report: current_report, probe: create(:probe), detector: create(:detector), passed: 6, total: 10)
         end
 
         get report_detail_path(current_report, pdf: 'true', pdf_token: pdf_token)

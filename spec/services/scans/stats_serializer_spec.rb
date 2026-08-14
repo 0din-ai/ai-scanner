@@ -120,7 +120,9 @@ RSpec.describe Scans::StatsSerializer, type: :service do
         report2 = create(:report, :completed, scan: scan, target: target2)
 
         create(:detector_result, report: report1, detector: detector, passed: 10, total: 50)
+        create(:probe_result, report: report1, probe: create(:probe), detector: detector, passed: 10, total: 50)
         create(:detector_result, report: report2, detector: detector, passed: 20, total: 80)
+        create(:probe_result, report: report2, probe: create(:probe), detector: detector, passed: 20, total: 80)
       end
 
       it 'returns correct per-target totals from a single grouped query' do
@@ -368,7 +370,9 @@ RSpec.describe Scans::StatsSerializer, type: :service do
 
       before do
         create(:detector_result, report: report, detector: detector1, passed: 10, total: 50)
+        create(:probe_result, report: report, probe: create(:probe), detector: detector1, passed: 10, total: 50)
         create(:detector_result, report: report, detector: detector2, passed: 25, total: 100)
+        create(:probe_result, report: report, probe: create(:probe), detector: detector2, passed: 25, total: 100)
       end
 
       it 'returns all detectors with results' do
@@ -403,7 +407,9 @@ RSpec.describe Scans::StatsSerializer, type: :service do
 
       before do
         create(:detector_result, report: report1, detector: detector, passed: 10, total: 50)
+        create(:probe_result, report: report1, probe: create(:probe), detector: detector, passed: 10, total: 50)
         create(:detector_result, report: report2, detector: detector, passed: 15, total: 50)
+        create(:probe_result, report: report2, probe: create(:probe), detector: detector, passed: 15, total: 50)
       end
 
       it 'aggregates results across all completed reports' do
@@ -555,6 +561,7 @@ RSpec.describe Scans::StatsSerializer, type: :service do
 
       it 'includes component breakdown' do
         create(:detector_result, report: report, detector: detector, passed: 20, total: 100)
+        create(:probe_result, report: report, probe: create(:probe), detector: detector, passed: 20, total: 100)
 
         result = serializer.send(:security_grade_info)
 
@@ -573,12 +580,14 @@ RSpec.describe Scans::StatsSerializer, type: :service do
       let!(:measurable) do
         r = create(:report, :completed, scan: scan, target: target, created_at: 10.days.ago)
         create(:detector_result, report: r, detector: create(:detector), passed: 5, total: 10)
+        create(:probe_result, report: r, probe: create(:probe), detector: create(:detector), passed: 5, total: 10)
         r
       end
 
       let!(:unmeasurable) do
         r = create(:report, :completed, scan: scan, target: target, created_at: 1.day.ago)
         create(:detector_result, report: r, detector: create(:detector), passed: 0, total: 0)
+        create(:probe_result, report: r, probe: create(:probe), detector: create(:detector), passed: 0, total: 0)
         r
       end
 
@@ -616,16 +625,19 @@ RSpec.describe Scans::StatsSerializer, type: :service do
         travel_to(25.days.ago) do
           report1 = create(:report, :completed, scan: scan, target: target)
           create(:detector_result, report: report1, detector: detector, passed: 50, total: 100)
+          create(:probe_result, report: report1, probe: create(:probe), detector: detector, passed: 50, total: 100)
         end
 
         travel_to(15.days.ago) do
           report2 = create(:report, :completed, scan: scan, target: target)
           create(:detector_result, report: report2, detector: detector, passed: 40, total: 100)
+          create(:probe_result, report: report2, probe: create(:probe), detector: detector, passed: 40, total: 100)
         end
 
         travel_to(5.days.ago) do
           report3 = create(:report, :completed, scan: scan, target: target)
           create(:detector_result, report: report3, detector: detector, passed: 30, total: 100)
+          create(:probe_result, report: report3, probe: create(:probe), detector: detector, passed: 30, total: 100)
         end
       end
 
@@ -674,11 +686,13 @@ RSpec.describe Scans::StatsSerializer, type: :service do
         travel_to(20.days.ago) do
           report1 = create(:report, :completed, scan: scan, target: target)
           create(:detector_result, report: report1, detector: detector, passed: 20, total: 100)
+          create(:probe_result, report: report1, probe: create(:probe), detector: detector, passed: 20, total: 100)
         end
 
         travel_to(5.days.ago) do
           report2 = create(:report, :completed, scan: scan, target: target)
           create(:detector_result, report: report2, detector: detector, passed: 50, total: 100)
+          create(:probe_result, report: report2, probe: create(:probe), detector: detector, passed: 50, total: 100)
         end
       end
 
@@ -698,11 +712,13 @@ RSpec.describe Scans::StatsSerializer, type: :service do
         travel_to(20.days.ago) do
           report1 = create(:report, :completed, scan: scan, target: target)
           create(:detector_result, report: report1, detector: detector, passed: 30, total: 100)
+          create(:probe_result, report: report1, probe: create(:probe), detector: detector, passed: 30, total: 100)
         end
 
         travel_to(5.days.ago) do
           report2 = create(:report, :completed, scan: scan, target: target)
           create(:detector_result, report: report2, detector: detector, passed: 30, total: 100)
+          create(:probe_result, report: report2, probe: create(:probe), detector: detector, passed: 30, total: 100)
         end
       end
 
@@ -720,6 +736,7 @@ RSpec.describe Scans::StatsSerializer, type: :service do
         travel_to(45.days.ago) do
           report = create(:report, :completed, scan: scan, target: target)
           create(:detector_result, report: report, detector: detector, passed: 50, total: 100)
+          create(:probe_result, report: report, probe: create(:probe), detector: detector, passed: 50, total: 100)
         end
       end
 
@@ -800,6 +817,7 @@ RSpec.describe Scans::StatsSerializer, type: :service do
       scan.probes << probe
       create(:probe_result, report: report, probe: probe, detector: detector, passed: 25, total: 100)
       create(:detector_result, report: report, detector: detector, passed: 25, total: 100)
+      create(:probe_result, report: report, probe: create(:probe), detector: detector, passed: 25, total: 100)
     end
 
     it 'returns consistent data across all methods' do
@@ -839,7 +857,9 @@ RSpec.describe Scans::StatsSerializer, type: :service do
       create(:probe_result, report: report2, probe: probe, detector: detector, passed: 15, total: 50)
 
       create(:detector_result, report: report1, detector: detector, passed: 10, total: 50)
+      create(:probe_result, report: report1, probe: create(:probe), detector: detector, passed: 10, total: 50)
       create(:detector_result, report: report2, detector: detector, passed: 15, total: 50)
+      create(:probe_result, report: report2, probe: create(:probe), detector: detector, passed: 15, total: 50)
     end
 
     it 'aggregates risk_distribution across reports' do
@@ -873,7 +893,9 @@ RSpec.describe Scans::StatsSerializer, type: :service do
       create(:probe_result, report: child_report, probe: probe, detector: detector, passed: 20, total: 50)
 
       create(:detector_result, report: parent_report, detector: detector, passed: 10, total: 50)
+      create(:probe_result, report: parent_report, probe: create(:probe), detector: detector, passed: 10, total: 50)
       create(:detector_result, report: child_report, detector: detector, passed: 20, total: 50)
+      create(:probe_result, report: child_report, probe: create(:probe), detector: detector, passed: 20, total: 50)
     end
 
     it 'only counts parent reports in aggregate stats' do

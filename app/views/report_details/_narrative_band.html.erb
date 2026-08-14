@@ -3,7 +3,7 @@
   locals: report (decorated Report), pdf_mode (boolean)
 %>
 <%# One figure for the whole band: each Report#asr runs two SUM queries when the
-    relation was not loaded with_detector_stats. %>
+    relation was not loaded with_result_stats. %>
 <% figure = report.asr %>
 <% has_scores = report.detector_results.exists? %>
 <%# Detector rows can exist while their totals sum to zero, leaving nothing to rate.

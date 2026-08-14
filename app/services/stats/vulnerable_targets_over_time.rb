@@ -62,13 +62,15 @@ module Stats
         dates.each { |date| asr_by_date[date.to_s] = nil }
 
         # Get ASR data for each target
-        reports = Report.joins(:detector_results)
+        # probe_results, the canonical ASR source: joining detector rows made this chart
+        # rank and rate targets differently from the report pages and Average ASR.
+        reports = Report.joins(:probe_results)
                         .where(target_id: target[:id])
                         .where("reports.created_at >= ?", days.days.ago)
                         .group("reports.created_at::date")
                         .select("reports.created_at::date::text as date,
-                                SUM(detector_results.passed) as passed,
-                                SUM(detector_results.total) as total")
+                                SUM(probe_results.passed) as passed,
+                                SUM(probe_results.total) as total")
 
         reports.each do |report|
           if report.total.to_i > 0

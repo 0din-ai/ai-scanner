@@ -204,6 +204,7 @@ RSpec.describe Report, type: :model do
 
       # Create some detector results for the report
       create(:detector_result, report: report, passed: 20, total: 50)
+      create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 20, total: 50)
     end
 
     context 'when status changes to completed' do
@@ -442,13 +443,16 @@ RSpec.describe Report, type: :model do
     context 'with detector results' do
       it 'calculates correct ASR with single detector result' do
         create(:detector_result, report: report, passed: 8, total: 10)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 8, total: 10)
 
         expect(report.attack_success_rate).to eq(80.0)
       end
 
       it 'calculates correct ASR with multiple detector results' do
         create(:detector_result, report: report, passed: 8, total: 10)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 8, total: 10)
         create(:detector_result, report: report, passed: 6, total: 20)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 6, total: 20)
 
         # Total: 14 passed out of 30 total = 46.67%
         expect(report.attack_success_rate).to eq(46.67)
@@ -456,18 +460,21 @@ RSpec.describe Report, type: :model do
 
       it 'handles zero passed attacks' do
         create(:detector_result, report: report, passed: 0, total: 10)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 0, total: 10)
 
         expect(report.attack_success_rate).to eq(0.0)
       end
 
       it 'handles 100% success rate' do
         create(:detector_result, report: report, passed: 10, total: 10)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 10, total: 10)
 
         expect(report.attack_success_rate).to eq(100.0)
       end
 
       it 'rounds to 2 decimal places' do
         create(:detector_result, report: report, passed: 1, total: 3)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 1, total: 3)
 
         # 1/3 = 0.33333... should round to 33.33
         expect(report.attack_success_rate).to eq(33.33)
@@ -483,20 +490,25 @@ RSpec.describe Report, type: :model do
     context 'with zero total attacks' do
       it 'returns 0 when total is zero' do
         create(:detector_result, report: report, passed: 0, total: 0)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 0, total: 0)
 
         expect(report.attack_success_rate).to eq(0)
       end
 
       it 'returns 0 when multiple results have zero totals' do
         create(:detector_result, report: report, passed: 0, total: 0)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 0, total: 0)
         create(:detector_result, report: report, passed: 0, total: 0)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 0, total: 0)
 
         expect(report.attack_success_rate).to eq(0)
       end
 
       it 'handles mixed zero and non-zero totals correctly' do
         create(:detector_result, report: report, passed: 0, total: 0)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 0, total: 0)
         create(:detector_result, report: report, passed: 5, total: 10)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 5, total: 10)
 
         # Should only count the non-zero total: 5/10 = 50%
         expect(report.attack_success_rate).to eq(50.0)
@@ -516,6 +528,7 @@ RSpec.describe Report, type: :model do
 
     it 'reports a rate that can be calculated' do
       create(:detector_result, report: report, passed: 8, total: 10)
+      create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 8, total: 10)
 
       expect(report.asr).to be_calculable
       expect(report.asr.percent).to eq(80.0)
@@ -525,6 +538,7 @@ RSpec.describe Report, type: :model do
       # The defect this replaced: every zero rendered "N/A", so a scan that blocked all
       # ten attacks read as unmeasured beside its own 0/10 counts.
       create(:detector_result, report: report, passed: 0, total: 10)
+      create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 0, total: 10)
 
       expect(report.asr).to be_calculable
       expect(report.asr.percent).to eq(0.0)
@@ -537,12 +551,14 @@ RSpec.describe Report, type: :model do
 
     it 'reports no rate when every total is zero' do
       create(:detector_result, report: report, passed: 0, total: 0)
+      create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 0, total: 0)
 
       expect(report.asr).not_to be_calculable
     end
 
     it 'carries the numerator and denominator it was computed from' do
       create(:detector_result, report: report, passed: 1, total: 3)
+      create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 1, total: 3)
 
       expect(report.asr.numerator).to eq(1)
       expect(report.asr.denominator).to eq(3)
@@ -551,6 +567,7 @@ RSpec.describe Report, type: :model do
 
     it 'handles a fully successful run' do
       create(:detector_result, report: report, passed: 15, total: 15)
+      create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 15, total: 15)
 
       expect(report.asr.percent).to eq(100.0)
     end
@@ -1159,9 +1176,11 @@ RSpec.describe Report, type: :model do
       prev = create(:report, :completed, company: company, target: target, scan: scan,
                     created_at: 1.day.ago)
       create(:detector_result, report: prev, passed: 2, total: 10)   # 20%
+      create(:probe_result, report: prev, probe: create(:probe), detector: create(:detector), passed: 2, total: 10)
 
       current = create(:report, :completed, company: company, target: target, scan: scan)
       create(:detector_result, report: current, passed: 5, total: 10) # 50%
+      create(:probe_result, report: current, probe: create(:probe), detector: create(:detector), passed: 5, total: 10)
 
       expect(current.asr_delta_vs_previous).to eq(30.0)
     end
@@ -1170,9 +1189,11 @@ RSpec.describe Report, type: :model do
       prev = create(:report, :completed, company: company, target: target, scan: scan,
                     created_at: 1.day.ago)
       create(:detector_result, report: prev, passed: 5, total: 10)   # 50%
+      create(:probe_result, report: prev, probe: create(:probe), detector: create(:detector), passed: 5, total: 10)
 
       current = create(:report, :completed, company: company, target: target, scan: scan)
       create(:detector_result, report: current, passed: 2, total: 10) # 20%
+      create(:probe_result, report: current, probe: create(:probe), detector: create(:detector), passed: 2, total: 10)
 
       expect(current.asr_delta_vs_previous).to eq(-30.0)
     end

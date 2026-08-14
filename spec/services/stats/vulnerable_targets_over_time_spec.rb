@@ -30,23 +30,27 @@ RSpec.describe Stats::VulnerableTargetsOverTime do
         5.times do |i|
           report = create(:report, target: @target1, scan: scan, created_at: i.days.ago)
           create(:detector_result, report: report, detector: detector, passed: 3, total: 10)
+          create(:probe_result, report: report, probe: create(:probe), detector: detector, passed: 3, total: 10)
         end
 
         # Create reports for Target 2 (second most vulnerable)
         3.times do |i|
           report = create(:report, target: @target2, scan: scan, created_at: i.days.ago)
           create(:detector_result, report: report, detector: detector, passed: 7, total: 10)
+          create(:probe_result, report: report, probe: create(:probe), detector: detector, passed: 7, total: 10)
         end
 
         # Create reports for Target 3 (least vulnerable)
         1.times do |i|
           report = create(:report, target: @target3, scan: scan, created_at: i.days.ago)
           create(:detector_result, report: report, detector: detector, passed: 9, total: 10)
+          create(:probe_result, report: report, probe: create(:probe), detector: detector, passed: 9, total: 10)
         end
 
         # Create older report that should be excluded from 30-day window
         old_report = create(:report, target: @target3, scan: scan, created_at: 35.days.ago)
         create(:detector_result, report: old_report, detector: detector, passed: 0, total: 10)
+        create(:probe_result, report: old_report, probe: create(:probe), detector: detector, passed: 0, total: 10)
       end
 
       it 'returns targets sorted by average ASR (highest to lowest)' do
@@ -138,6 +142,7 @@ RSpec.describe Stats::VulnerableTargetsOverTime do
           (7 - i).times do |j|
             report = create(:report, target: target, scan: scan, created_at: j.days.ago)
             create(:detector_result, report: report, detector: detector, passed: i, total: 10)
+            create(:probe_result, report: report, probe: create(:probe), detector: detector, passed: i, total: 10)
           end
         end
       end

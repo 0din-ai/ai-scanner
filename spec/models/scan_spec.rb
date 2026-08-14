@@ -213,9 +213,11 @@ RSpec.describe Scan, type: :model do
 
         # Report 1: 20 passed out of 50 total = 40%
         create(:detector_result, report: report1, passed: 20, total: 50)
+        create(:probe_result, report: report1, probe: create(:probe), detector: create(:detector), passed: 20, total: 50)
 
         # Report 2: 30 passed out of 100 total = 30%
         create(:detector_result, report: report2, passed: 30, total: 100)
+        create(:probe_result, report: report2, probe: create(:probe), detector: create(:detector), passed: 30, total: 100)
       end
 
       it 'calculates the average of attack success rates' do
@@ -231,7 +233,9 @@ RSpec.describe Scan, type: :model do
         # Multiple detector results for one report
         # Total: 25 passed out of 100 = 25%
         create(:detector_result, report: report, passed: 10, total: 40)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 10, total: 40)
         create(:detector_result, report: report, passed: 15, total: 60)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 15, total: 60)
       end
 
       it 'sums detector results within each report before calculating percentage' do
@@ -245,7 +249,9 @@ RSpec.describe Scan, type: :model do
         report2 = create(:report, scan: scan, target: scan.targets.last, status: :completed)
 
         create(:detector_result, report: report1, passed: 0, total: 0)
+        create(:probe_result, report: report1, probe: create(:probe), detector: create(:detector), passed: 0, total: 0)
         create(:detector_result, report: report2, passed: 10, total: 20)
+        create(:probe_result, report: report2, probe: create(:probe), detector: create(:detector), passed: 10, total: 20)
       end
 
       it 'handles division by zero correctly' do
@@ -258,14 +264,17 @@ RSpec.describe Scan, type: :model do
       before do
         create(:report, scan: scan, target: scan.targets.first, status: :completed).tap do |report|
           create(:detector_result, report: report, passed: 50, total: 100)
+          create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 50, total: 100)
         end
 
         create(:report, scan: scan, target: scan.targets.last, status: :failed).tap do |report|
           create(:detector_result, report: report, passed: 100, total: 100)
+          create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 100, total: 100)
         end
 
         create(:report, scan: scan, target: scan.targets.first, status: :running).tap do |report|
           create(:detector_result, report: report, passed: 100, total: 100)
+          create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 100, total: 100)
         end
       end
 
@@ -282,6 +291,7 @@ RSpec.describe Scan, type: :model do
     before do
       report = create(:report, scan: scan, target: scan.targets.first, status: :completed)
       create(:detector_result, report: report, passed: 30, total: 60)
+      create(:probe_result, report: report, probe: create(:probe), detector: create(:detector), passed: 30, total: 60)
     end
 
     it 'updates the avg_successful_attacks column' do
