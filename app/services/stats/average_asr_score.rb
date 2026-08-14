@@ -6,10 +6,22 @@ module Stats
 
     # Reports are classified as they reach a terminal state -- Reports::Process from the
     # JSONL it read, and a Report before_save hook for every other terminal path -- so the
-    # aggregate only has to read the column. NULL means a run still in flight, which was
-    # always counted, or a row a previous version wrote mid-upgrade; the backfill
-    # migration classifies historical rows.
-    NOT_PARTIAL_SQL = "(reports.result_completeness IS NULL OR reports.result_completeness <> 'partial')".freeze
+    # aggregate reads the column instead of restating the rule in SQL.
+    #
+    # A failed or stopped run that is still unset was written by neither (an old worker
+    # finishing mid-rollout, before the new code took over) and may hold partial evidence,
+    # so it is left out rather than counted on the assumption that unset means whole. An
+    # unset completed run is counted, which is what the model derives for it as well. Both
+    # cases are transient: the migration classifies history and re-running
+    # scanner:backfill_result_completeness settles any stragglers.
+    NOT_PARTIAL_SQL = <<~SQL.squish.freeze
+      (
+        reports.result_completeness IS NOT NULL
+          AND reports.result_completeness <> 'partial'
+        OR reports.result_completeness IS NULL
+          AND reports.status NOT IN (#{Report.statuses.values_at('failed', 'stopped').join(', ')})
+      )
+    SQL
 
     TIME_GROUP_FORMATS = {
       "week" => "TO_CHAR(reports.created_at, 'IYYY-IW')",

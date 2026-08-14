@@ -46,6 +46,38 @@ RSpec.describe Stats::AverageAsrScore do
       end
     end
 
+    context 'when a terminal report was never classified' do
+      # The hook classifies every terminal transition and the migration classifies
+      # history, but an old worker finishing mid-rollout writes neither. Such a row may
+      # hold partial evidence, so it is left out rather than counted on the assumption
+      # that unset means whole.
+      let!(:complete_report) do
+        create(:report, scan: scan, target: target, company: company,
+                        status: :completed, result_completeness: :complete).tap do |report|
+          create(:probe_result, report: report, probe: probe, detector: detector, passed: 4, total: 10)
+        end
+      end
+
+      it 'excludes an unclassified failed report' do
+        unclassified = create(:report, scan: scan, target: target, company: company, status: :failed)
+        create(:probe_result, report: unclassified, probe: probe, detector: detector, passed: 10, total: 10)
+        unclassified.update_columns(result_completeness: nil)
+
+        # Counted it would average (40 + 100) / 2 = 70.0
+        expect(subject[:score]).to eq(40.0)
+      end
+
+      it 'still counts an unclassified completed report' do
+        # A finished run is complete unless a recorded plan says otherwise, which is what
+        # the model derives for it too -- so dropping it would discard good data.
+        unclassified = create(:report, scan: scan, target: target, company: company, status: :completed)
+        create(:probe_result, report: unclassified, probe: probe, detector: detector, passed: 10, total: 10)
+        unclassified.update_columns(result_completeness: nil)
+
+        expect(subject[:score]).to eq(70.0)
+      end
+    end
+
     context 'when a report reaches a terminal state outside Reports::Process' do
       # A stop records completeness through the Report hook, so the aggregate only has to
       # read the column -- it does not restate the rule in SQL. This is the end-to-end
