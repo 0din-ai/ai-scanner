@@ -16,14 +16,18 @@ module Admin
       @unscheduled_count = Scan.unscheduled.count
       @all_count = Scan.count
 
-      # Handle scopes
+      # Handle scopes. Defaults to all: with `scheduled` as the default, a company whose
+      # scans are all one-time landed on "No scans found" while the tabs beside it counted
+      # every one of them -- the history was there, the initial filter excluded it. An
+      # unrecognised scope falls here too, so a stale bookmark shows everything rather
+      # than nothing.
       base_scope = case params[:scope]
+      when "scheduled"
+        Scan.scheduled
       when "unscheduled"
         Scan.unscheduled
-      when "all"
+      else
         Scan.all
-      else # scheduled is default
-        Scan.scheduled
       end
 
       # reports_count is now a real column (counter cache), no special handling needed
@@ -38,7 +42,9 @@ module Admin
       else
         @pagy, @scans = pagy(@q.result)
       end
-      @current_scope = params[:scope] || "scheduled"
+      # Mirrors the branch above, so the highlighted tab always names the filter the list
+      # was actually built from.
+      @current_scope = %w[scheduled unscheduled].include?(params[:scope]) ? params[:scope] : "all"
 
       # Load filter options
       @filter_targets = Target.order(:name).pluck(:name, :id)

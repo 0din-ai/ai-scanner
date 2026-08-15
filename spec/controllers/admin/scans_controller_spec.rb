@@ -27,6 +27,103 @@ RSpec.describe Admin::ScansController, type: :controller do
       expect(response).to have_http_status(:success)
     end
 
+    describe "the default filter" do
+      # The default scope was `scheduled`, so a company whose scans are all one-time saw
+      # "No scans found" beside a tab reading All: 126. The counts were right; the list
+      # was filtered to a scope nothing matched.
+      def active_tab
+        doc = Nokogiri::HTML(response.body)
+        link = doc.css("a").find { |a| a["class"].to_s.include?("text-primary") && a["href"].to_s.include?("scope=") }
+        link && link["href"][/scope=(\w+)/, 1]
+      end
+
+      let!(:one_time) do
+        ActsAsTenant.with_tenant(company) do
+          create(:complete_scan, company: company, name: "OneTimeAlpha")
+        end
+      end
+
+      it "shows existing scans when no filter is given" do
+        get :index
+
+        expect(response.body).to include("OneTimeAlpha")
+        expect(response.body).not_to include("No scans found")
+      end
+
+      it "marks All as the active tab" do
+        get :index
+
+        expect(active_tab).to eq("all")
+      end
+
+      it "still shows the empty state for a company with no scans at all" do
+        ActsAsTenant.with_tenant(company) { Scan.find_each(&:destroy) }
+
+        get :index
+
+        expect(response.body).to include("No scans found")
+      end
+    end
+
+    describe "explicit filters" do
+      # Deterministic names: the shared `scan` fixture takes a Faker name, which can occur
+      # in the page's own chrome and make an include-assertion pass regardless of filter.
+      let!(:one_time) do
+        ActsAsTenant.with_tenant(company) do
+          create(:complete_scan, company: company, name: "OneTimeAlpha")
+        end
+      end
+
+      let!(:scheduled) do
+        ActsAsTenant.with_tenant(company) do
+          create(:complete_scan, :with_recurrence, company: company, name: "ScheduledAlpha")
+        end
+      end
+
+      it "still honours an explicit scheduled filter" do
+        get :index, params: { scope: "scheduled" }
+
+        expect(response.body).to include("ScheduledAlpha")
+        expect(response.body).not_to include("OneTimeAlpha")
+      end
+
+      it "still honours an explicit one-time filter" do
+        get :index, params: { scope: "unscheduled" }
+
+        expect(response.body).to include("OneTimeAlpha")
+        expect(response.body).not_to include("ScheduledAlpha")
+      end
+
+      it "carries the filter through pagination links" do
+        # A filter that survives the first page but not the second sends the reader back
+        # to an unfiltered list without saying so.
+        ActsAsTenant.with_tenant(company) { create_list(:complete_scan, 40, company: company) }
+
+        get :index, params: { scope: "unscheduled" }
+
+        pagination_links = Nokogiri::HTML(response.body).css("nav a").map { |a| a["href"].to_s }
+        paged = pagination_links.select { |href| href.include?("page=") }
+        expect(paged).not_to be_empty
+        expect(paged).to all(include("scope=unscheduled"))
+      end
+
+      it "treats an unrecognised scope as All rather than showing nothing" do
+        get :index, params: { scope: "nonsense" }
+
+        expect(response.body).to include("OneTimeAlpha")
+        expect(response.body).to include("ScheduledAlpha")
+      end
+    end
+
+    it "does not render the empty state for a company with a long scan history" do
+      # The reported case: 126 existing scans, none scheduled.
+      ActsAsTenant.with_tenant(company) { create_list(:complete_scan, 126, company: company) }
+
+      get :index
+
+      expect(response.body).not_to include("No scans found")
+    end
+
     it "renders the index template" do
       get :index
       expect(response.body).to include("Scans")
