@@ -106,17 +106,16 @@ RSpec.describe Reports::Process, type: :service do
         expect(report.result_completeness).to eq('partial')
       end
 
-      it 'marks a finished run that lost an eval row to malformed counts as partial' do
-        # evals_processed is set by the first eval that persists, so a run whose other
-        # eval rows were rejected still reaches the success branch. That probe's data
-        # is gone for good, so the results on offer are not the whole picture.
+      it 'does not hold a rejected duplicate against a pair it already recorded' do
+        # Same probe and detector as the good row, so nothing was lost -- and the order
+        # must not matter: rejected-then-recorded is covered below, this is the reverse.
         malformed = { entry_type: 'eval', detector: 'detector.test_detector',
                       probe: '0din.TestProbe', passed: nil, total_evaluated: nil }.to_json
 
         run_with([ init_line, attempt_line, eval_line, malformed, completion_line ])
 
         expect(report.status).to eq('completed')
-        expect(report.result_completeness).to eq('partial')
+        expect(report.result_completeness).to eq('complete')
       end
 
       it 'marks a finished run short of its recorded plan as partial' do
@@ -150,6 +149,75 @@ RSpec.describe Reports::Process, type: :service do
         report.update!(planned_probe_count: 1)
 
         run_with([ init_line, attempt_line, malformed, eval_line, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('complete')
+      end
+
+      it 'marks a run partial when one of a probe\'s detectors was lost' do
+        # Two detectors judged the same probe and one eval was rejected. The probe still
+        # has its single ProbeResult, so the row count matches the plan -- but the lost
+        # detector could have carried the higher passed count, which is what
+        # ProbeResult#passed keeps. Row count alone cannot see that.
+        report.update!(planned_probe_count: 1)
+        second = { entry_type: 'eval', detector: 'detector.other_detector',
+                   probe: '0din.TestProbe', passed: nil, total_evaluated: nil }.to_json
+
+        run_with([ init_line, attempt_line, eval_line, second, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('partial')
+      end
+
+      it 'does not hold a dropped eval against a run that recorded it on retry' do
+        # Resumed scans concatenate segments: the same probe and detector is rejected in
+        # one segment and recorded in a later one, so nothing was actually lost.
+        report.update!(planned_probe_count: 1)
+        malformed = { entry_type: 'eval', detector: 'detector.test_detector',
+                      probe: '0din.TestProbe', passed: nil, total_evaluated: nil }.to_json
+
+        run_with([ init_line, attempt_line, malformed, eval_line, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('complete')
+      end
+
+      it 'does not strand a run whose rejected eval could not be identified' do
+        # Rejected for missing probe/detector, so there is no pair to key it on. A later
+        # valid eval can never match a nil key, which would leave a fully recovered run
+        # permanently partial. Unidentifiable rejections fall through to the plan check,
+        # which catches genuine loss by a short result count.
+        keyless = { entry_type: 'eval', passed: nil, total_evaluated: nil }.to_json
+        report.update!(planned_probe_count: 1)
+
+        run_with([ init_line, attempt_line, keyless, eval_line, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('complete')
+      end
+
+      it 'still calls a run partial when an unidentifiable eval was lost and no plan was recorded' do
+        # No planned_probe_count (a run launched before the column, or by an older
+        # worker), so the count check cannot stand in. With nothing to fall back on, an
+        # unidentifiable rejection has to be treated as a loss rather than ignored.
+        report.update!(planned_probe_count: nil)
+        keyless = { entry_type: 'eval', passed: nil, total_evaluated: nil }.to_json
+
+        run_with([ init_line, attempt_line, keyless, eval_line, completion_line ])
+
+        expect(report.status).to eq('completed')
+        expect(report.result_completeness).to eq('partial')
+      end
+
+      it 'does not strand a run whose rejected eval carried a non-string probe' do
+        # present? is true for 123, but every recorded key holds strings, so a key like
+        # [123, "detector.test_detector"] could never be cleared by the retry that
+        # follows -- leaving a fully recovered run permanently partial.
+        report.update!(planned_probe_count: 1)
+        bad_type = { entry_type: 'eval', detector: 'detector.test_detector',
+                     probe: 123, passed: nil, total_evaluated: nil }.to_json
+
+        run_with([ init_line, attempt_line, bad_type, eval_line, completion_line ])
 
         expect(report.status).to eq('completed')
         expect(report.result_completeness).to eq('complete')
