@@ -15,22 +15,26 @@
       <%# Left Column %>
       <div class="space-y-2">
         <div class="flex items-center gap-2">
-          <span class="text-contentSecondary font-sans text-sm min-w-[50px]">ID:</span>
-          <span class="text-white font-sans text-sm"><%= report.id %></span>
+          <%# The link lives on the Report ID, so its text and its destination name the same
+              thing: /report_details/<id>. The UUID used to carry it, which meant reading a
+              uuid that navigated by numeric id. Gated on usable evidence, as the reports
+              list and the report header are. %>
+          <span class="text-contentSecondary font-sans text-sm min-w-[70px]">Report ID:</span>
+          <% if report_has_viewable_results?(report) %>
+            <%= link_to report.id, report_detail_path(report),
+                class: "text-primary hover:text-primary/80 font-sans text-sm no-underline transition-colors",
+                target: "_blank" %>
+          <% else %>
+            <span class="text-white font-sans text-sm"><%= report.id %></span>
+          <% end %>
         </div>
 
         <div class="flex items-center gap-2">
-          <span class="text-contentSecondary font-sans text-sm min-w-[50px]">UUID:</span>
-          <%# Same gate as the reports list and the report header: usable evidence, not a
-              finished lifecycle. Keying on completed? left a failed report offering
-              "View Report" in its header above a dead plain-text UUID. %>
-          <% if report_has_viewable_results?(report) %>
-            <%= link_to report.uuid, report_detail_path(report),
-                class: "text-primary hover:text-primary/80 font-sans text-sm no-underline transition-colors truncate",
-                target: "_blank" %>
-          <% else %>
-            <span class="text-white font-sans text-sm truncate"><%= report.uuid %></span>
-          <% end %>
+          <%# Kept as plain metadata rather than removed: this is the identifier garak's
+              logs and the on-disk scan artefacts are keyed on, so support work needs it
+              visible. It is simply not navigation. %>
+          <span class="text-contentSecondary font-sans text-sm min-w-[70px]">UUID:</span>
+          <span class="text-white font-sans text-sm truncate"><%= report.uuid %></span>
         </div>
 
         <div class="flex items-center gap-2">
