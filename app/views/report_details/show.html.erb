@@ -98,8 +98,8 @@
         <% @report.detector_results.includes(:detector).each do |result| %>
           <%
             detector_name = result.detector&.name || "Unknown"
-            short_name = detector_name != "Unknown" ? detector_name.split(".").last : "Unknown"
-            translated_name = I18n.t("detectors.names.#{short_name}", default: short_name)
+            translated_name = Detector.display_label(detector_name)
+            detector_qualifier = Detector.qualifier_for(detector_name)
           %>
           <div class="<%= pdf_mode ? 'bg-white rounded border border-gray-200 p-3 flex flex-col' : 'bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex flex-col' %>">
             <div class="<%= pdf_mode ? 'flex items-center mb-1.5 overflow-hidden' : 'flex items-center mb-2 overflow-hidden' %>">
@@ -110,6 +110,11 @@
                 <span class="<%= pdf_mode ? 'text-xs font-medium text-gray-700 truncate block' : 'text-sm font-medium text-gray-700 truncate block' %>" title="<%= translated_name %>">
                   <%= translated_name %>
                 </span>
+                <%# Two detectors sharing a friendly name would otherwise be identical
+                    cards; the identifier says which produced this result. %>
+                <% if detector_qualifier %>
+                  <span class="block text-gray-500 font-mono text-[10px] truncate" title="<%= detector_qualifier %>"><%= detector_qualifier %></span>
+                <% end %>
               </div>
               <% if result.max_score.present? %>
                 <div class="shrink-0 ml-2">
@@ -251,8 +256,7 @@
       <% probe = result.probe %>
       <%
         detector_name = result.detector&.name || "Unknown"
-        short_name = detector_name != "Unknown" ? detector_name.split(".").last : "Unknown"
-        translated_name = I18n.t("detectors.names.#{short_name}", default: short_name)
+        translated_name = Detector.display_label(detector_name)
         is_vulnerable = result.any_detector_passed
         card_border_class = is_vulnerable ?
           (pdf_mode ? 'border-red-200/80' : 'border-red-200/80 hover:border-red-300/60') :

@@ -16,8 +16,8 @@
   probe = probe_result.probe
   detector = probe_result.detector
   detector_name = detector&.name || "Unknown"
-  short_name = detector_name != "Unknown" ? detector_name.split(".").last : "Unknown"
-  translated_name = I18n.t("detectors.names.#{short_name}", default: short_name)
+  translated_name = Detector.display_label(detector_name)
+  detector_qualifier = Detector.qualifier_for(detector_name)
 
   tokens_display = format_token_count(probe_result.input_tokens, probe_result.output_tokens)
 %>
@@ -57,6 +57,10 @@
             <div class="flex items-center gap-2 shrink-0">
               <span class="text-zinc-500 whitespace-nowrap">Detector:</span>
               <span class="text-white font-sans text-base font-medium whitespace-nowrap"><%= translated_name %></span>
+              <%# Which detector this row came from, when the friendly name is shared. %>
+              <% if detector_qualifier %>
+                <span class="block text-contentSecondary font-mono text-xs"><%= detector_qualifier %></span>
+              <% end %>
             </div>
           </div>
         </div>

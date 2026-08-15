@@ -27,13 +27,38 @@
 
   # Build probes display
   probes_display = if @scan.probes.any?
+    readable_probe_ids = policy_scope(Probe).where(id: @scan.probe_ids).pluck(:id).to_set
     detector_groups = @scan.probes.includes(:detector).group_by(&:detector)
+    # Each group names its detector and lists the probes inside it. Previously a group
+    # showed only a count, so two detectors sharing a friendly name produced two rows that
+    # read identically with no way to see what was in either.
     safe_join(detector_groups.map { |detector, probes|
-      short_name = detector.name.split(".").last
-      translated_name = I18n.t("detectors.names.#{short_name}", default: short_name)
-      content_tag(:div, class: "flex items-center justify-between py-2 px-3 bg-backgroundSecondary border border-borderPrimary rounded-lg mb-2") do
-        content_tag(:span, translated_name, class: "text-sm font-medium text-contentPrimary") +
-        content_tag(:span, "#{probes.count} probe#{probes.count == 1 ? '' : 's'}", class: "inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-backgroundPrimary border border-borderPrimary text-contentSecondary")
+      translated_name = Detector.display_label(detector&.name)
+      qualifier = Detector.qualifier_for(detector&.name)
+      content_tag(:details, class: "py-2 px-3 bg-backgroundSecondary border border-borderPrimary rounded-lg mb-2") do
+        summary = content_tag(:summary, class: "flex items-center justify-between cursor-pointer") do
+          label = content_tag(:span, translated_name, class: "text-sm font-medium text-contentPrimary")
+          label += content_tag(:span, qualifier, class: "block text-contentSecondary font-mono text-xs") if qualifier
+          content_tag(:span, label) +
+            content_tag(:span, "#{probes.count} probe#{probes.count == 1 ? '' : 's'}", class: "inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-backgroundPrimary border border-borderPrimary text-contentSecondary")
+        end
+
+        probe_list = content_tag(:ul, class: "mt-2 ml-1 space-y-1") do
+          safe_join(probes.sort_by { |probe| probe.name.to_s }.map { |probe|
+            content_tag(:li) do
+              # A saved scan keeps probes that were later disabled, but ProbePolicy#show?
+              # denies those to non-super-admins -- linking them offers navigation that
+              # bounces off Pundit. They stay listed, unlinked.
+              if readable_probe_ids.include?(probe.id)
+                link_to(probe.name, probe_path(probe), class: "text-xs text-primary hover:underline")
+              else
+                content_tag(:span, probe.name, class: "text-xs text-contentSecondary")
+              end
+            end
+          })
+        end
+
+        summary + probe_list
       end
     })
   else

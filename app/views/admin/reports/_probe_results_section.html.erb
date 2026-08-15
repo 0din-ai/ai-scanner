@@ -61,6 +61,12 @@
     probe_results = local_assigns[:probe_results] || report.probe_results.to_a
   %>
   <% if probe_results.any? %>
+    <%# Mirrors the detector table's line. These are per-probe rates over a different
+        denominator than the per-detector rates in Detector Statistics -- saying so is
+        what stops the two reading as contradictory. %>
+    <p class="text-contentSecondary font-sans text-xs mb-2">
+      <%= probe_results_basis(probe_results) %>
+    </p>
     <%
 
       # Sort by Max Score descending (highest first), then ASR as tiebreaker

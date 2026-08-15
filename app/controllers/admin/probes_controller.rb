@@ -30,10 +30,15 @@ module Admin
       @pagy, @probes = pagy(apply_sorting(@q.result))
 
       # Load filter options
-      @filter_detectors = Detector.all.map do |d|
-        short_name = d.name.split(".").last
-        translated_name = I18n.t("detectors.names.#{short_name}", default: short_name)
-        [ translated_name, d.id ]
+      # A select has nowhere to put the identifier as secondary text, so the qualifier is
+      # appended only where two detectors would otherwise offer the same option twice.
+      detectors = Detector.all.to_a
+      label_counts = detectors.group_by { |d| Detector.display_label(d.name) }.transform_values(&:size)
+      @filter_detectors = detectors.map do |d|
+        label = Detector.display_label(d.name)
+        qualifier = Detector.qualifier_for(d.name)
+        label = "#{label} (#{qualifier})" if qualifier && label_counts[label].to_i > 1
+        [ label, d.id ]
       end
       @filter_disclosure_statuses = Probe.disclosure_statuses.map { |name, id| [ name.humanize, id ] }
       @filter_techniques = Technique.order(:name).pluck(:name, :id)
