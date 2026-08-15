@@ -62,8 +62,11 @@
           <th class="py-3 pr-4 text-left text-sm font-medium text-contentSecondary w-1/4">Detector</th>
           <td class="py-3 text-sm text-contentPrimary">
             <% if @probe.detector %>
-              <% short_name = @probe.detector.name.split(".").last %>
-              <%= I18n.t("detectors.names.#{short_name}", default: short_name) %>
+              <%= Detector.display_label(@probe.detector.name) %>
+              <% qualifier = Detector.qualifier_for(@probe.detector.name) %>
+              <% if qualifier %>
+                <span class="block text-contentSecondary font-mono text-xs"><%= qualifier %></span>
+              <% end %>
             <% else %>
               <span class="text-contentTertiary">—</span>
             <% end %>

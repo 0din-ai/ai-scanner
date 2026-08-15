@@ -87,9 +87,20 @@
   <button
     class="w-full px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-zinc-800/50 transition-colors duration-200"
     data-action="click->report-redesigned#toggleDetectorStats">
-    <h2 class="text-xl font-sans font-semibold text-primary tracking-wide">
-      Detector Statistics
-    </h2>
+    <div class="text-left">
+      <h2 class="text-xl font-sans font-semibold text-primary tracking-wide">
+        Detector Statistics
+      </h2>
+      <%# States the level and the grouping basis once for the whole table: these rates are
+          per detector over the outputs that detector evaluated, which is a different
+          denominator from the per-probe rows elsewhere on this page. Without saying so,
+          the two read as contradicting each other. Reports::Process adds the same
+          total_evaluated to detector_stats[:total] as it assigns to ProbeResult#total, and
+          garak counts that per evaluated output -- not per prompt. %>
+      <p class="text-contentSecondary font-sans text-xs mt-0.5">
+        One row per detector — rate over the outputs that detector evaluated
+      </p>
+    </div>
     <span
       data-report-redesigned-target="detectorChevron"
       class="icon icon-sm icon-chevron-down text-zinc-400 transition-transform duration-200 rotate-180"></span>
@@ -110,12 +121,17 @@
             <% report.detector_results.includes(:detector).each do |detector_result| %>
               <%
                 detector_name = detector_result.detector&.name || "Unknown"
-                short_name = detector_name != "Unknown" ? detector_name.split(".").last : "Unknown"
-                translated_name = I18n.t("detectors.names.#{short_name}", default: short_name)
+                translated_name = Detector.display_label(detector_name)
+                qualifier = Detector.qualifier_for(detector_name)
               %>
               <tr class="border-b border-zinc-800 last:border-0">
                 <td class="text-white font-sans text-sm py-2 pr-4">
                   <%= translated_name %>
+                  <%# Two detectors can share a friendly name across namespaces, so the
+                      identifier is what tells otherwise identical rows apart. %>
+                  <% if qualifier %>
+                    <span class="block text-contentSecondary font-mono text-xs"><%= qualifier %></span>
+                  <% end %>
                 </td>
 
                 <% asr = detector_result.total > 0 ? (detector_result.passed.to_f / detector_result.total * 100) : 0 %>

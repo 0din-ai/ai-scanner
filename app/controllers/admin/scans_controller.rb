@@ -219,7 +219,7 @@ module Admin
         if is_community
           category_name = short_name
         else
-          category_name = I18n.t("detectors.names.#{short_name}", default: short_name)
+          category_name = Detector.display_label(detector.name)
         end
 
         category_data = {

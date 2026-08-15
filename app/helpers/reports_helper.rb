@@ -152,6 +152,23 @@ module ReportsHelper
   # Per-prompt result for an attempt hash from probe_result.attempts.
   # succeeded: true (Attack Successful) / false (Blocked) / nil (unknown — legacy
   # attempt ingested before detector_results was captured).
+  # States what one row of the probe table is, and what its rate is taken over.
+  #
+  # Derived from the rows being rendered rather than from the report: is_variant_report?
+  # is true for any child, but a child recorded before threat_variant_id existed holds
+  # ordinary per-probe rows, and claiming probe/variant pairs there would misdescribe
+  # them. The denominator is ProbeResult#total, which Reports::Process assigns from
+  # garak's total_evaluated. garak counts that once per entry in attempt.detector_results
+  # (aligned with attempt.outputs), so it counts outputs: one prompt run with several
+  # generations contributes several. "Attempts" names a different collection again.
+  def probe_results_basis(probe_results)
+    per_variant = probe_results.any? { |result| result.threat_variant_id.present? }
+    subject = per_variant ? "probe and threat variant" : "probe"
+    scope = per_variant ? "that pair" : "that probe"
+
+    "One row per #{subject} — rate over the outputs evaluated for #{scope}"
+  end
+
   def attempt_result(attempt)
     {
       succeeded: attempt["attack_succeeded"],

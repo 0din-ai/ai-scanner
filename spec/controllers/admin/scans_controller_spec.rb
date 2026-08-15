@@ -21,6 +21,58 @@ RSpec.describe Admin::ScansController, type: :controller do
     ActsAsTenant.current_tenant = company
   end
 
+  describe "the probe breakdown" do
+    # Groups previously showed only "N probes", so two detectors sharing a friendly name
+    # produced two rows reading identically with no way to see what was in either.
+    it "names each probe in the group and links it to its detail page" do
+      odin = create(:detector, name: "0din.MitigationBypass")
+      alpha = create(:probe, name: "AlphaProbe", detector: odin)
+      beta = create(:probe, name: "BetaProbe", detector: odin)
+      ActsAsTenant.with_tenant(company) { scan.probes = [ alpha, beta ] }
+
+      get :show, params: { id: scan.id }
+
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.css("a[href='#{probe_path(alpha)}']")).to be_present
+      expect(doc.css("a[href='#{probe_path(beta)}']")).to be_present
+    end
+
+    it "does not link a probe the viewer is not authorized to open" do
+      # A saved scan keeps probes that a later sync disables, but ProbePolicy#show? denies
+      # those to anyone who is not a super admin, so linking one offers navigation that
+      # bounces off Pundit. Historical probes stay visible, just not linked.
+      member = create(:user, company: company)
+      member.update!(current_company: company)
+      sign_in member
+
+      odin = create(:detector, name: "0din.MitigationBypass")
+      live = create(:probe, name: "LiveProbe", detector: odin)
+      retired = create(:probe, name: "RetiredProbe", detector: odin, enabled: false)
+      ActsAsTenant.with_tenant(company) { scan.probes = [ live, retired ] }
+
+      get :show, params: { id: scan.id }
+
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.css("a[href='#{probe_path(live)}']")).to be_present
+      expect(doc.css("a[href='#{probe_path(retired)}']")).to be_empty
+      expect(response.body).to include("RetiredProbe")
+    end
+
+    it "qualifies groups whose friendly names collide" do
+      odin = create(:detector, name: "0din.MitigationBypass")
+      upstream = create(:detector, name: "mitigation.MitigationBypass")
+      ActsAsTenant.with_tenant(company) do
+        scan.probes = [ create(:probe, name: "FromOdin", detector: odin),
+                        create(:probe, name: "FromUpstream", detector: upstream) ]
+      end
+
+      get :show, params: { id: scan.id }
+
+      expect(response.body).to include("0din.MitigationBypass")
+      expect(response.body).to include("mitigation.MitigationBypass")
+    end
+  end
+
   describe "GET #index" do
     it "returns success" do
       get :index

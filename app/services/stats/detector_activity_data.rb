@@ -27,9 +27,8 @@ module Stats
         passed = row.passed_tests.to_i
 
         if row.name.to_s.start_with?("0din.")
-          short_name = row.name.split(".").last
           individual << {
-            name: I18n.t("detectors.names.#{short_name}", default: short_name),
+            name: Detector.display_label(row.name),
             total: total,
             passed: passed
           }
