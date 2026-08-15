@@ -21,7 +21,10 @@
 
         <div class="flex items-center gap-2">
           <span class="text-contentSecondary font-sans text-sm min-w-[50px]">UUID:</span>
-          <% if report.completed? %>
+          <%# Same gate as the reports list and the report header: usable evidence, not a
+              finished lifecycle. Keying on completed? left a failed report offering
+              "View Report" in its header above a dead plain-text UUID. %>
+          <% if report_has_viewable_results?(report) %>
             <%= link_to report.uuid, report_detail_path(report),
                 class: "text-primary hover:text-primary/80 font-sans text-sm no-underline transition-colors truncate",
                 target: "_blank" %>
