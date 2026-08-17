@@ -39,7 +39,8 @@ PUNCTUATION_EQUIVALENTS = {
     "”": '"',  # right double quotation mark
     "–": "-",  # en dash
     "—": "-",  # em dash
-    " ": " ",  # non-breaking space
+    "\u00a0": " ",  # non-breaking space (escape form: the literal is
+    # indistinguishable from U+0020 by eye and was silently corrupted into a no-op once)
 }
 
 

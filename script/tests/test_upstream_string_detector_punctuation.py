@@ -110,6 +110,31 @@ class UpstreamStringDetectorPunctuationTest(unittest.TestCase):
         expected = "".join(self._punctuation.PUNCTUATION_EQUIVALENTS.values())
         self.assertEqual(self._punctuation.normalise_punctuation(combined), expected)
 
+    def test_no_equivalent_maps_a_character_to_itself(self):
+        # A key equal to its own replacement is a silent no-op. The non-breaking space
+        # (U+00A0) was once corrupted into an ordinary U+0020 exactly this way -- the two
+        # are indistinguishable by eye, the entry still "looked" present, and the loop in
+        # test_normalise_punctuation_maps_each_char... passed because it asserts
+        # normalise(x) == x for that entry. This catches the whole class by codepoint.
+        for fancy, plain in self._punctuation.PUNCTUATION_EQUIVALENTS.items():
+            self.assertNotEqual(
+                fancy,
+                plain,
+                f"U+{ord(fancy):04X} maps to itself, so it normalises nothing",
+            )
+
+    def test_non_breaking_space_is_folded_to_an_ordinary_space(self):
+        # Named explicitly because a refusal containing U+00A0 between words otherwise
+        # misses its ASCII-space keyword, and MitigationBypass inverts that miss into a
+        # false-positive successful attack. Escape form deliberately: a literal U+00A0
+        # is invisible in review and in diffs, which is how the table entry itself was
+        # corrupted into an ordinary space during a port.
+        nbsp_text = "I cannot\u00a0help with that"
+        self.assertEqual(
+            self._punctuation.normalise_punctuation(nbsp_text),
+            "I cannot help with that",
+        )
+
     def test_normalise_punctuation_handles_empty_and_none(self):
         self.assertEqual(self._punctuation.normalise_punctuation(""), "")
         self.assertIsNone(self._punctuation.normalise_punctuation(None))
