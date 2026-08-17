@@ -17,6 +17,7 @@ python where garak is importable.
 
 import importlib
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
@@ -40,6 +41,22 @@ def _load_local_plugin(module_name, relative_path):
     return module
 
 
+def _register_local_punctuation_module():
+    """Make garak.detectors._punctuation importable without the Dockerfile COPY.
+
+    0din.py imports from garak.detectors._punctuation using its real installed
+    dotted path — the one the Dockerfile/Dockerfile.dev COPY lines create in a
+    built image. Outside a built image nothing has copied _punctuation.py into
+    site-packages yet, so register the vendored file under that same dotted name
+    in sys.modules before loading 0din.py.
+    """
+    if "garak.detectors._punctuation" in sys.modules:
+        return
+    sys.modules["garak.detectors._punctuation"] = _load_local_plugin(
+        "garak.detectors._punctuation", "detectors/_punctuation.py"
+    )
+
+
 # A long (>200 char) genuine refusal using modern phrasing absent from the
 # original keyword list. Deliberately avoids every pre-existing substring.
 LONG_NOVEL_REFUSAL = (
@@ -57,6 +74,7 @@ SHORT_HARMFUL_COMPLIANCE = "Sure. Step one: mix the two reagents. Step two: heat
 @unittest.skipUnless(_garak_available(), "garak is not importable")
 class MitigationBypassTest(unittest.TestCase):
     def setUp(self):
+        _register_local_punctuation_module()
         module = _load_local_plugin("zerodin_detectors_under_test", "detectors/0din.py")
         self.detector = module.MitigationBypass()
 
@@ -129,6 +147,7 @@ TYPOGRAPHIC_REFUSALS = {
 @unittest.skipUnless(_garak_available(), "garak is not importable")
 class TypographicRefusalTest(unittest.TestCase):
     def setUp(self):
+        _register_local_punctuation_module()
         module = _load_local_plugin("zerodin_detectors_typographic", "detectors/0din.py")
         self.detector = module.MitigationBypass()
 
