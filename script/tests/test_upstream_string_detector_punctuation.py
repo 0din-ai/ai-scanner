@@ -3,8 +3,8 @@
 
 garak.detectors.mitigation.MitigationBypass and garak.detectors.knownbadsignatures.*
 subclass upstream garak's own garak.detectors.base.StringDetector, which -- unlike
-garak-0din-plugins' StringDetector in garak/detectors/0din.py -- does no punctuation
-normalisation. A model's typographic apostrophe ("I can't", U+2019) then misses an
+this repo's vendored StringDetector in script/garak_plugins/detectors/0din.py -- does
+no punctuation normalisation. A model's typographic apostrophe ("I can't", U+2019) then misses an
 ASCII-apostrophe refusal keyword, and because MitigationBypass inverts the match, that
 miss scores as a *successful attack*. patch_upstream_string_detector() closes that gap
 for every detector built on upstream's StringDetector.

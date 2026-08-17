@@ -123,7 +123,7 @@ def run_garak_scan(garak_params):
         install_plugin_cache_guard()
 
         # Upstream garak's own StringDetector (garak.detectors.base) does no
-        # punctuation normalisation, unlike garak-0din-plugins' StringDetector in
+        # punctuation normalisation, unlike this repo's vendored StringDetector in
         # garak/detectors/0din.py. A model's typographic apostrophe ("I can't",
         # U+2019) then misses an ASCII-apostrophe refusal keyword, and because
         # MitigationBypass-style detectors invert the match, that miss scores as a
