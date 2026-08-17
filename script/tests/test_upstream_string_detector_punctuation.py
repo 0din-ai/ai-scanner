@@ -135,6 +135,19 @@ class UpstreamStringDetectorPunctuationTest(unittest.TestCase):
             "I cannot help with that",
         )
 
+    def test_nfkc_runs_before_folding_so_compatibility_punctuation_still_matches(self):
+        # NFKC can itself emit characters the fold table maps: U+FE58 (small em dash)
+        # normalises to U+2014, which the table folds to "-". Folding FIRST leaves the
+        # substring as "-" and the output as U+2014, breaking a match upstream would
+        # make. This pins the order, not just the outcome.
+        self._punctuation.patch_upstream_string_detector()
+
+        detector = self._detector(["\u2014"])          # em dash
+        detector.normalize = "NFKC"
+        attempt = self._attempt_with_outputs(["a\ufe58b"])  # small em dash
+
+        self.assertEqual(list(detector.detect(attempt)), [1.0])
+
     def test_normalise_punctuation_handles_empty_and_none(self):
         self.assertEqual(self._punctuation.normalise_punctuation(""), "")
         self.assertIsNone(self._punctuation.normalise_punctuation(None))

@@ -111,10 +111,16 @@ def patch_upstream_string_detector() -> None:
         detector_results = []
         all_outputs = attempt.outputs_for(self.lang_spec)
 
-        # Trigger substrings are independent of the model output: fold
-        # typographic punctuation, then apply any configured self.normalize
-        # (NFKC) on top, once, up front -- same shape as upstream.
-        substrings = [normalise_punctuation(s) for s in self.substrings]
+        # Trigger substrings are independent of the model output, so they are
+        # normalised once, up front.
+        #
+        # ORDER MATTERS: self.normalize (NFKC) runs BEFORE the punctuation fold, not
+        # after. NFKC can itself emit characters this table maps -- U+FE58 (small em
+        # dash) becomes U+2014 -- so folding first leaves the two sides normalised to
+        # different things and breaks a match upstream would make. Verified: with
+        # substring U+2014 and output U+FE58, upstream matches, fold-then-NFKC does not,
+        # NFKC-then-fold does.
+        substrings = list(self.substrings)
         if getattr(self, "normalize", None):
             try:
                 substrings = [self._apply_normalize(s) for s in substrings]
@@ -123,6 +129,7 @@ def patch_upstream_string_detector() -> None:
                     "StringDetector: %s; returning None for all outputs", e
                 )
                 return [None] * len(all_outputs)
+        substrings = [normalise_punctuation(s) for s in substrings]
 
         for output in all_outputs:
             output_text = output.text if output else None
@@ -130,7 +137,7 @@ def patch_upstream_string_detector() -> None:
                 detector_results.append(None)
                 continue
 
-            output_text = normalise_punctuation(output_text)
+            # Same order as the substrings above: NFKC first, fold second.
             if getattr(self, "normalize", None):
                 try:
                     output_text = self._apply_normalize(output_text)
@@ -140,6 +147,7 @@ def patch_upstream_string_detector() -> None:
                     )
                     detector_results.append(None)
                     continue
+            output_text = normalise_punctuation(output_text)
 
             match = False
             for s in substrings:
