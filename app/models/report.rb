@@ -674,10 +674,26 @@ class Report < ApplicationRecord
         total_tokens: input_tokens + output_tokens
       )
 
-      if scan.projected_input_tokens > 0
-        deviation = ((input_tokens - scan.projected_input_tokens).to_f / scan.projected_input_tokens * 100).round(2)
+      # Not Scan#projection: the scan page's view of a scan includes every completed run,
+      # but this report's own probe_results are already committed by the time this metric
+      # runs (after_update_commit), so a projection that includes them would be judging
+      # this report's actual usage against a figure partly made of that same usage.
+      # Excluding this report (and any variant children) keeps the two independent.
+      projected = Scans::Projection.new(scan, exclude_report_id: id).call.input
+      # Coverage must be complete, not merely available: a projection covering one probe
+      # of two omits the uncovered probe's work from `amount` yet still returns a number,
+      # and using it as the full-scan denominator produces a deviation that looks
+      # authoritative while silently excluding part of what actually ran.
+      if projected.available? && projected.amount.positive? && projected.covered == projected.total
+        # Scale to this report's scope before comparing. Scan#create_reports builds one
+        # report per target, so input_tokens above is ONE target's usage, while the
+        # projection covers every target in the scan. Comparing them directly emitted a
+        # systematic -50% deviation for a two-target scan, and reported a
+        # projected_input_tokens the report's own actual could never match.
+        per_target = projected.amount.to_f / [ scan.targets.size, 1 ].max
+        deviation = ((input_tokens - per_target) / per_target * 100).round(2)
         labels[:token_deviation_percent] = deviation
-        labels[:projected_input_tokens] = scan.projected_input_tokens
+        labels[:projected_input_tokens] = per_target.round
       end
     end
 

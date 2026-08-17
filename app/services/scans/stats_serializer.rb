@@ -125,9 +125,18 @@ module Scans
     def token_info
       monthly = scan.monthly_token_projection
       actual = scan.actual_token_averages
+      projected_input = scan.projection.input
 
       result = {
-        projected_input_per_scan: scan.projected_input_tokens
+        projected_input_per_scan: projected_input.amount,
+        # Sibling metadata so a consumer of the bare amount can tell a full projection
+        # from a partial one instead of reading a low number as a complete measurement --
+        # the same distinction the scan page's coverage qualifier draws for this figure.
+        projected_input_basis: {
+          basis: projected_input.basis,
+          covered: projected_input.covered,
+          total: projected_input.total
+        }
       }
 
       if monthly

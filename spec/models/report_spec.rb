@@ -943,15 +943,84 @@ RSpec.describe Report, type: :model do
           # Create probes with input_tokens and add them to the scan
           probe1 = create(:probe, input_tokens: 500)
           probe2 = create(:probe, input_tokens: 300)
-          report.scan.probes << [ probe1, probe2 ]
+          # Replaces (not appends to) the scan's probes: :complete_scan ships 2 default
+          # probes with no stored input_tokens and no history, which Scans::Projection
+          # can only mark :unavailable -- they'd count toward `total` but never `covered`.
+          # Appending onto them would leave this scan's projection at 2 of 4 probes
+          # covered, which the completeness guard (covered == total) now correctly
+          # treats as partial and skips both labels for. This test is about the
+          # deviation MATH, so it isolates the scan to exactly the 2 probes the
+          # comment below assumes.
+          report.scan.probes = [ probe1, probe2 ]
+
+          report.update!(status: :completed)
+
+          # record_all_completion_metrics passes exclude_report_id: id, so this report's
+          # own just-committed probe_results (input_tokens: 1000, from the shared `before`
+          # block) are excluded from the projection basis -- otherwise it would be judged
+          # against a figure partly made of itself (always 0% deviation). With no other
+          # completed report for this scan, and no prior history for probe1/probe2, the
+          # projection falls to the estimated rung: probe1 (500) + probe2 (300) = 800
+          # static input tokens, times GENERATIONS (5, garak's default generations per
+          # prompt) = 4000, times target_multiplier (report.scan is a :complete_scan,
+          # which factories 2 targets) = 8000 for the whole scan.
+          #
+          # The metric then scales that back to this report's scope: a report covers ONE
+          # target, so it is judged against 8000 / 2 = 4000. Comparing one target's
+          # actual against the whole scan's projection is what produced the previous
+          # expectation of -87.5% / 8000 -- a deviation an on-target run could not avoid.
+          # Deviation: (1000 actual - 4000 projected) / 4000 * 100 = -75.0%.
+          expect(MonitoringService).to have_received(:set_labels).with(
+            hash_including(
+              token_deviation_percent: -75.0,
+              projected_input_tokens: 4000
+            )
+          )
+        end
+
+        it 'compares a report against one target of a multi-target scan, not the whole scan' do
+          # A report that used EXACTLY what one target was projected to use must read as
+          # 0% deviation. report.scan is a :complete_scan (2 targets), and this report's
+          # own probe_results total 1000 input tokens (from the shared `before` block).
+          # Projection: 200 static x GENERATIONS (5) = 1000 per target, x 2 targets =
+          # 2000 for the scan; one target's share is 1000, matching the actual exactly.
+          # Comparing against the un-scaled 2000 reported -50% for a run that was on
+          # target -- a floor no two-target scan could ever get above.
+          expect(report.scan.targets.size).to eq(2)
+          # Replaces (not appends to) the scan's probes for the same reason as the test
+          # above: :complete_scan's 2 default zero-token probes would otherwise leave
+          # coverage at 1 of 3, which the completeness guard now (correctly) treats as
+          # partial and skips both labels for.
+          report.scan.probes = [ create(:probe, input_tokens: 200) ]
 
           report.update!(status: :completed)
 
           expect(MonitoringService).to have_received(:set_labels).with(
             hash_including(
-              token_deviation_percent: 25.0,
-              projected_input_tokens: 800
+              token_deviation_percent: 0.0,
+              projected_input_tokens: 1000
             )
+          )
+        end
+
+        it 'records neither label when the projection covers only part of the scan probes' do
+          # :complete_scan ships 2 default probes with no stored input_tokens (0, the DB
+          # default) and no history, so Scans::Projection cannot assign them a basis --
+          # they count toward `total` but not `covered`. Appending ONE more probe with
+          # real static input_tokens on top of those (unlike the two tests above, which
+          # replace the scan's probes to isolate the math) reproduces exactly the
+          # partial-coverage shape the completeness guard exists for: 1 of 3 covered.
+          expect(report.scan.probes.count).to eq(2)
+          report.scan.probes << create(:probe, input_tokens: 200)
+          expect(report.scan.probes.count).to eq(3)
+
+          report.update!(status: :completed)
+
+          # Before the covered == total guard, this recorded token_deviation_percent and
+          # projected_input_tokens from an amount that silently omitted 2 of the 3
+          # probes' work -- a partial denominator presented as a complete one.
+          expect(MonitoringService).to have_received(:set_labels).with(
+            hash_not_including(:token_deviation_percent, :projected_input_tokens)
           )
         end
       end

@@ -635,39 +635,6 @@ RSpec.describe Scan, type: :model do
     let(:probe2) { create(:probe, name: 'TokenProbe2', input_tokens: 250) }
     let(:probe3) { create(:probe, name: 'TokenProbe3', input_tokens: 150) }
 
-    describe '#projected_input_tokens' do
-      it 'sums input_tokens from all probes' do
-        scan = build(:scan, company: company)
-        scan.targets = [ target ]
-        scan.probes = [ probe1, probe2, probe3 ]
-        scan.save!
-
-        expect(scan.projected_input_tokens).to eq(500) # 100 + 250 + 150
-      end
-
-      it 'returns 0 when no probes' do
-        scan = build(:scan, company: company)
-        scan.targets = [ target ]
-        scan.probes = [ create(:probe) ] # Need at least one for validation
-        scan.save!
-        scan.probes.clear # Clear after save to test empty case
-
-        expect(scan.projected_input_tokens).to eq(0)
-      end
-
-      it 'handles probes with nil input_tokens as 0' do
-        probe_with_nil = create(:probe, name: 'NilTokenProbe')
-        probe_with_nil.update_column(:input_tokens, 0)
-
-        scan = build(:scan, company: company)
-        scan.targets = [ target ]
-        scan.probes = [ probe1, probe_with_nil ]
-        scan.save!
-
-        expect(scan.projected_input_tokens).to eq(100)
-      end
-    end
-
     describe '#monthly_token_projection' do
       context 'when not scheduled' do
         it 'returns nil' do
@@ -685,7 +652,7 @@ RSpec.describe Scan, type: :model do
         it 'calculates approximately 720 runs per month' do
           scan = build(:scan, company: company)
           scan.targets = [ target ]
-          scan.probes = [ probe1 ] # 100 input_tokens
+          scan.probes = [ probe1 ] # 100 input_tokens, no run history -> estimated * GENERATIONS (5) = 500
           scan.recurrence = IceCube::Rule.hourly
           scan.save!
 
@@ -694,7 +661,7 @@ RSpec.describe Scan, type: :model do
           expect(projection).to be_a(Hash)
           expect(projection[:runs]).to be >= 700 # ~720 runs in 30 days
           expect(projection[:runs]).to be <= 750
-          expect(projection[:tokens]).to eq(projection[:runs] * 100)
+          expect(projection[:tokens]).to eq(projection[:runs] * 500)
         end
       end
 
@@ -702,7 +669,7 @@ RSpec.describe Scan, type: :model do
         it 'calculates approximately 30 runs per month' do
           scan = build(:scan, company: company)
           scan.targets = [ target ]
-          scan.probes = [ probe1, probe2 ] # 350 input_tokens
+          scan.probes = [ probe1, probe2 ] # 350 input_tokens, no run history -> estimated * GENERATIONS (5) = 1750
           scan.recurrence = IceCube::Rule.daily
           scan.save!
 
@@ -710,7 +677,7 @@ RSpec.describe Scan, type: :model do
 
           expect(projection[:runs]).to be >= 29
           expect(projection[:runs]).to be <= 31
-          expect(projection[:tokens]).to eq(projection[:runs] * 350)
+          expect(projection[:tokens]).to eq(projection[:runs] * 1750)
         end
       end
 
@@ -718,7 +685,7 @@ RSpec.describe Scan, type: :model do
         it 'calculates approximately 4 runs per month' do
           scan = build(:scan, company: company)
           scan.targets = [ target ]
-          scan.probes = [ probe1 ] # 100 input_tokens
+          scan.probes = [ probe1 ] # 100 input_tokens, no run history -> estimated * GENERATIONS (5) = 500
           scan.recurrence = IceCube::Rule.weekly
           scan.save!
 
@@ -726,7 +693,7 @@ RSpec.describe Scan, type: :model do
 
           expect(projection[:runs]).to be >= 4
           expect(projection[:runs]).to be <= 5
-          expect(projection[:tokens]).to eq(projection[:runs] * 100)
+          expect(projection[:tokens]).to eq(projection[:runs] * 500)
         end
       end
     end
@@ -829,216 +796,35 @@ RSpec.describe Scan, type: :model do
         expect(Scan::PROJECTION_PERIOD_DAYS).to eq(30)
       end
     end
+  end
 
-    describe '#estimated_run_time' do
-      let(:target_with_rate) { create(:target, :with_token_rate, company: company) }
-      let(:target_without_rate) { create(:target, company: company, tokens_per_second: nil) }
-      let(:webchat_target) { create(:target, :webchat, company: company, tokens_per_second: 30.0) }
-      let(:probe_100) { create(:probe, name: 'Probe100', input_tokens: 100) }
-      let(:probe_200) { create(:probe, name: 'Probe200', input_tokens: 200) }
+  describe "#projection" do
+    let(:company) { create(:company) }
 
-      before do
-        allow(SettingsService).to receive(:parallel_scans_limit).and_return(5)
+    it "no longer projects from stored prompt text alone" do
+      # The defect: probes that build prompts at runtime stored no prompt text, so the
+      # old probes.sum(:input_tokens) counted them as zero.
+      scan = ActsAsTenant.with_tenant(company) { create(:complete_scan, company: company) }
+      target = ActsAsTenant.with_tenant(company) { create(:target, company: company) }
+      probe = create(:probe, name: "encoding.InjectBase64", input_tokens: 0, prompts: [])
+      ActsAsTenant.with_tenant(company) do
+        past = create(:complete_scan, company: company)
+        report = create(:report, company: company, scan: past, target: target, status: :completed)
+        create(:probe_result, report: report, probe: probe,
+                              input_tokens: 15_140, output_tokens: 322_879, total: 40)
+        scan.probes = [ probe ]
+        scan.targets = [ target ]
       end
 
-      context 'when no API targets with measured rates exist' do
-        it 'returns nil when all targets are unmeasured' do
-          scan = build(:scan, company: company)
-          scan.targets = [ target_without_rate ]
-          scan.probes = [ probe_100 ]
-          scan.save!
-
-          expect(scan.estimated_run_time).to be_nil
-        end
-
-        it 'returns nil when only webchat targets exist' do
-          scan = build(:scan, company: company)
-          scan.targets = [ webchat_target ]
-          scan.probes = [ probe_100 ]
-          scan.save!
-
-          expect(scan.estimated_run_time).to be_nil
-        end
-
-        it 'returns nil when no targets exist' do
-          scan = build(:scan, company: company)
-          scan.targets = [ target_with_rate ]
-          scan.probes = [ probe_100 ]
-          scan.save!
-          scan.targets.clear
-
-          expect(scan.estimated_run_time).to be_nil
-        end
-      end
-
-      context 'when projected_input_tokens is zero' do
-        it 'returns nil' do
-          scan = build(:scan, company: company)
-          scan.targets = [ target_with_rate ]
-          scan.probes = [ create(:probe, input_tokens: 0) ]
-          scan.save!
-
-          expect(scan.estimated_run_time).to be_nil
-        end
-      end
-
-      context 'when valid targets and probes exist' do
-        let(:scan) do
-          s = build(:scan, company: company)
-          s.targets = [ target_with_rate ]
-          s.probes = [ probe_100, probe_200 ]
-          s.save!
-          s
-        end
-
-        it 'returns a hash with required keys' do
-          result = scan.estimated_run_time
-
-          expect(result).to be_a(Hash)
-          expect(result).to have_key(:seconds)
-          expect(result).to have_key(:formatted)
-          expect(result).to have_key(:parallel_limit)
-          expect(result).to have_key(:unmeasured_targets)
-        end
-
-        it 'calculates estimated seconds correctly' do
-          # Input tokens: 100 + 200 = 300
-          # With OUTPUT_MULTIPLIER 2: estimated total = 600
-          # Target rate: 25.5 tok/s
-          # Time for one target: 600 / 25.5 = ~23.53 seconds
-          # With parallel_limit 5: 23.53 / 5 = ~4.71 seconds
-          result = scan.estimated_run_time
-
-          expect(result[:seconds]).to be >= 4
-          expect(result[:seconds]).to be <= 5
-        end
-
-        it 'includes parallel_limit from SettingsService' do
-          result = scan.estimated_run_time
-
-          expect(result[:parallel_limit]).to eq(5)
-        end
-
-        it 'counts unmeasured API targets' do
-          scan.targets << target_without_rate
-
-          result = scan.estimated_run_time
-
-          expect(result[:unmeasured_targets]).to eq(1)
-        end
-
-        it 'returns 0 unmeasured targets when all are measured' do
-          result = scan.estimated_run_time
-
-          expect(result[:unmeasured_targets]).to eq(0)
-        end
-      end
-
-      context 'with multiple targets' do
-        let(:target_fast) { create(:target, company: company, tokens_per_second: 100.0, tokens_per_second_sample_count: 1) }
-        let(:target_slow) { create(:target, company: company, tokens_per_second: 10.0, tokens_per_second_sample_count: 1) }
-
-        it 'sums time across all measured targets' do
-          scan = build(:scan, company: company)
-          scan.targets = [ target_fast, target_slow ]
-          scan.probes = [ probe_100 ] # 100 input tokens
-          scan.save!
-
-          allow(SettingsService).to receive(:parallel_scans_limit).and_return(1)
-
-          result = scan.estimated_run_time
-
-          # With OUTPUT_MULTIPLIER 2: estimated total = 200
-          # Fast target: 200 / 100 = 2 seconds
-          # Slow target: 200 / 10 = 20 seconds
-          # Total: 22 seconds / 1 parallel = 22 seconds
-          expect(result[:seconds]).to eq(22)
-        end
-
-        it 'divides by parallel limit' do
-          scan = build(:scan, company: company)
-          scan.targets = [ target_fast, target_slow ]
-          scan.probes = [ probe_100 ]
-          scan.save!
-
-          allow(SettingsService).to receive(:parallel_scans_limit).and_return(2)
-
-          result = scan.estimated_run_time
-
-          # Total: 22 seconds / 2 parallel = 11
-          expect(result[:seconds]).to eq(11)
-        end
-      end
-
-      context 'formatted duration' do
-        let(:target_slow) { create(:target, company: company, tokens_per_second: 1.0, tokens_per_second_sample_count: 1) }
-        let(:probe_large) { create(:probe, name: 'LargeProbe', input_tokens: 10000) }
-
-        it 'formats short durations as minutes' do
-          scan = build(:scan, company: company)
-          scan.targets = [ target_with_rate ]
-          scan.probes = [ probe_100 ]
-          scan.save!
-
-          result = scan.estimated_run_time
-
-          expect(result[:formatted]).to match(/\d+m/)
-        end
-
-        it 'formats hours correctly' do
-          scan = build(:scan, company: company)
-          scan.targets = [ target_slow ]
-          scan.probes = [ probe_large ]
-          scan.save!
-
-          allow(SettingsService).to receive(:parallel_scans_limit).and_return(1)
-
-          result = scan.estimated_run_time
-
-          # 10000 tokens / 1 tok/s = 10000 seconds = ~2.7 hours
-          expect(result[:formatted]).to include('h')
-        end
-      end
+      expect(scan.projection.input.amount).to eq(15_140)
     end
 
-    describe '#format_duration (private)' do
-      let(:scan) do
-        s = build(:scan, company: company)
-        s.targets = [ create(:target, company: company) ]
-        s.probes = [ create(:probe) ]
-        s.save!
-        s
-      end
+    it "no longer exposes the replaced projection methods" do
+      scan = ActsAsTenant.with_tenant(company) { create(:complete_scan, company: company) }
 
-      it 'returns "0m" for zero seconds' do
-        expect(scan.send(:format_duration, 0)).to eq('0m')
-      end
-
-      it 'returns "0m" for negative seconds' do
-        expect(scan.send(:format_duration, -10)).to eq('0m')
-      end
-
-      it 'formats minutes only' do
-        expect(scan.send(:format_duration, 120)).to eq('2m')
-      end
-
-      it 'formats hours and minutes' do
-        expect(scan.send(:format_duration, 3720)).to eq('1h 2m')
-      end
-
-      it 'formats days, hours, and minutes' do
-        expect(scan.send(:format_duration, 90120)).to eq('1d 1h 2m')
-      end
-
-      it 'shows 0m when only seconds with no full minutes' do
-        expect(scan.send(:format_duration, 30)).to eq('0m')
-      end
-
-      it 'handles large values' do
-        # 5 days, 3 hours, 45 minutes
-        seconds = (5 * 86400) + (3 * 3600) + (45 * 60)
-        expect(scan.send(:format_duration, seconds)).to eq('5d 3h 45m')
-      end
+      expect(scan).not_to respond_to(:projected_input_tokens)
+      expect(scan).not_to respond_to(:estimated_run_time)
+      expect(described_class).not_to be_const_defined(:OUTPUT_MULTIPLIER)
     end
   end
 end

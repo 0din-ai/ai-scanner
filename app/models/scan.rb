@@ -5,7 +5,6 @@ class Scan < ApplicationRecord
 
     # Projection period for monthly token estimates (in days)
     PROJECTION_PERIOD_DAYS = 30
-    OUTPUT_MULTIPLIER = 2
 
     class IceCubeScheduleCoder
       def self.dump(schedule)
@@ -132,15 +131,11 @@ class Scan < ApplicationRecord
       reports.order(created_at: :desc, id: :desc).pick(:status)
     end
 
-  # Token usage estimation methods
-  # Note: Only INPUT tokens can be estimated (from probe prompts)
-  # Output tokens are unpredictable as they depend on model responses
-
-  # Returns the projected input tokens per scan based on selected probes
-  # Memoized to avoid repeated queries when called multiple times (e.g., in monthly_token_projection)
-  # @return [Integer] Sum of input_tokens from all selected probes
-  def projected_input_tokens
-    @projected_input_tokens ||= probes.sum(:input_tokens)
+  # What this scan is likely to cost and how long it is likely to take.
+  # See Scans::Projection for why this is derived from measured history rather than from
+  # the probes' stored prompt text.
+  def projection
+    @projection ||= Scans::Projection.new(self).call
   end
 
   # Returns the monthly token projection for scheduled scans
@@ -149,6 +144,9 @@ class Scan < ApplicationRecord
   def monthly_token_projection
     return nil unless scheduled?
 
+    per_scan = projection.input
+    return nil unless per_scan.available?
+
     schedule = IceCube::Schedule.new(Time.current)
     schedule.add_recurrence_rule(recurrence)
     runs = schedule.occurrences_between(
@@ -156,40 +154,7 @@ class Scan < ApplicationRecord
       PROJECTION_PERIOD_DAYS.days.from_now
     ).count
 
-    {
-      runs: runs,
-      tokens: runs * projected_input_tokens
-    }
-  end
-
-  # Estimate run time based on targets' token processing rates
-  # Returns nil if no API targets with measured rates
-  # @return [Hash, nil] { seconds: Integer, formatted: String, parallel_limit: Integer, unmeasured_targets: Integer }
-  def estimated_run_time
-    api_targets = targets.where(target_type: :api).where.not(tokens_per_second: nil)
-    return nil if api_targets.empty?
-
-    input_tokens = projected_input_tokens
-    return nil if input_tokens.zero?
-
-    # Calculate time for each target (seconds)
-    # Multiply by OUTPUT_MULTIPLIER to account for unpredictable output token generation
-    estimated_total_tokens = input_tokens * OUTPUT_MULTIPLIER
-    target_times = api_targets.map { |t| estimated_total_tokens.to_f / t.tokens_per_second }
-
-    # With parallelism: total sequential time / parallel limit
-    parallel_limit = SettingsService.parallel_scans_limit
-    estimated_seconds = (target_times.sum / parallel_limit).round
-
-    # Count unmeasured API targets
-    unmeasured = targets.where(target_type: :api, tokens_per_second: nil).count
-
-    {
-      seconds: estimated_seconds,
-      formatted: format_duration(estimated_seconds),
-      parallel_limit: parallel_limit,
-      unmeasured_targets: unmeasured
-    }
+    { runs: runs, tokens: runs * per_scan.amount }
   end
 
   # Returns actual token usage averages from completed reports
@@ -291,20 +256,6 @@ class Scan < ApplicationRecord
 
     def generate_uuid
       self.uuid = SecureRandom.uuid unless self.uuid
-    end
-
-    def format_duration(seconds)
-      return "0m" if seconds <= 0
-
-      days = seconds / 86400
-      hours = (seconds % 86400) / 3600
-      minutes = (seconds % 3600) / 60
-
-      parts = []
-      parts << "#{days}d" if days > 0
-      parts << "#{hours}h" if hours > 0
-      parts << "#{minutes}m" if minutes > 0 || parts.empty?
-      parts.join(" ")
     end
 
     def create_reports
