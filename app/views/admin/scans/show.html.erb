@@ -157,26 +157,56 @@
     <h3 class="text-xl font-sans font-semibold text-primary tracking-wide mb-6">Token Usage Estimate</h3>
     <table class="w-full">
       <tbody class="divide-y divide-borderPrimary">
-        <tr>
-          <th class="py-3 pr-4 text-left text-sm font-medium text-contentSecondary w-1/4">Projected Per Scan</th>
-          <td class="py-3 text-sm text-contentPrimary">
-            <span class="text-xl font-bold text-primary">~<%= number_with_delimiter(@scan.projected_input_tokens) %></span>
-            <span class="text-contentTertiary ml-1">tokens (input only)</span>
-          </td>
-        </tr>
-        <% if (estimate = @scan.estimated_run_time) %>
+        <%
+          projection = @scan.projection
+          rows = [
+            [ "Projected Input", projection.input, :tokens ],
+            [ "Projected Output", projection.output, :tokens ],
+            [ "Projected Total", projection.total_tokens, :tokens ],
+            [ "Estimated Run Time", projection.runtime, :duration ]
+          ]
+        %>
+        <% rows.each do |label, figure, unit| %>
           <tr>
-            <th class="py-3 pr-4 text-left text-sm font-medium text-contentSecondary w-1/4">Estimated Run Time</th>
+            <th class="py-3 pr-4 text-left text-sm font-medium text-contentSecondary w-1/4"><%= label %></th>
             <td class="py-3 text-sm text-contentPrimary">
-              <span class="text-xl font-bold text-green-600 dark:text-green-400">~<%= estimate[:formatted] %></span>
-              <% if estimate[:unmeasured_targets] > 0 %>
-                <span class="text-amber-500 dark:text-amber-400 text-sm ml-2">
-                  (excludes <%= estimate[:unmeasured_targets] %> unmeasured target<%= 's' if estimate[:unmeasured_targets] > 1 %>)
-                </span>
+              <% if figure.available? %>
+                <span class="text-xl font-bold text-primary">~<%= scan_projection_value(figure, unit) %></span>
+                <% if unit == :tokens %>
+                  <span class="text-contentTertiary ml-1">tokens</span>
+                <% end %>
+                <%# Each figure covers only the probes IT could be built from, while the
+                    Basis row below states input's coverage for the whole block. Output
+                    cannot be estimated from prompt text, so a scan of one measured probe
+                    and one prompts-only probe shows an output number covering 1 of 2 under
+                    a line claiming 2 of 2. A row that differs says so on its own line
+                    rather than being read as a whole-scan figure. %>
+                <% if [ figure.covered, figure.total ] != [ projection.input.covered, projection.input.total ] %>
+                  <span class="text-contentTertiary ml-1">(<%= figure.coverage_sentence %>)</span>
+                <% end %>
+              <% else %>
+                <%# Saying "unavailable" is the point: the previous projection rendered an
+                    unprojectable scan as a confident small number. %>
+                <span class="text-contentTertiary">unavailable — <%= figure.coverage_sentence %></span>
               <% end %>
             </td>
           </tr>
         <% end %>
+        <tr>
+          <th class="py-3 pr-4 text-left text-sm font-medium text-contentSecondary w-1/4">Basis</th>
+          <td class="py-3 text-sm text-contentTertiary">
+            <%# Branches on the basis, not on measured?, because "not measured" is two
+                different states: an estimate built from prompt text, and no basis at all.
+                Reading the second as the first printed "estimated from probe prompts"
+                directly under a row saying unavailable with zero probes covered. %>
+            <%= case projection.input.basis
+                when :measured then "measured from previous runs of these probes"
+                when :estimated then "estimated from probe prompts"
+                else "no measured history or stored prompts for these probes"
+                end %>
+            · <%= projection.input.coverage_sentence %>
+          </td>
+        </tr>
         <% if (monthly = @scan.monthly_token_projection) %>
           <tr>
             <th class="py-3 pr-4 text-left text-sm font-medium text-contentSecondary w-1/4">Projected Per Month</th>
@@ -210,7 +240,7 @@
       </tbody>
     </table>
     <div class="mt-4 pt-4 border-t border-borderPrimary">
-      <p class="text-sm text-contentTertiary">Projections estimate INPUT tokens only. Output tokens depend on model responses. Estimates use cl100k_base tokenization (~10% variance by provider).</p>
+      <p class="text-sm text-contentTertiary">Projections use this scan's own measured history when available, falling back to an estimate from probe prompts. See the Basis row above for which applies.</p>
     </div>
   </div>
 

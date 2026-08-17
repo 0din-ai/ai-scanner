@@ -367,6 +367,103 @@ RSpec.describe Admin::ScansController, type: :controller do
     end
   end
 
+  describe "the token usage estimate" do
+    it "labels input, output and total separately and states its basis" do
+      probe = create(:probe, name: "encoding.InjectBase64", input_tokens: 0, prompts: [])
+      ActsAsTenant.with_tenant(company) do
+        past = create(:complete_scan, company: company)
+        tgt = create(:target, company: company)
+        report = create(:report, company: company, scan: past, target: tgt, status: :completed)
+        create(:probe_result, report: report, probe: probe,
+                              input_tokens: 15_140, output_tokens: 322_879, total: 40)
+        scan.probes = [ probe ]
+        scan.targets = [ tgt ]
+      end
+
+      get :show, params: { id: scan.id }
+
+      expect(response.body).to include("Projected Input")
+      expect(response.body).to include("Projected Output")
+      expect(response.body).to include("Projected Total")
+      expect(response.body).to match(/measured from previous runs/i)
+    end
+
+    it "says a projection is unavailable instead of showing a confident small number" do
+      probe = create(:probe, name: "encoding.InjectHex", input_tokens: 0, prompts: [])
+      ActsAsTenant.with_tenant(company) do
+        scan.probes = [ probe ]
+        scan.targets = [ create(:target, company: company) ]
+      end
+
+      get :show, params: { id: scan.id }
+
+      expect(response.body).to match(/unavailable/i)
+    end
+
+    it "does not claim an estimate exists when there is no basis at all" do
+      # The basis line branched on measured?, so "not measured" printed "estimated from
+      # probe prompts" -- directly under a row saying unavailable with 0 of 1 probes
+      # covered. Absence of a basis is a third state, and it has to say so.
+      probe = create(:probe, name: "encoding.InjectHex", input_tokens: 0, prompts: [])
+      ActsAsTenant.with_tenant(company) do
+        scan.probes = [ probe ]
+        scan.targets = [ create(:target, company: company) ]
+      end
+
+      get :show, params: { id: scan.id }
+
+      expect(response.body).not_to match(/estimated from probe prompts/i)
+      expect(response.body).to match(/no measured history or stored prompts/i)
+    end
+
+    it "never renders a non-trivial scan as zero minutes" do
+      # The reported defect: 89.3 minutes of real runtime displayed as "0m".
+      probe = create(:probe, name: "Measured", input_tokens: 0, prompts: [])
+      ActsAsTenant.with_tenant(company) do
+        tgt = create(:target, company: company)
+        past = create(:complete_scan, company: company)
+        report = create(:report, company: company, scan: past, target: tgt, status: :completed)
+        create(:probe_result, report: report, probe: probe,
+                              input_tokens: 1_000, output_tokens: 1_000, total: 10)
+        scan.probes = [ probe ]
+        scan.targets = [ tgt ]
+        own_run = create(:report, company: company, scan: scan, target: tgt, status: :completed,
+                                  start_time: 89.minutes.ago, end_time: Time.current)
+        # The own-run rung only reuses a duration measured on the scan's current probe set,
+        # so the run has to record which probes it ran.
+        create(:probe_result, report: own_run, probe: probe,
+                              input_tokens: 1_000, output_tokens: 1_000, total: 10)
+      end
+
+      get :show, params: { id: scan.id }
+
+      expect(response.body).not_to match(/~\s*0m/)
+    end
+
+    it "qualifies a row that covers fewer probes than the shared basis line claims" do
+      # Output cannot be estimated from prompt text, so a measured probe alongside a
+      # prompts-only probe leaves input covering 2 of 2 and output covering 1 of 2. The
+      # page printed a single Basis line taken from input, presenting the output number as
+      # a whole-scan figure.
+      measured = create(:probe, name: "Measured", input_tokens: 0, prompts: [])
+      prompts_only = create(:probe, name: "PromptsOnly", input_tokens: 244, prompts: [ "hi" ])
+      ActsAsTenant.with_tenant(company) do
+        tgt = create(:target, company: company)
+        past = create(:complete_scan, company: company)
+        report = create(:report, company: company, scan: past, target: tgt, status: :completed)
+        create(:probe_result, report: report, probe: measured,
+                              input_tokens: 1_000, output_tokens: 8_500, total: 10)
+        scan.probes = [ measured, prompts_only ]
+        scan.targets = [ tgt ]
+      end
+
+      get :show, params: { id: scan.id }
+
+      expect(response.body).to include("2 of 2 probes covered") # the Basis line, from input
+      expect(response.body).to include("1 of 2 probes covered") # the output row's own coverage
+    end
+  end
+
   describe "DELETE #destroy" do
     it "deletes the scan" do
       expect {

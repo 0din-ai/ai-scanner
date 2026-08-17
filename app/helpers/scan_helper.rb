@@ -24,6 +24,26 @@ module ScanHelper
     @variant_eligible_probe_ids ||= ThreatVariant.distinct.pluck(:probe_id).to_set
   end
 
+  # A Scans::ProjectedFigure as a surface should show it. Durations never render as "0m"
+  # for a non-zero projection: the reported defect was an 89-minute scan displaying zero.
+  def scan_projection_value(figure, unit)
+    return number_with_delimiter(figure.amount) unless unit == :duration
+
+    seconds = figure.amount.to_i
+    return "0m" if seconds <= 0
+    return "< 1m" if seconds < 60
+
+    days = seconds / 86_400
+    hours = (seconds % 86_400) / 3600
+    minutes = (seconds % 3600) / 60
+
+    parts = []
+    parts << "#{days}d" if days.positive?
+    parts << "#{hours}h" if hours.positive?
+    parts << "#{minutes}m" if minutes.positive?
+    parts.join(" ")
+  end
+
   private
 
   def extract_rule_type(recurrence)

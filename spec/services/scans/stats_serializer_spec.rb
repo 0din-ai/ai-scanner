@@ -160,6 +160,37 @@ RSpec.describe Scans::StatsSerializer, type: :service do
     end
   end
 
+  describe '#token_info' do
+    context 'when the projection is unavailable' do
+      it 'emits no amount' do
+        # scan has only default_probe (input_tokens: 0, the DB default, and no
+        # completed-report history), so Scans::Projection cannot assign a basis at
+        # all -- the exact case a bare Integer could not distinguish from a real zero.
+        result = serializer.send(:token_info)
+
+        expect(result[:projected_input_per_scan]).to be_nil
+        expect(result[:projected_input_basis]).to eq(basis: :unavailable, covered: 0, total: 1)
+      end
+    end
+
+    context 'when the projection covers only part of the scan probes' do
+      let!(:covered_probe) { create(:probe, input_tokens: 500) }
+
+      before { scan.probes << covered_probe }
+
+      it 'carries coverage metadata alongside the amount rather than a bare number' do
+        # default_probe still contributes nothing (input_tokens: 0), so only
+        # covered_probe is covered: 1 of the scan's 2 probes. The amount is a real
+        # (non-nil) number here -- the defect this fixes is a consumer reading a
+        # present amount as a complete measurement with no way to tell otherwise.
+        result = serializer.send(:token_info)
+
+        expect(result[:projected_input_per_scan]).to eq(2500) # 500 tokens * GENERATIONS(5) * 1 target
+        expect(result[:projected_input_basis]).to eq(basis: :estimated, covered: 1, total: 2)
+      end
+    end
+  end
+
   describe '#risk_distribution_info' do
     context 'when there are no completed reports' do
       it 'returns an empty hash' do
