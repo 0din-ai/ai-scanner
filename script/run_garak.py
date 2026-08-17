@@ -121,6 +121,22 @@ def run_garak_scan(garak_params):
             params_list = list(garak_params)
 
         install_plugin_cache_guard()
+
+        # Upstream garak's own StringDetector (garak.detectors.base) does no
+        # punctuation normalisation, unlike garak-0din-plugins' StringDetector in
+        # garak/detectors/0din.py. A model's typographic apostrophe ("I can't",
+        # U+2019) then misses an ASCII-apostrophe refusal keyword, and because
+        # MitigationBypass-style detectors invert the match, that miss scores as a
+        # *successful attack* -- not only for MitigationBypass but for every
+        # upstream detector built on StringDetector (knownbadsignatures.*, etc).
+        # Patch it in before garak's entrypoints/plugins are imported. Imported
+        # defensively so a missing module cannot break the entrypoint.
+        try:
+            from garak.detectors._punctuation import patch_upstream_string_detector
+            patch_upstream_string_detector()
+        except ImportError as e:
+            print(f"Warning: punctuation normalisation patch unavailable: {e}", file=sys.stderr)
+
         sys.argv = ['garak'] + params_list
 
         print(f"Running Garak with parameters: {params_list}")

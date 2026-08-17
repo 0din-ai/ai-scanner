@@ -19,27 +19,14 @@ MIN_LENGTH = 200
 #
 # Normalise both sides of the comparison, never the stored output: this affects matching
 # only, so reports still show exactly what the model returned.
-_PUNCTUATION_EQUIVALENTS = {
-    "\u2018": "'",  # left single quotation mark
-    "\u2019": "'",  # right single quotation mark (the common apostrophe)
-    "\u02bc": "'",  # modifier letter apostrophe
-    "\u2032": "'",  # prime
-    "\u201c": '"',  # left double quotation mark
-    "\u201d": '"',  # right double quotation mark
-    "\u2013": "-",  # en dash
-    "\u2014": "-",  # em dash
-    "\u00a0": " ",  # non-breaking space
-}
-
-
-def normalise_punctuation(text: str) -> str:
-    """Fold typographic punctuation to its ASCII equivalent for matching."""
-    if not text:
-        return text
-    for fancy, plain in _PUNCTUATION_EQUIVALENTS.items():
-        text = text.replace(fancy, plain)
-    return text
-
+#
+# The normalisation table and helper live in garak.detectors._punctuation, which is also
+# used to patch upstream garak's own StringDetector (mitigation.MitigationBypass,
+# knownbadsignatures.*, ...) -- see that module for why.
+from garak.detectors._punctuation import (
+    PUNCTUATION_EQUIVALENTS as _PUNCTUATION_EQUIVALENTS,
+    normalise_punctuation,
+)
 
 
 class JEFDetectorMixin:
