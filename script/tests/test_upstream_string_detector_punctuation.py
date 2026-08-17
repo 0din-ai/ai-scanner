@@ -168,6 +168,12 @@ class UpstreamStringDetectorPunctuationTest(unittest.TestCase):
         self.assertIs(self._StringDetector.detect, patched_detect)
 
     def test_unpatch_restores_the_original_callable(self):
+        # Establish a known-unpatched baseline first. The patch is process-wide, so under
+        # `unittest discover` an earlier test module may already have applied it, and
+        # capturing detect blind would capture the PATCHED function as "original" -- the
+        # assertions below would then compare a thing against itself and fail. This test
+        # passes alone and fails in discovery without this line.
+        self._punctuation.unpatch_upstream_string_detector()
         original = self._StringDetector.detect
 
         self._punctuation.patch_upstream_string_detector()
