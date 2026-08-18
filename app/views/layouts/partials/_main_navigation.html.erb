@@ -1,7 +1,10 @@
-<%# Mobile backdrop (invisible click target) %>
+<%# Mobile backdrop (invisible click target).
+    Starts hidden: mobile_nav_controller#open removes `hidden` and #close puts it back,
+    so without it the backdrop covers the whole page from first paint and eats every
+    click below the xl breakpoint. `xl:hidden` keeps it away from desktop entirely. %>
 <div data-mobile-nav-target="backdrop"
      data-action="click->mobile-nav#close"
-     class="fixed top-16 xl:top-0 bottom-0 left-0 right-0 z-30 xl:hidden"
+     class="fixed top-16 xl:top-0 bottom-0 left-0 right-0 z-30 hidden xl:hidden"
      aria-hidden="true"></div>
 
 <div id="main-menu"
