@@ -44,7 +44,7 @@ module Scans
       last_report = completed_reports.order(created_at: :desc).first
 
       {
-        avg_successful_attacks: scan.avg_successful_attacks&.round(2) || 0,
+        avg_successful_attacks: scan.avg_successful_attacks&.round(2),
         total_reports: scan.reports.parent_reports.count,
         completed_reports: completed_reports.count,
         last_report_at: last_report&.created_at&.iso8601

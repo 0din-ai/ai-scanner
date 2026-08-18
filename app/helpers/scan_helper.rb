@@ -1,4 +1,14 @@
 module ScanHelper
+  # A scan's cached ASR as text. Mirrors ReportsHelper#asr_display -- one decimal place,
+  # "N/A" reserved for a figure that cannot be calculated -- so a scan and the reports it
+  # averages never describe the same absence with different words.
+  def scan_asr_display(scan)
+    value = scan.avg_successful_attacks
+    return "N/A" if value.nil?
+
+    number_to_percentage(value, precision: 1)
+  end
+
   def scan_format_recurrence_schedule(recurrence)
     return "Not scheduled" unless recurrence.present?
 

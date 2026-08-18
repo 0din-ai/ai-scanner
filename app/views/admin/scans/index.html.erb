@@ -102,11 +102,8 @@
         end
       },
       render: ->(scan) {
-        if scan.avg_successful_attacks.present?
-          content_tag(:span, "#{scan.avg_successful_attacks.round(1)}%", class: "text-sm font-semibold #{asr_color_class(scan.avg_successful_attacks)}")
-        else
-          content_tag(:span, "—", class: "text-sm text-zinc-500")
-        end
+        content_tag(:span, scan_asr_display(scan),
+                    class: "text-sm font-semibold #{asr_color_class(scan.avg_successful_attacks)}")
       }
     }
   ]

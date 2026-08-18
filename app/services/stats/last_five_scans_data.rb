@@ -7,7 +7,7 @@ module Stats
             {
               scan_name: scan.name,
               scan_id: scan.id,
-              asr: (scan.avg_successful_attacks || 0).round
+              asr: scan.avg_successful_attacks&.round
             }
           end
     end

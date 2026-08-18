@@ -200,8 +200,23 @@ RSpec.describe Scan, type: :model do
     let(:scan) { create(:complete_scan) }
 
     context 'with no completed reports' do
-      it 'returns 0.0' do
-        expect(scan.calculate_avg_successful_attacks).to eq(0.0)
+      # nil, not 0.0: 0% is a scan that ran and blocked everything. A scan that never
+      # produced a result has no rate, and storing zero made the list and the dashboard
+      # report a clean bill of health for a scan that measured nothing.
+      it 'returns nil' do
+        expect(scan.calculate_avg_successful_attacks).to be_nil
+      end
+    end
+
+    context 'with completed reports that measured nothing' do
+      before do
+        report = create(:report, scan: scan, target: scan.targets.first, status: :completed)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector),
+                              passed: 0, total: 0)
+      end
+
+      it 'returns nil rather than averaging a rate it cannot compute' do
+        expect(scan.calculate_avg_successful_attacks).to be_nil
       end
     end
 
@@ -269,15 +284,26 @@ RSpec.describe Scan, type: :model do
         report1 = create(:report, scan: scan, target: scan.targets.first, status: :completed)
         report2 = create(:report, scan: scan, target: scan.targets.last, status: :completed)
 
-        create(:detector_result, report: report1, passed: 0, total: 0)
         create(:probe_result, report: report1, probe: create(:probe), detector: create(:detector), passed: 0, total: 0)
-        create(:detector_result, report: report2, passed: 10, total: 20)
         create(:probe_result, report: report2, probe: create(:probe), detector: create(:detector), passed: 10, total: 20)
       end
 
-      it 'handles division by zero correctly' do
-        # Average of 0% and 50% = 25%
-        expect(scan.calculate_avg_successful_attacks).to eq(25.0)
+      it 'averages only the reports that measured something' do
+        # The zero-total report has no rate. Counting it as 0% dragged the scan average
+        # to 25% for a scan whose one measured report was 50%.
+        expect(scan.calculate_avg_successful_attacks).to eq(50.0)
+      end
+    end
+
+    context 'when every measured report blocked every attack' do
+      before do
+        report = create(:report, scan: scan, target: scan.targets.first, status: :completed)
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector),
+                              passed: 0, total: 50)
+      end
+
+      it 'returns a measured zero' do
+        expect(scan.calculate_avg_successful_attacks).to eq(0.0)
       end
     end
 

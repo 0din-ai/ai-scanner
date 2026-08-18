@@ -196,4 +196,18 @@ RSpec.describe "ASR consistency across report surfaces", type: :request do
     expect(unmeasurable.asr.calculable?).to be false
     expect(unmeasurable.asr.percent).to be_nil
   end
+
+  it "says the same thing about a scan that measured nothing as about its reports" do
+    # The reports list said N/A for the report while the scans list said 0.0% for the scan
+    # that contains it -- the same absence, described two ways, one of them as a result.
+    build_report(status: :failed, completeness: :none, passed: 0, total: 0)
+    ActsAsTenant.with_tenant(company) { scan.send(:update_avg_successful_attacks!) }
+
+    get reports_path
+    expect(response.body).to include("N/A")
+
+    get scans_path
+    expect(response.body).to include("N/A")
+    expect(scan.reload.avg_successful_attacks).to be_nil
+  end
 end
