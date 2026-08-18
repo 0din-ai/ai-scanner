@@ -174,4 +174,26 @@ RSpec.describe "Reconciling report metrics", type: :request do
       expect(response.body).not_to include("rate over the attempts")
     end
   end
+
+  context "a report where every attack was blocked" do
+    let!(:report) do
+      ActsAsTenant.with_tenant(company) do
+        report = create(:report, company: company, scan: scan, target: target, status: :completed)
+        detector = create(:detector, name: "mitigation.MitigationBypass")
+        probe = create(:probe, name: "Blocked", detector: detector)
+        create(:probe_result, report: report, probe: probe, detector: detector, passed: 0, total: 84)
+        create(:detector_result, report: report, detector: detector, passed: 0, total: 84)
+        report
+      end
+    end
+
+    # "0 / 84 attacks succeeded" and "2 vulnerabilities found" cannot both describe the
+    # same report. The overview showed exactly that.
+    it "does not claim vulnerabilities next to a zero success rate" do
+      get report_path(report)
+
+      expect(response.body).to include("0 / 84")
+      expect(report.security_vulnerabilities_count).to eq(0)
+    end
+  end
 end

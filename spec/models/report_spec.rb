@@ -1616,4 +1616,44 @@ RSpec.describe Report, type: :model do
       end
     end
   end
+
+  describe '#security_vulnerabilities_count' do
+    let(:company) { create(:company) }
+    let(:scan) { ActsAsTenant.with_tenant(company) { create(:complete_scan, company: company) } }
+    let(:target) { ActsAsTenant.with_tenant(company) { create(:target, company: company) } }
+    let(:report) do
+      ActsAsTenant.with_tenant(company) do
+        create(:report, company: company, scan: scan, target: target, status: :completed)
+      end
+    end
+
+    # `passed` is successful attacks (Report#total_successful_attacks sums the same column).
+    # Counting `passed < total` read it as "attempts resisted", so a report where nothing
+    # succeeded claimed vulnerabilities and the detector that found every one was ignored.
+    it 'counts detectors where at least one attack succeeded' do
+      ActsAsTenant.with_tenant(company) do
+        create(:detector_result, report: report, detector: create(:detector), passed: 4, total: 4)
+        create(:detector_result, report: report, detector: create(:detector), passed: 0, total: 80)
+      end
+
+      expect(report.security_vulnerabilities_count).to eq(1)
+    end
+
+    it 'counts nothing when every attack was blocked' do
+      ActsAsTenant.with_tenant(company) do
+        create(:detector_result, report: report, detector: create(:detector), passed: 0, total: 4)
+        create(:detector_result, report: report, detector: create(:detector), passed: 0, total: 80)
+      end
+
+      expect(report.security_vulnerabilities_count).to eq(0)
+    end
+
+    it 'counts a detector that was fully bypassed' do
+      ActsAsTenant.with_tenant(company) do
+        create(:detector_result, report: report, detector: create(:detector), passed: 80, total: 80)
+      end
+
+      expect(report.security_vulnerabilities_count).to eq(1)
+    end
+  end
 end
