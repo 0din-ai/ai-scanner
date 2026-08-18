@@ -43,10 +43,15 @@ class TokenEstimator
       }
     end
 
-    # What was actually sent to the model. Multi-shot probes resend the accumulated
-    # history on every call, so garak's stored prompt -- one seed message -- understates
-    # the input by every turn resent. script/garak_plugins/probes/0din.py records the real
-    # conversation in notes, in the same serialised shape as a prompt.
+    # The recorded conversation, not necessarily what was actually sent. garak's stored
+    # prompt -- one seed message -- already understates a multi-shot probe, which resends
+    # the accumulated history on every call: the true input across turns is
+    # p1 + (p1 + r1 + p2) + ..., while notes.multiturn_conversation (recorded by
+    # script/garak_plugins/probes/0din.py) counts each turn once, e.g. p1 + r1 + p2. That
+    # script also skips appending a turn when its generator call errors, so a probe with a
+    # mid-conversation failure omits from notes a prompt that was genuinely sent. Both
+    # caveats push the estimate below the real token count; this is the same arithmetic
+    # the previous implementation used, only the comment describing it was wrong.
     def input_conversation(attempt)
       notes = attempt["notes"] || attempt[:notes]
       recorded = notes.is_a?(Hash) ? (notes["multiturn_conversation"] || notes[:multiturn_conversation]) : nil

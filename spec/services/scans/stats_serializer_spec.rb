@@ -146,7 +146,7 @@ RSpec.describe Scans::StatsSerializer, type: :service do
         expect(t2[:asr]).to eq(25.0)
       end
 
-      it 'includes targets with no completed reports as zero' do
+      it 'includes targets with no completed reports as unmeasured, not a clean 0%' do
         target3 = create(:target, :good, name: "Target 3")
         scan.targets << target3
 
@@ -155,7 +155,32 @@ RSpec.describe Scans::StatsSerializer, type: :service do
 
         expect(t3[:passed]).to eq(0)
         expect(t3[:total]).to eq(0)
-        expect(t3[:asr]).to eq(0)
+        expect(t3[:asr]).to be_nil
+      end
+    end
+
+    context 'when reports are completed but nothing was measured' do
+      # A target with probe_results totalling 0 must not read as a clean 0% -- that is
+      # the same false "attacks were evaluated and none succeeded" claim AsrFigure exists
+      # to prevent at the report level (see app/models/reports/asr_figure.rb).
+      let!(:report) { create(:report, :completed, scan: scan, target: target) }
+
+      before do
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector),
+                              passed: 0, total: 0)
+      end
+
+      it 'reports no rate rather than a false 0%, both overall and per-target' do
+        result = serializer.send(:attacks_info)
+
+        expect(result[:total_passed]).to eq(0)
+        expect(result[:total_tests]).to eq(0)
+        expect(result[:attack_success_rate]).to be_nil
+
+        t1 = result[:by_target].find { |t| t[:target_name] == target.name }
+        expect(t1[:passed]).to eq(0)
+        expect(t1[:total]).to eq(0)
+        expect(t1[:asr]).to be_nil
       end
     end
   end
@@ -531,6 +556,26 @@ RSpec.describe Scans::StatsSerializer, type: :service do
         expect(result[:grade]).to eq("N/A")
         expect(result[:score]).to be_nil
         expect(result[:description]).to eq("No completed scans")
+      end
+    end
+
+    context 'when there are completed reports that measured nothing' do
+      # completed_reports.empty? is false here, but total_tests is 0, so asr and
+      # risk_penalty both compute to 0 and the scan graded A+ "Excellent security
+      # posture" -- a false clean bill of health for a scan that measured nothing.
+      let!(:report) { create(:report, :completed, scan: scan, target: target) }
+
+      before do
+        create(:probe_result, report: report, probe: create(:probe), detector: create(:detector),
+                              passed: 0, total: 0)
+      end
+
+      it 'returns N/A rather than a false clean grade' do
+        result = serializer.send(:security_grade_info)
+
+        expect(result[:grade]).to eq("N/A")
+        expect(result[:score]).to be_nil
+        expect(result[:description]).to eq("No measurable attacks")
       end
     end
 

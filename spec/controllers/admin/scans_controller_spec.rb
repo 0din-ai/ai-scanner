@@ -195,6 +195,23 @@ RSpec.describe Admin::ScansController, type: :controller do
 
         expect(response.body.index("MeasuredAlpha")).to be < response.body.index("UnmeasuredAlpha")
       end
+
+      # NULLS LAST alone has no tie-breaker, and unmeasured scans made ties far more
+      # common (every one of them is now NULL instead of a distinct 0.00). Postgres does
+      # not promise a stable order within a tied block across queries, so paginating
+      # "ASR desc" could show one scan twice and skip another. Assert the id tie-breaker
+      # is actually in the SQL rather than relying on Postgres happening to be stable.
+      it "breaks ties on avg_successful_attacks deterministically by id" do
+        sql_statements = []
+        callback = lambda { |*, payload| sql_statements << payload[:sql] }
+
+        ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+          get :index, params: { q: { s: "avg_successful_attacks desc" } }
+        end
+
+        order_sql = sql_statements.find { |sql| sql.include?("ORDER BY avg_successful_attacks") }
+        expect(order_sql).to match(/avg_successful_attacks DESC NULLS LAST,\s*id\b/i)
+      end
     end
 
     it "does not render the empty state for a company with a long scan history" do
