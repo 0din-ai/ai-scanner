@@ -199,6 +199,55 @@ RSpec.describe TokenEstimator do
     end
   end
 
+  describe 'multi-turn attempts' do
+    let(:turns) do
+      [
+        { 'role' => 'user', 'content' => { 'text' => 'first ask' } },
+        { 'role' => 'assistant', 'content' => { 'text' => 'reply one' } },
+        { 'role' => 'user', 'content' => { 'text' => 'second ask' } },
+        { 'role' => 'assistant', 'content' => { 'text' => 'reply two' } }
+      ]
+    end
+
+    # script/garak_plugins/probes/0din.py records what a multi-shot probe actually sent.
+    # The seed prompt garak stores is one turn, so counting it alone understates input by
+    # every turn the probe resent.
+    it 'counts the conversation the probe recorded, not just the seed prompt' do
+      attempt = {
+        'prompt' => { 'turns' => [ turns.first ] },
+        'notes' => { 'multiturn_conversation' => { 'turns' => turns } },
+        'outputs' => [ { 'text' => "reply one\n\n--\n\nreply two" } ]
+      }
+      equivalent = {
+        'prompt' => { 'turns' => turns },
+        'outputs' => [ { 'text' => "reply one\n\n--\n\nreply two" } ]
+      }
+
+      expect(described_class.estimate_from_attempt(attempt)[:input_tokens])
+        .to eq(described_class.estimate_from_attempt(equivalent)[:input_tokens])
+    end
+
+    it 'counts more input than the seed prompt alone' do
+      seed_only = { 'prompt' => { 'turns' => [ turns.first ] }, 'outputs' => [] }
+      attempt = {
+        'prompt' => { 'turns' => [ turns.first ] },
+        'notes' => { 'multiturn_conversation' => { 'turns' => turns } },
+        'outputs' => []
+      }
+
+      expect(described_class.estimate_from_attempt(attempt)[:input_tokens])
+        .to be > described_class.estimate_from_attempt(seed_only)[:input_tokens]
+    end
+
+    it 'falls back to the prompt when no conversation was recorded' do
+      attempt = { 'prompt' => { 'turns' => turns }, 'notes' => {}, 'outputs' => [] }
+      without_notes = { 'prompt' => { 'turns' => turns }, 'outputs' => [] }
+
+      expect(described_class.estimate_from_attempt(attempt))
+        .to eq(described_class.estimate_from_attempt(without_notes))
+    end
+  end
+
   describe ".extract_prompt_text" do
     it "returns string prompt unchanged" do
       expect(described_class.extract_prompt_text("Hello world")).to eq("Hello world")

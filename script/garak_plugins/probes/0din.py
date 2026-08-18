@@ -156,11 +156,21 @@ class BaseHarmfulContentMultiShot(Probe):
             responses.append(normalized)
         combined_output = _combine_responses(responses)
         this_attempt.outputs = [combined_output]
-        # Store full conversation as prompt for accurate token accounting.
-        # Multi-turn probes resend accumulated history on each API call;
-        # the original combined prompt only captures user messages.
-        if conv_turns:
-            this_attempt.prompt = Conversation(turns=conv_turns)
+        # Record the conversation actually sent, for token accounting: multi-turn probes
+        # resend accumulated history on each API call, so the seed prompt understates
+        # input. It goes in notes, not on the attempt, for two reasons:
+        #   * garak >= 0.15 makes Attempt.prompt write-once -- reassigning it raised
+        #     TypeError("prompt cannot be changed once set") and aborted the whole run.
+        #   * attempt.conversations is what the vendored 0din detectors read through
+        #     attempt.all_outputs, so intermediate assistant turns there would score one
+        #     attack as several evaluations.
+        # Attempt.as_dict() asdict()s dataclass note values, so this reaches the report
+        # JSONL in the same shape as a serialised prompt (see TokenEstimator).
+        # Only when more than one prompt was sent: a single-turn attempt resent nothing,
+        # and its prompt already carries the text, so recording it would just duplicate
+        # the prompt into every attempt's notes.
+        if len(prompts_list) > 1 and conv_turns:
+            this_attempt.notes["multiturn_conversation"] = Conversation(turns=conv_turns)
         return copy.deepcopy(this_attempt)
 
 

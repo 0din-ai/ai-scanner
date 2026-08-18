@@ -4,6 +4,7 @@
 import importlib
 import importlib.metadata
 import importlib.util
+import re
 import subprocess
 import sys
 import unittest
@@ -12,6 +13,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / "script" / "garak_plugins"
+
+# Matches `attempt.prompt = ...` and `attempt.prompt=...` (the `(?!=)` keeps `==`
+# comparisons out), plus the `setattr` spelling of the same reassignment.
+PROMPT_REASSIGNMENT_RE = re.compile(
+    r"attempt\.prompt\s*=(?!=)|setattr\(attempt,\s*[\"']prompt[\"']"
+)
 
 
 def _garak_available():
@@ -106,6 +113,16 @@ class TestLocalPluginSources(unittest.TestCase):
         self.assertIn("OPENROUTER_BASE_URL", source)
         self.assertIn("def _call_model_sequential", source)
         self.assertIn("terminal API status error", source)
+
+    def test_probe_sources_never_reassign_an_attempt_prompt(self):
+        # garak >= 0.15: Attempt.prompt is write-once. A reassignment anywhere in the
+        # vendored probes aborts the run it appears in. The regex also catches the
+        # no-space `attempt.prompt=` spelling and the `setattr(attempt, "prompt", ...)`
+        # equivalent, which a plain substring check on "attempt.prompt =" would miss.
+        for relative_path in ("probes/0din.py", "probes/0din_variants.py"):
+            source = (PLUGIN_DIR / relative_path).read_text()
+            match = PROMPT_REASSIGNMENT_RE.search(source)
+            self.assertIsNone(match, f"{relative_path} reassigns attempt.prompt: {match and match.group(0)!r}")
 
 
 @unittest.skipUnless(_garak_available(), "garak is not importable")

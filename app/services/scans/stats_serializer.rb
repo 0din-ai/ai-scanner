@@ -44,7 +44,7 @@ module Scans
       last_report = completed_reports.order(created_at: :desc).first
 
       {
-        avg_successful_attacks: scan.avg_successful_attacks&.round(2) || 0,
+        avg_successful_attacks: scan.avg_successful_attacks&.round(2),
         total_reports: scan.reports.parent_reports.count,
         completed_reports: completed_reports.count,
         last_report_at: last_report&.created_at&.iso8601
@@ -76,7 +76,10 @@ module Scans
 
       total_passed = totals&.total_passed.to_i
       total_tests = totals&.total_tests.to_i
-      overall_asr = total_tests > 0 ? (total_passed.to_f / total_tests * 100).round(2) : 0
+      # Counts stay honest zeros; the rate is nil when there was nothing to divide by --
+      # the same distinction Reports::AsrFigure draws, so this payload doesn't describe
+      # the same absence two contradictory ways (0 counts here, null in aggregate_stats).
+      overall_asr = total_tests > 0 ? (total_passed.to_f / total_tests * 100).round(2) : nil
 
       # Per-target breakdown (single grouped query instead of N+1)
       grouped = completed_reports
@@ -95,7 +98,9 @@ module Scans
         stats = grouped[target.id] || { passed: 0, total: 0 }
         passed = stats[:passed]
         total = stats[:total]
-        asr = total > 0 ? (passed.to_f / total * 100).round(2) : 0
+        # A target that was never measured (no reports, or reports with nothing to
+        # divide by) must not read as a clean 0% -- same rule as overall_asr above.
+        asr = total > 0 ? (passed.to_f / total * 100).round(2) : nil
 
         {
           target_id: target.id,
@@ -186,7 +191,9 @@ module Scans
           probes_tested: row.probes_tested.to_i,
           passed: row.total_passed.to_i,
           total: row.total_tests.to_i,
-          asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+          # A risk level with nothing to divide by must not read as a clean 0% -- same
+          # rule as attacks_info above.
+          asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : nil
         }
       end
 
@@ -220,7 +227,9 @@ module Scans
           probes_tested: row.probes_tested.to_i,
           passed: row.total_passed.to_i,
           total: row.total_tests.to_i,
-          asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+          # A disclosure status with nothing to divide by must not read as a clean 0% --
+          # same rule as attacks_info above.
+          asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : nil
         }
       end
 
@@ -264,7 +273,9 @@ module Scans
           disclosure_status: disclosure_statuses[row.disclosure_status] || "Unknown",
           passed: row.total_passed.to_i,
           total: row.total_tests.to_i,
-          success_rate: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+          # A flagged probe with nothing to divide by must not read as a clean 0% -- same
+          # rule as attacks_info above.
+          success_rate: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : nil
         }
       end
     end
@@ -290,7 +301,9 @@ module Scans
             detector_name: row.name,
             passed: row.total_passed.to_i,
             total: row.total_tests.to_i,
-            asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+            # A detector with nothing to divide by must not read as a clean 0% -- same
+            # rule as attacks_info above.
+            asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : nil
           }
         end
     end
@@ -358,7 +371,14 @@ module Scans
 
       total_passed = totals&.total_passed.to_i
       total_tests = totals&.total_tests.to_i
-      asr = total_tests > 0 ? (total_passed.to_f / total_tests * 100) : 0
+
+      # Completed reports that measured nothing must not fall through to asr = 0 and
+      # risk_penalty = 0 below -- that combination grades A+ "Excellent security
+      # posture", a false clean bill of health from a security tool for a scan that
+      # never evaluated an attack. Same N/A shape as the empty-reports guard above.
+      return { grade: "N/A", score: nil, description: "No measurable attacks" } if total_tests.zero?
+
+      asr = total_passed.to_f / total_tests * 100
 
       # Weight by risk level - penalize high-risk vulnerabilities more
       risk_penalty = calculate_risk_penalty

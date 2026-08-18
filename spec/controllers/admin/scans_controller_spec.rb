@@ -167,6 +167,53 @@ RSpec.describe Admin::ScansController, type: :controller do
       end
     end
 
+    describe "sorting by avg_successful_attacks" do
+      # avg_successful_attacks is nullable -- a scan whose reports measured nothing has no
+      # rate. Postgres puts NULLs first on ORDER BY ... DESC by default, so sorting "worst
+      # ASR first" led with unmeasured scans ahead of every measured rate. Mirrors
+      # Admin::ProbesController's NULLS LAST handling for success_rate_calculated.
+      let!(:unmeasured) do
+        ActsAsTenant.with_tenant(company) do
+          create(:complete_scan, company: company, name: "UnmeasuredAlpha", avg_successful_attacks: nil)
+        end
+      end
+
+      let!(:measured) do
+        ActsAsTenant.with_tenant(company) do
+          create(:complete_scan, company: company, name: "MeasuredAlpha", avg_successful_attacks: 42.0)
+        end
+      end
+
+      it "puts the unmeasured scan last when sorting ASR descending" do
+        get :index, params: { q: { s: "avg_successful_attacks desc" } }
+
+        expect(response.body.index("MeasuredAlpha")).to be < response.body.index("UnmeasuredAlpha")
+      end
+
+      it "puts the unmeasured scan last when sorting ASR ascending too" do
+        get :index, params: { q: { s: "avg_successful_attacks asc" } }
+
+        expect(response.body.index("MeasuredAlpha")).to be < response.body.index("UnmeasuredAlpha")
+      end
+
+      # NULLS LAST alone has no tie-breaker, and unmeasured scans made ties far more
+      # common (every one of them is now NULL instead of a distinct 0.00). Postgres does
+      # not promise a stable order within a tied block across queries, so paginating
+      # "ASR desc" could show one scan twice and skip another. Assert the id tie-breaker
+      # is actually in the SQL rather than relying on Postgres happening to be stable.
+      it "breaks ties on avg_successful_attacks deterministically by id" do
+        sql_statements = []
+        callback = lambda { |*, payload| sql_statements << payload[:sql] }
+
+        ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+          get :index, params: { q: { s: "avg_successful_attacks desc" } }
+        end
+
+        order_sql = sql_statements.find { |sql| sql.include?("ORDER BY avg_successful_attacks") }
+        expect(order_sql).to match(/avg_successful_attacks DESC NULLS LAST,\s*id\b/i)
+      end
+    end
+
     it "does not render the empty state for a company with a long scan history" do
       # The reported case: 126 existing scans, none scheduled.
       ActsAsTenant.with_tenant(company) { create_list(:complete_scan, 126, company: company) }

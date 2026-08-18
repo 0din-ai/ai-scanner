@@ -514,9 +514,13 @@ class Report < ApplicationRecord
     cached_total
   end
 
+  # Detectors that found something. `passed` is successful attacks -- the same column
+  # #total_successful_attacks sums -- so a detector identified a vulnerability when at
+  # least one attack against it succeeded. Counting `passed < total` inverted that: a
+  # report with 0/84 successful attacks claimed two vulnerabilities, and a detector
+  # bypassed on every attempt (80/80) was counted as clean.
   def security_vulnerabilities_count
-    # Count detector results where there were failures (passed < total)
-    detector_results.where("passed < total").count
+    detector_results.where("passed > 0").count
   end
 
   # Compute total input tokens from all probe results

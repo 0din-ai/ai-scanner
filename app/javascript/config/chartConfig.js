@@ -211,7 +211,8 @@ export function getGaugeChartConfig(successRate, chartConfig, name = 'Success Ra
                     offsetCenter: [0, '-35%'],
                     valueAnimation: true,
                     formatter: function (value) {
-                        return Math.round(value) + '';
+                        // nothing measurable (nil rate, or ECharts coercing null to NaN) must not render as a false "0"
+                        return Number.isFinite(value) ? Math.round(value) + '' : 'N/A';
                     },
                     color: 'inherit'
                 },

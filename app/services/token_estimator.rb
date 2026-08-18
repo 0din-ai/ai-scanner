@@ -35,13 +35,28 @@ class TokenEstimator
     def estimate_from_attempt(attempt)
       return { input_tokens: 0, output_tokens: 0 } if attempt.nil?
 
-      prompt = attempt["prompt"] || attempt[:prompt]
       outputs = attempt["outputs"] || attempt[:outputs]
 
       {
-        input_tokens: estimate_tokens(extract_prompt_text(prompt)),
+        input_tokens: estimate_tokens(extract_prompt_text(input_conversation(attempt))),
         output_tokens: estimate_output_tokens(outputs)
       }
+    end
+
+    # The recorded conversation, not necessarily what was actually sent. garak's stored
+    # prompt -- one seed message -- already understates a multi-shot probe, which resends
+    # the accumulated history on every call: the true input across turns is
+    # p1 + (p1 + r1 + p2) + ..., while notes.multiturn_conversation (recorded by
+    # script/garak_plugins/probes/0din.py) counts each turn once, e.g. p1 + r1 + p2. That
+    # script also skips appending a turn when its generator call errors, so a probe with a
+    # mid-conversation failure omits from notes a prompt that was genuinely sent. Both
+    # caveats push the estimate below the real token count; this is the same arithmetic
+    # the previous implementation used, only the comment describing it was wrong.
+    def input_conversation(attempt)
+      notes = attempt["notes"] || attempt[:notes]
+      recorded = notes.is_a?(Hash) ? (notes["multiturn_conversation"] || notes[:multiturn_conversation]) : nil
+
+      recorded.presence || attempt["prompt"] || attempt[:prompt]
     end
 
     # Aggregate token estimates from multiple attempts

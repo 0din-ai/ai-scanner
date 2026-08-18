@@ -40,9 +40,11 @@ RSpec.describe Stats::LastFiveScansData, type: :service do
     context 'when a scan has no computed ASR' do
       before { scan_with_asr(name: 'No ASR', asr: nil, created_at: 1.day.ago) }
 
-      it 'reports 0' do
+      # Reporting 0 here made a scan that measured nothing look like a scan that blocked
+      # everything. The card renders nil as "N/A".
+      it 'reports nil' do
         result = described_class.new.call
-        expect(result).to eq([ { scan_name: 'No ASR', scan_id: Scan.last.id, asr: 0 } ])
+        expect(result).to eq([ { scan_name: 'No ASR', scan_id: Scan.last.id, asr: nil } ])
       end
     end
 

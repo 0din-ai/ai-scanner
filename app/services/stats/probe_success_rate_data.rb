@@ -22,11 +22,13 @@ module Stats
         total_passed = scope.sum(:passed)
         total_tests = scope.sum(:total)
 
-        success_rate = total_tests > 0 ? (total_passed.to_f / total_tests * 100).round(1) : 0
+        # A zero denominator means nothing was measurable, not a clean 0% -- the same
+        # distinction Reports::AsrFigure draws at the report level.
+        success_rate = total_tests > 0 ? (total_passed.to_f / total_tests * 100).round(1) : nil
 
         { success_rate: success_rate, time_range: "Last 30 Days" }
       else
-        { success_rate: 0, time_range: "Last 30 Days" }
+        { success_rate: nil, time_range: "Last 30 Days" }
       end
     end
   end

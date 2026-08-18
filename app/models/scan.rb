@@ -80,14 +80,9 @@ class Scan < ApplicationRecord
 
 
     def calculate_avg_successful_attacks
-      return 0.0 if reports.completed.empty?
-
-      # Single SQL query with GROUP BY to avoid N+1 queries
-      # Aggregates passed/total per report, then calculates attack rate
       # Summed over probe_results, the same source Report#asr uses: pooling detector rows
       # counted one attack once per detector judging it, so this scan average disagreed
       # with the rate on every report page it averages.
-      # Uses LEFT JOIN to include reports even if they have no results
       # Excludes runs holding only partial results, matching Stats::AverageAsrScore: an
       # incomplete run's rate covers recorded work alone. This figure is stored, displayed
       # and sorted on, so it has to agree with the aggregate the dashboard shows.
@@ -101,13 +96,18 @@ class Scan < ApplicationRecord
           "COALESCE(SUM(probe_results.total), 0) as total_count"
         )
 
-      return 0.0 if results.empty?
-
-      attack_rates = results.map do |result|
+      # A report with nothing to divide by has no rate; it is left out rather than
+      # counted as 0%. Reports::AsrFigure draws the same line at report level -- 0.0 means
+      # every attack was blocked, nil means nothing was measurable -- and a scan whose
+      # reports all measured nothing must not read as a clean 0%.
+      attack_rates = results.filter_map do |result|
         total = result.total_count.to_i
-        passed = result.total_passed.to_i
-        total > 0 ? (passed.to_f / total * 100) : 0.0
+        next unless total.positive?
+
+        result.total_passed.to_f / total * 100
       end
+
+      return nil if attack_rates.empty?
 
       (attack_rates.sum / attack_rates.size).round(2)
     end
