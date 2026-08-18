@@ -167,6 +167,36 @@ RSpec.describe Admin::ScansController, type: :controller do
       end
     end
 
+    describe "sorting by avg_successful_attacks" do
+      # avg_successful_attacks is nullable -- a scan whose reports measured nothing has no
+      # rate. Postgres puts NULLs first on ORDER BY ... DESC by default, so sorting "worst
+      # ASR first" led with unmeasured scans ahead of every measured rate. Mirrors
+      # Admin::ProbesController's NULLS LAST handling for success_rate_calculated.
+      let!(:unmeasured) do
+        ActsAsTenant.with_tenant(company) do
+          create(:complete_scan, company: company, name: "UnmeasuredAlpha", avg_successful_attacks: nil)
+        end
+      end
+
+      let!(:measured) do
+        ActsAsTenant.with_tenant(company) do
+          create(:complete_scan, company: company, name: "MeasuredAlpha", avg_successful_attacks: 42.0)
+        end
+      end
+
+      it "puts the unmeasured scan last when sorting ASR descending" do
+        get :index, params: { q: { s: "avg_successful_attacks desc" } }
+
+        expect(response.body.index("MeasuredAlpha")).to be < response.body.index("UnmeasuredAlpha")
+      end
+
+      it "puts the unmeasured scan last when sorting ASR ascending too" do
+        get :index, params: { q: { s: "avg_successful_attacks asc" } }
+
+        expect(response.body.index("MeasuredAlpha")).to be < response.body.index("UnmeasuredAlpha")
+      end
+    end
+
     it "does not render the empty state for a company with a long scan history" do
       # The reported case: 126 existing scans, none scheduled.
       ActsAsTenant.with_tenant(company) { create_list(:complete_scan, 126, company: company) }

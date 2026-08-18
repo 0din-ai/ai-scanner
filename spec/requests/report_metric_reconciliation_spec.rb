@@ -194,6 +194,15 @@ RSpec.describe "Reconciling report metrics", type: :request do
 
       expect(response.body).to include("0 / 84")
       expect(report.security_vulnerabilities_count).to eq(0)
+
+      # The model assertion above pins the count; this pins the surface it actually
+      # renders on -- the bare integer next to the "Vulnerabilities Found" label in the
+      # overview's Key Statistics panel (app/views/admin/reports/_statistics_section.html.erb).
+      value = Nokogiri::HTML(response.body).at_xpath(
+        "//span[normalize-space()='Vulnerabilities Found']/following-sibling::span[1]"
+      )
+      expect(value).to be_present
+      expect(value.text.strip).to eq("0")
     end
   end
 end

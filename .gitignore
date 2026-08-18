@@ -100,3 +100,4 @@ bin/rspec-docker
 docs/plans/
 docs/plans/completed/
 docs/superpowers/
+.superpowers/

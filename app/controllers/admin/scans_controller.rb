@@ -40,7 +40,7 @@ module Admin
       if sort_param.blank?
         @pagy, @scans = pagy(@q.result.order(created_at: :desc))
       else
-        @pagy, @scans = pagy(@q.result)
+        @pagy, @scans = pagy(apply_sorting(@q.result, sort_param))
       end
       # Mirrors the branch above, so the highlighted tab always names the filter the list
       # was actually built from.
@@ -163,6 +163,17 @@ module Admin
     end
 
     private
+
+    # avg_successful_attacks is nullable -- a scan whose reports measured nothing has no
+    # rate. Ransack's default ORDER BY puts Postgres NULLs first on DESC, so "worst ASR
+    # first" led with unmeasured scans. Mirrors Admin::ProbesController#apply_sorting,
+    # which has the same NULLS LAST need for success_rate_calculated.
+    def apply_sorting(scope, sort_param)
+      return scope unless sort_param.start_with?("avg_successful_attacks")
+
+      direction = sort_param.include?("desc") ? "DESC" : "ASC"
+      scope.reorder(Arel.sql("avg_successful_attacks #{direction} NULLS LAST"))
+    end
 
     # Fail-closed tenant scoping for batch operations: explicitly filter by the current
     # company so a nil acts_as_tenant context can't span tenants.
