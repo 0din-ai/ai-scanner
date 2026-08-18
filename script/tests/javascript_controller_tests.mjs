@@ -139,6 +139,26 @@ function loadThreatVariantsController() {
   return { ControllerClass }
 }
 
+function loadGetGaugeChartConfig() {
+  const source = readFileSync(
+    new URL("../../app/javascript/config/chartConfig.js", import.meta.url),
+    "utf8"
+  )
+
+  const transformed = source
+    .replace(/^import .*?\n/gm, "")
+    .replace(/^export (const|function)/gm, "$1")
+
+  const context = {
+    document: {
+      querySelector() { return null }
+    },
+    colors: {}
+  }
+
+  return vm.runInNewContext(`${transformed}\ngetGaugeChartConfig`, context)
+}
+
 function loadReportRedesignedController() {
   const source = readFileSync(
     new URL("../../app/javascript/controllers/report_redesigned_controller.js", import.meta.url),
@@ -1435,6 +1455,20 @@ function testProbeCategoryToggleCategory() {
   assert.equal(ariaExpanded, "true")
 }
 
+function testGaugeChartConfigDetailFormatter() {
+  const getGaugeChartConfig = loadGetGaugeChartConfig()
+  const config = getGaugeChartConfig(null, { textStyle: { color: "#000" } }, "Success Rate")
+  const formatter = config.series[0].detail.formatter
+
+  // Nothing measurable (null/undefined/NaN) must render as "N/A", never a false "0" or literal "NaN"
+  assert.equal(formatter(null), "N/A")
+  assert.equal(formatter(undefined), "N/A")
+  assert.equal(formatter(NaN), "N/A")
+  // A real 0 means "measured, nothing succeeded" and must still render as "0"
+  assert.equal(formatter(0), "0")
+  assert.equal(formatter(4.76), "5")
+}
+
 await testDebugStreamLeaseController()
 testActivityStreamController()
 testDebugTabsController()
@@ -1448,4 +1482,5 @@ testTargetWizardRedactAuth()
 testTargetWizardSyncModel()
 testWebchatAutoDetectCurrentAuth()
 testProbeCategoryToggleCategory()
+testGaugeChartConfigDetailFormatter()
 console.log("JavaScript controller tests passed")
