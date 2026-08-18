@@ -107,6 +107,13 @@ class TestLocalPluginSources(unittest.TestCase):
         self.assertIn("def _call_model_sequential", source)
         self.assertIn("terminal API status error", source)
 
+    def test_probe_sources_never_reassign_an_attempt_prompt(self):
+        # garak >= 0.15: Attempt.prompt is write-once. A reassignment anywhere in the
+        # vendored probes aborts the run it appears in.
+        for relative_path in ("probes/0din.py", "probes/0din_variants.py"):
+            source = (PLUGIN_DIR / relative_path).read_text()
+            self.assertNotIn("attempt.prompt =", source)
+
 
 @unittest.skipUnless(_garak_available(), "garak is not importable")
 class TestOpenRouterTerminalErrors(unittest.TestCase):
