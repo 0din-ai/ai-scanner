@@ -1630,13 +1630,20 @@ RSpec.describe Report, type: :model do
     # `passed` is successful attacks (Report#total_successful_attacks sums the same column).
     # Counting `passed < total` read it as "attempts resisted", so a report where nothing
     # succeeded claimed vulnerabilities and the detector that found every one was ignored.
+    #
+    # Two fully-bypassed detectors (passed == total, both > 0) and one clean detector
+    # (passed == 0) make the old and new queries diverge: `passed < total` counts only
+    # the clean row (old = 1), `passed > 0` counts both bypassed rows (new = 2). A
+    # fixture with just one bypassed row and one clean row lands on the same integer
+    # under both queries and would not pin the regression.
     it 'counts detectors where at least one attack succeeded' do
       ActsAsTenant.with_tenant(company) do
         create(:detector_result, report: report, detector: create(:detector), passed: 4, total: 4)
+        create(:detector_result, report: report, detector: create(:detector), passed: 10, total: 10)
         create(:detector_result, report: report, detector: create(:detector), passed: 0, total: 80)
       end
 
-      expect(report.security_vulnerabilities_count).to eq(1)
+      expect(report.security_vulnerabilities_count).to eq(2)
     end
 
     it 'counts nothing when every attack was blocked' do
