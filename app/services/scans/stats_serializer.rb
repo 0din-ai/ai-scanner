@@ -191,7 +191,9 @@ module Scans
           probes_tested: row.probes_tested.to_i,
           passed: row.total_passed.to_i,
           total: row.total_tests.to_i,
-          asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+          # A risk level with nothing to divide by must not read as a clean 0% -- same
+          # rule as attacks_info above.
+          asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : nil
         }
       end
 
@@ -225,7 +227,9 @@ module Scans
           probes_tested: row.probes_tested.to_i,
           passed: row.total_passed.to_i,
           total: row.total_tests.to_i,
-          asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+          # A disclosure status with nothing to divide by must not read as a clean 0% --
+          # same rule as attacks_info above.
+          asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : nil
         }
       end
 
@@ -269,7 +273,9 @@ module Scans
           disclosure_status: disclosure_statuses[row.disclosure_status] || "Unknown",
           passed: row.total_passed.to_i,
           total: row.total_tests.to_i,
-          success_rate: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+          # A flagged probe with nothing to divide by must not read as a clean 0% -- same
+          # rule as attacks_info above.
+          success_rate: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : nil
         }
       end
     end
@@ -295,7 +301,9 @@ module Scans
             detector_name: row.name,
             passed: row.total_passed.to_i,
             total: row.total_tests.to_i,
-            asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : 0
+            # A detector with nothing to divide by must not read as a clean 0% -- same
+            # rule as attacks_info above.
+            asr: row.total_tests.to_i > 0 ? (row.total_passed.to_f / row.total_tests * 100).round(2) : nil
           }
         end
     end

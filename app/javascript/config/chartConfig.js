@@ -211,7 +211,8 @@ export function getGaugeChartConfig(successRate, chartConfig, name = 'Success Ra
                     offsetCenter: [0, '-35%'],
                     valueAnimation: true,
                     formatter: function (value) {
-                        return Math.round(value) + '';
+                        // nothing measurable (nil rate) must not render as a false "0"
+                        return value === null || value === undefined ? 'N/A' : Math.round(value) + '';
                     },
                     color: 'inherit'
                 },

@@ -12,10 +12,10 @@ RSpec.describe Stats::ProbeSuccessRateData do
       subject { described_class.new }
 
       context 'when no probe results exist' do
-        it 'returns zero success rate' do
+        it 'returns no success rate rather than a false 0%' do
           result = subject.call
 
-          expect(result[:success_rate]).to eq(0)
+          expect(result[:success_rate]).to be_nil
           expect(result[:time_range]).to eq("Last 30 Days")
         end
       end
@@ -263,10 +263,10 @@ RSpec.describe Stats::ProbeSuccessRateData do
                 created_at: 20.days.ago)
         end
 
-        it 'handles zero division gracefully' do
+        it 'reports no rate rather than a false 0%, matching Reports::AsrFigure' do
           result = described_class.new.call
 
-          expect(result[:success_rate]).to eq(0)
+          expect(result[:success_rate]).to be_nil
         end
       end
     end
