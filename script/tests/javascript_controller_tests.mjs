@@ -1469,6 +1469,38 @@ function testGaugeChartConfigDetailFormatter() {
   assert.equal(formatter(4.76), "5")
 }
 
+function testGaugeChartConfigPointer() {
+  const getGaugeChartConfig = loadGetGaugeChartConfig()
+  const baseConfig = { textStyle: { color: "#000" } }
+
+  // A pointer parked at the zero position asserts "measured, and it's zero" just as
+  // strongly as a "0" label would, so it must be hidden entirely for a non-finite
+  // (unmeasured) rate rather than repointed.
+  assert.equal(getGaugeChartConfig(null, baseConfig, "Success Rate").series[0].pointer.show, false)
+  assert.equal(getGaugeChartConfig(undefined, baseConfig, "Success Rate").series[0].pointer.show, false)
+  assert.equal(getGaugeChartConfig(NaN, baseConfig, "Success Rate").series[0].pointer.show, false)
+
+  // A real 0 (or any measured value) is a real reading and must keep pointing at it.
+  assert.equal(getGaugeChartConfig(0, baseConfig, "Success Rate").series[0].pointer.show, true)
+  assert.equal(getGaugeChartConfig(83.24, baseConfig, "Success Rate").series[0].pointer.show, true)
+}
+
+function testGaugeChartConfigTooltipFormatter() {
+  const getGaugeChartConfig = loadGetGaugeChartConfig()
+  const config = getGaugeChartConfig(null, { textStyle: { color: "#000" } }, "Success Rate")
+  const tooltipFormatter = config.tooltip.formatter
+
+  // The default '{b}: {c}%' template interpolates whatever value ECharts holds, so a
+  // null/NaN rate rendered the literal text "Success Rate: null%" -- the tooltip must
+  // agree with the centre label instead of contradicting it.
+  assert.equal(tooltipFormatter({ name: "Success Rate", value: null }), "Success Rate: N/A")
+  assert.equal(tooltipFormatter({ name: "Success Rate", value: undefined }), "Success Rate: N/A")
+  assert.equal(tooltipFormatter({ name: "Success Rate", value: NaN }), "Success Rate: N/A")
+  // A real 0 or fractional rate is a measured result and must still render as a percent.
+  assert.equal(tooltipFormatter({ name: "Success Rate", value: 0 }), "Success Rate: 0%")
+  assert.equal(tooltipFormatter({ name: "Success Rate", value: 83.24 }), "Success Rate: 83.24%")
+}
+
 await testDebugStreamLeaseController()
 testActivityStreamController()
 testDebugTabsController()
@@ -1483,4 +1515,6 @@ testTargetWizardSyncModel()
 testWebchatAutoDetectCurrentAuth()
 testProbeCategoryToggleCategory()
 testGaugeChartConfigDetailFormatter()
+testGaugeChartConfigPointer()
+testGaugeChartConfigTooltipFormatter()
 console.log("JavaScript controller tests passed")
