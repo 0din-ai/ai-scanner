@@ -125,7 +125,12 @@ export function getGaugeChartConfig(successRate, chartConfig, name = 'Success Ra
         backgroundColor: 'transparent',
         tooltip: {
             ...tooltipConfig,
-            formatter: '{b}: {c}%'
+            // The default '{b}: {c}%' template interpolates whatever value ECharts holds,
+            // so a null/NaN rate rendered the literal text "Success Rate: null%" -- the
+            // tooltip has to say N/A too, matching the centre label below.
+            formatter: function (params) {
+                return `${params.name}: ${Number.isFinite(params.value) ? params.value + '%' : 'N/A'}`;
+            }
         },
         series: [
             {
@@ -150,6 +155,13 @@ export function getGaugeChartConfig(successRate, chartConfig, name = 'Success Ra
                     }
                 },
                 pointer: {
+                    // A pointer at the zero position asserts "measured, and it's zero" just
+                    // as strongly as a "0" label would, so it must not be shown at all for a
+                    // non-finite (unmeasured) rate. successRate is the raw value passed in,
+                    // known here at config-build time -- unlike the formatters above/below,
+                    // which only see what ECharts has already coerced null to (NaN) by
+                    // render time.
+                    show: Number.isFinite(successRate),
                     icon: 'path://M12.8,0.7l12,40.1H0.7L12.8,0.7z',
                     length: '12%',
                     width: 10,

@@ -1,10 +1,14 @@
 <%
   dismissible = local_assigns.fetch(:dismissible, true)
   wrapper_classes = local_assigns.fetch(:wrapper_classes, "px-2.5 lg:px-5 py-2")
+  # Only render user-facing flash types. Devise and other internals stash markers
+  # (e.g. flash[:timedout]) alongside the real message; those must never render.
+  displayable_types = %i[notice success alert error warning]
+  displayable_flash = flash.select { |type, _message| displayable_types.include?(type.to_sym) }
 %>
-<% if flash.any? %>
+<% if displayable_flash.any? %>
   <div class="flash-messages <%= wrapper_classes %>">
-    <% flash.each do |type, message| %>
+    <% displayable_flash.each do |type, message| %>
       <%
         # Map flash types to Tailwind classes
         alert_class = case type.to_sym
