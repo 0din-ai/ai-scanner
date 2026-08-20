@@ -50,7 +50,7 @@ class RetryInterruptedReportsJob < ApplicationJob
   def retry_interrupted_report(report)
     Rails.logger.info(
       "[RetryInterruptedReports] Retrying report #{report.id} (#{report.uuid}) - " \
-      "attempt #{report.retry_count + 1}/#{CheckStaleReportsJob::MAX_INTERRUPT_RETRIES}"
+      "attempt #{report.retry_count + 1}/#{CheckStaleReportsJob.max_interrupt_retries}"
     )
 
     Report.transaction do

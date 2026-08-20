@@ -93,6 +93,14 @@ These variables are process-level settings from the root `.env` file or containe
 - **Impact**: Higher values show more live execution-log context while a scan is running; lower values reduce database write size
 - **Restart required**: Restart Scanner after changing this value
 
+### MAX_INTERRUPT_RETRIES
+- **Purpose**: Number of times an interrupted scan (e.g. a pod restart during a rolling deploy) is automatically retried before it is marked permanently failed
+- **Default Value**: `3`
+- **Location**: Root `.env` file or container environment; read by `CheckStaleReportsJob`
+- **Invalid values**: Blank, non-integer, or non-positive values fall back to the default
+- **Impact**: Raising this lets a scan absorb more interruptions before failing. This is inexpensive because scan progress is persisted to the database and a retried scan resumes rather than restarting from scratch
+- **Restart required**: No; each job run reads the current value
+
 ### PARALLEL_ATTEMPTS
 > **Note**: This setting has been moved to the Settings page (`/settings`). It is no longer managed as an Environment Variable.
 

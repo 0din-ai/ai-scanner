@@ -74,7 +74,7 @@
                 labelled differently on the two surfaces. %>
             <%= report_lifecycle_tags(report) %>
             <% if report.interrupted? && report.retry_count > 0 %>
-              <span class="text-xs text-contentTertiary">(retry <%= report.retry_count %>/<%= CheckStaleReportsJob::MAX_INTERRUPT_RETRIES %>)</span>
+              <span class="text-xs text-contentTertiary">(retry <%= report.retry_count %>/<%= CheckStaleReportsJob.max_interrupt_retries %>)</span>
             <% end %>
           </div>
         </div>

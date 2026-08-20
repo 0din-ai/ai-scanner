@@ -138,7 +138,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
         status: :running,
         pid: 12345,
         heartbeat_at: 5.minutes.ago,
-        retry_count: CheckStaleReportsJob::MAX_INTERRUPT_RETRIES, # 3
+        retry_count: CheckStaleReportsJob.max_interrupt_retries, # 3
         logs: "Previous retry attempts..."
       )
 
@@ -147,7 +147,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
         CheckStaleReportsJob.new.perform
       }.to change { report.reload.status }.from("running").to("failed")
 
-      expect(report.logs).to include("after #{CheckStaleReportsJob::MAX_INTERRUPT_RETRIES} retry attempts")
+      expect(report.logs).to include("after #{CheckStaleReportsJob.max_interrupt_retries} retry attempts")
     end
   end
 
@@ -393,7 +393,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
         pid: nil,
         heartbeat_at: 1.minute.ago,
         updated_at: 3.minutes.ago,
-        retry_count: CheckStaleReportsJob::MAX_INTERRUPT_RETRIES,
+        retry_count: CheckStaleReportsJob.max_interrupt_retries,
         logs: "Multiple retry attempts exhausted..."
       )
 
@@ -402,7 +402,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
       }.to change { report.reload.status }.from("running").to("failed")
 
       expect(report.logs).to include("orphaned")
-      expect(report.logs).to include("after #{CheckStaleReportsJob::MAX_INTERRUPT_RETRIES} retry attempts")
+      expect(report.logs).to include("after #{CheckStaleReportsJob.max_interrupt_retries} retry attempts")
     end
   end
 
@@ -436,7 +436,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
       expect(CheckStaleReportsJob::HEARTBEAT_TIMEOUT).to eq(2.minutes)
       expect(CheckStaleReportsJob::STARTING_TIMEOUT).to eq(2.minutes)
       expect(CheckStaleReportsJob::MAX_START_RETRIES).to eq(3)
-      expect(CheckStaleReportsJob::MAX_INTERRUPT_RETRIES).to eq(3)
+      expect(CheckStaleReportsJob.max_interrupt_retries).to eq(3)
       expect(RetryInterruptedReportsJob::STABILIZATION_DELAY).to eq(30.seconds)
     end
   end
