@@ -537,12 +537,19 @@ class Report < ApplicationRecord
   # already shows successful attacks, so counting that probe agrees with the rest of the
   # page rather than fighting it.
   #
-  # Known, accepted under-report: a legacy multi-detector probe_result where an earlier
-  # detector was bypassed but the row's final stored detector defended -- passed is 0
-  # there, and no reconstruction path exists for those pre-max-merge rows. Left uncounted
-  # rather than patched: the rest of the page reads "0 / N attacks succeeded" and "ASR
-  # 0.0%" from that same passed column, so this count still agrees with everything else on
-  # the page. The affected population is historical and does not grow.
+  # Known, accepted under-report: 6e86cca -- the same commit that added any_detector_passed
+  # and its backfill -- also changed probe_result.passed from last-write-wins to max-wins
+  # across a probe's detectors. For a report processed before that commit, a probe bypassed
+  # by one detector but defended by a later-processed detector kept whichever detector wrote
+  # last, so passed can be corrupted to 0 even though an attack against that probe actually
+  # succeeded. The backfill keys any_detector_passed off passed > 0, so it reads that same
+  # already-corrupted value and cannot recover the row; the raw per-detector eval data is
+  # discarded after processing, so there is no reconstruction path either. Unlike the
+  # rolling-deploy case above, passed > 0 does not rescue this one -- both columns derive
+  # from the same corrupted write. Left uncounted rather than patched: the rest of the page
+  # reads "0 / N attacks succeeded" and "ASR 0.0%" from that same corrupted passed column,
+  # so this count still agrees with everything else on the page. The affected population is
+  # historical (reports processed before 6e86cca) and does not grow.
   def security_vulnerabilities_count
     probe_results.where(any_detector_passed: true)
       .or(probe_results.where("passed > 0"))
