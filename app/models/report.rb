@@ -526,6 +526,16 @@ class Report < ApplicationRecord
   # two successful variants would otherwise read "2" vulnerabilities for one technique.
   # Ordinary reports have at most one probe_result per probe_id already (uniqueness
   # validation on [probe_id, threat_variant_id]), so this is a no-op for them.
+  #
+  # Known under-report: a legacy multi-detector probe_result where an earlier detector was
+  # bypassed but the row's final stored detector defended has any_detector_passed=false --
+  # the backfill migration keys off passed > 0, and no reconstruction path exists for those
+  # pre-max-merge rows (see db/migrate/20260412044226). Accepted rather than patched:
+  # such a report already reads "0 / N attacks succeeded" and "ASR 0.0%" from the same
+  # passed column, so this count already agrees with everything else on the page. Reaching
+  # into detector_results to surface a nonzero count here would contradict those figures --
+  # exactly the inconsistency this method was corrected to remove. The affected population
+  # is historical and does not grow.
   def security_vulnerabilities_count
     probe_results.where(any_detector_passed: true).distinct.count(:probe_id)
   end
