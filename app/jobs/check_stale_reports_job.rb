@@ -50,9 +50,28 @@ class CheckStaleReportsJob < ApplicationJob
     return DEFAULT_MAX_INTERRUPT_RETRIES if raw.blank?
 
     value = Integer(raw, 10)
-    value.positive? ? value : DEFAULT_MAX_INTERRUPT_RETRIES
-  rescue ArgumentError, TypeError
+    return value if value.positive?
+
+    Rails.logger.warn(
+      "[CheckStaleReports] MAX_INTERRUPT_RETRIES=#{raw.inspect} is not positive; " \
+      "using default #{DEFAULT_MAX_INTERRUPT_RETRIES}"
+    )
     DEFAULT_MAX_INTERRUPT_RETRIES
+  rescue ArgumentError, TypeError
+    Rails.logger.warn(
+      "[CheckStaleReports] MAX_INTERRUPT_RETRIES=#{raw.inspect} is not a valid integer; " \
+      "using default #{DEFAULT_MAX_INTERRUPT_RETRIES}"
+    )
+    DEFAULT_MAX_INTERRUPT_RETRIES
+  end
+
+  # Stuck-in-starting failures share Report#retry_count with interrupt recovery (see
+  # check_stuck_starting_reports below). Fail a stuck report only once the LARGER of
+  # the two budgets is exhausted, so a raised MAX_INTERRUPT_RETRIES isn't undercut by
+  # the hardcoded start-attempt limit when a report that already survived several
+  # deploy-time interruptions then hits a transient start stall.
+  def self.start_retry_ceiling
+    [ MAX_START_RETRIES, max_interrupt_retries ].max
   end
 
   def perform
@@ -214,7 +233,8 @@ class CheckStaleReportsJob < ApplicationJob
   end
 
   # Detect reports stuck in 'starting' status (process never started).
-  # Retries up to MAX_START_RETRIES times with exponential backoff.
+  # Retries up to the start-retry ceiling (max of MAX_START_RETRIES and the
+  # interrupt budget; see .start_retry_ceiling) with exponential backoff.
   def check_stuck_starting_reports
     stuck_reports = Report.starting
                           .where("updated_at < ?", STARTING_TIMEOUT.ago)
@@ -226,12 +246,12 @@ class CheckStaleReportsJob < ApplicationJob
       # Skip if no longer starting
       next unless report.starting?
 
-      if report.retry_count < MAX_START_RETRIES
+      if report.retry_count < self.class.start_retry_ceiling
         retry_report(report)
       else
         mark_report_failed(
           report,
-          "Failed after #{MAX_START_RETRIES} start attempts. " \
+          "Failed after #{self.class.start_retry_ceiling} start attempts. " \
           "Each attempt timed out after #{STARTING_TIMEOUT.inspect}."
         )
       end
@@ -241,7 +261,7 @@ class CheckStaleReportsJob < ApplicationJob
   def retry_report(report)
     Rails.logger.warn(
       "[CheckStaleReports] Report #{report.id} stuck in starting - " \
-      "moving to pending for retry (attempt #{report.retry_count + 1}/#{MAX_START_RETRIES})"
+      "moving to pending for retry (attempt #{report.retry_count + 1}/#{self.class.start_retry_ceiling})"
     )
 
     Report.transaction do

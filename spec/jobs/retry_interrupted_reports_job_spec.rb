@@ -136,6 +136,73 @@ RSpec.describe RetryInterruptedReportsJob, type: :job do
       end
     end
 
+    describe "interrupt budget" do
+      around do |example|
+        original = ENV["MAX_INTERRUPT_RETRIES"]
+        example.run
+      ensure
+        if original.nil?
+          ENV.delete("MAX_INTERRUPT_RETRIES")
+        else
+          ENV["MAX_INTERRUPT_RETRIES"] = original
+        end
+      end
+
+      it "fails instead of requeuing once retry_count has already reached the current budget" do
+        # The report was interrupted while the budget was higher (or unset); an
+        # operator has since lowered MAX_INTERRUPT_RETRIES. Requeuing it would retry
+        # past a budget that no longer allows it.
+        ENV["MAX_INTERRUPT_RETRIES"] = "3"
+        report = create(:report, target: target, scan: scan, status: :interrupted,
+                        retry_count: 3, updated_at: 1.minute.ago)
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("failed")
+        expect(report.retry_count).to eq(3)
+        expect(report.logs).to include("exceeded 3 interrupt retries")
+      end
+
+      it "still requeues when retry_count is under the current budget" do
+        ENV["MAX_INTERRUPT_RETRIES"] = "3"
+        report = create(:report, target: target, scan: scan, status: :interrupted,
+                        retry_count: 2, updated_at: 1.minute.ago)
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("pending")
+        expect(report.retry_count).to eq(3)
+      end
+
+      it "requeues past the hardcoded default of 3 when the budget is raised" do
+        ENV["MAX_INTERRUPT_RETRIES"] = "6"
+        report = create(:report, target: target, scan: scan, status: :interrupted,
+                        retry_count: 4, updated_at: 1.minute.ago)
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("pending")
+        expect(report.retry_count).to eq(5)
+      end
+
+      it "fails a report already at the default budget even without an ENV override" do
+        # Guards the seam where only the log message consulted the live budget: a
+        # report already at retry_count 3 must not be silently requeued again just
+        # because nothing else in this job compared it to the budget at all.
+        ENV.delete("MAX_INTERRUPT_RETRIES")
+        report = create(:report, target: target, scan: scan, status: :interrupted,
+                        retry_count: 3, updated_at: 1.minute.ago)
+
+        described_class.new.perform
+
+        report.reload
+        expect(report.status).to eq("failed")
+      end
+    end
+
     describe "status filtering" do
       it "only processes interrupted reports" do
         pending_report = create(:report, target: target, scan: scan, status: :pending, updated_at: 1.minute.ago)

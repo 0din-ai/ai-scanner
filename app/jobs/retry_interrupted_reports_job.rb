@@ -38,8 +38,19 @@ class RetryInterruptedReportsJob < ApplicationJob
         next
       end
 
-      retry_interrupted_report(report)
-      count += 1
+      # The interrupt budget is authoritative here too, not just at the moment
+      # CheckStaleReportsJob first marked the report interrupted -- it can change
+      # (e.g. an operator lowers MAX_INTERRUPT_RETRIES) while a report sits in the
+      # interrupted queue waiting for the stabilization delay to elapse. Comparing
+      # against the live value here, not just at classification time, is what makes
+      # a lowered budget actually stop retries instead of only affecting reports
+      # interrupted after the change.
+      if report.retry_count < CheckStaleReportsJob.max_interrupt_retries
+        retry_interrupted_report(report)
+        count += 1
+      else
+        fail_exhausted_report(report)
+      end
     end
 
     Rails.logger.info("[RetryInterruptedReports] Queued #{count} interrupted reports for retry") if count > 0
@@ -68,6 +79,24 @@ class RetryInterruptedReportsJob < ApplicationJob
       )
       ReportDebugLog.clear_tail_for_report(report.id)
     end
+  end
+
+  def fail_exhausted_report(report)
+    budget = CheckStaleReportsJob.max_interrupt_retries
+    Rails.logger.error(
+      "[RetryInterruptedReports] Report #{report.id} (#{report.uuid}) has already used " \
+      "#{report.retry_count}/#{budget} interrupt retries -- failing instead of requeuing " \
+      "it (the interrupt budget may have been lowered since it was interrupted)"
+    )
+
+    report.update!(
+      status: :failed,
+      execution_token: nil,
+      logs: append_log(
+        report.logs,
+        "Failed: exceeded #{budget} interrupt retries (already used #{report.retry_count})"
+      )
+    )
   end
 
   def append_log(existing_logs, message)

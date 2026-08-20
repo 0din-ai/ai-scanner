@@ -519,6 +519,47 @@ RSpec.describe CheckStaleReportsJob, type: :job do
         expect(running_report.reload.status).to eq("running")
         expect(pending_report.reload.status).to eq("pending")
       end
+
+      context "with a raised interrupt budget" do
+        around do |example|
+          original = ENV["MAX_INTERRUPT_RETRIES"]
+          example.run
+        ensure
+          if original.nil?
+            ENV.delete("MAX_INTERRUPT_RETRIES")
+          else
+            ENV["MAX_INTERRUPT_RETRIES"] = original
+          end
+        end
+
+        it "retries past the hardcoded MAX_START_RETRIES when the interrupt budget covers it" do
+          # retry_count 4 already exceeds MAX_START_RETRIES (3), but this report only
+          # got there by surviving several deploy-time interruptions under a raised
+          # budget -- a stuck start attempt right after must not undercut that budget.
+          ENV["MAX_INTERRUPT_RETRIES"] = "6"
+          stuck_time = 3.minutes.ago
+          report = create(:report, target: target, scan: scan, status: :starting, retry_count: 4, updated_at: stuck_time)
+
+          described_class.new.perform
+
+          report.reload
+          expect(report.status).to eq("pending")
+          expect(report.retry_count).to eq(5)
+          expect(report.logs).to include("Retry 5:")
+        end
+
+        it "still fails once the raised budget itself is exhausted" do
+          ENV["MAX_INTERRUPT_RETRIES"] = "6"
+          stuck_time = 3.minutes.ago
+          report = create(:report, target: target, scan: scan, status: :starting, retry_count: 6, updated_at: stuck_time)
+
+          described_class.new.perform
+
+          report.reload
+          expect(report.status).to eq("failed")
+          expect(report.logs).to include("Failed after 6 start attempts")
+        end
+      end
     end
 
     describe "multiple reports" do
@@ -629,6 +670,46 @@ RSpec.describe CheckStaleReportsJob, type: :job do
       # truncated budget the operator did not ask for.
       ENV["MAX_INTERRUPT_RETRIES"] = "1.5"
       expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "warns when a malformed value is rejected" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "5oops"
+      expect(Rails.logger).to receive(:warn).with(/MAX_INTERRUPT_RETRIES="5oops"/)
+      described_class.max_interrupt_retries
+    end
+
+    it "warns when a non-positive value is rejected" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "0"
+      expect(Rails.logger).to receive(:warn).with(/MAX_INTERRUPT_RETRIES="0"/)
+      described_class.max_interrupt_retries
+    end
+  end
+
+  describe ".start_retry_ceiling" do
+    around do |example|
+      original = ENV["MAX_INTERRUPT_RETRIES"]
+      example.run
+    ensure
+      if original.nil?
+        ENV.delete("MAX_INTERRUPT_RETRIES")
+      else
+        ENV["MAX_INTERRUPT_RETRIES"] = original
+      end
+    end
+
+    it "equals MAX_START_RETRIES when the interrupt budget is not raised" do
+      ENV.delete("MAX_INTERRUPT_RETRIES")
+      expect(described_class.start_retry_ceiling).to eq(3)
+    end
+
+    it "tracks a raised interrupt budget" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "6"
+      expect(described_class.start_retry_ceiling).to eq(6)
+    end
+
+    it "never drops below MAX_START_RETRIES even if the interrupt budget is lowered" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "1"
+      expect(described_class.start_retry_ceiling).to eq(3)
     end
   end
 

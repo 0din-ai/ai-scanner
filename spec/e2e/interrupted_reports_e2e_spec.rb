@@ -13,6 +13,22 @@ require "rails_helper"
 #
 # Run with: RAILS_ENV=test bundle exec rspec spec/e2e/interrupted_reports_e2e_spec.rb
 RSpec.describe "Interrupted Reports E2E", type: :feature do
+  # This suite builds fixtures from CheckStaleReportsJob.max_interrupt_retries and
+  # asserts against its default value (3) throughout. Isolate MAX_INTERRUPT_RETRIES
+  # so a container that actually sets it (e.g. for manual testing of a raised
+  # budget) can't change what "the" retry budget is for these examples.
+  around do |example|
+    original = ENV["MAX_INTERRUPT_RETRIES"]
+    ENV.delete("MAX_INTERRUPT_RETRIES")
+    example.run
+  ensure
+    if original.nil?
+      ENV.delete("MAX_INTERRUPT_RETRIES")
+    else
+      ENV["MAX_INTERRUPT_RETRIES"] = original
+    end
+  end
+
   # Use transactions for test isolation
   let(:target) { create(:target, :good) }
   let(:bad_target) { create(:target, :bad) }
