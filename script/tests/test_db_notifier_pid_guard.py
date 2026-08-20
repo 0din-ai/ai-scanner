@@ -193,7 +193,9 @@ class TestNotifyReportStoppedCleanupWebConfig(unittest.TestCase):
             self.assertTrue(result)
             self.assertFalse(web_config.exists(), "credential web config left on disk")
 
-        select_sql = mock_cur.execute.call_args_list[0].args[0]
+        select_sql = next(
+            call.args[0] for call in mock_cur.execute.call_args_list if "FOR UPDATE" in call.args[0]
+        )
         self.assertIn("FOR UPDATE", select_sql)
 
     @patch("db_notifier.pooled_connection")
@@ -256,10 +258,18 @@ class TestNotifyReportStoppedCleanupWebConfig(unittest.TestCase):
                 "cleanup-lock", execution_token=TOKEN, cleanup_web_config=True
             )
 
-        select_sql, select_params = mock_cur.execute.call_args_list[0].args
-        self.assertIn("SELECT", select_sql)
+        select_sql, select_params = next(
+            (call.args[0], call.args[1])
+            for call in mock_cur.execute.call_args_list
+            if "SELECT" in call.args[0]
+        )
         self.assertIn("FOR UPDATE", select_sql)
         self.assertEqual(select_params, ("cleanup-lock",))
+        # ...and the wait to acquire it is bounded, so a hung mount or a concurrent
+        # writer can't stall this cleanup indefinitely.
+        self.assertTrue(
+            any("lock_timeout" in call.args[0] for call in mock_cur.execute.call_args_list)
+        )
 
     @patch("db_notifier.pooled_connection")
     def test_holds_an_explicit_transaction_across_the_lock_delete_and_update(self, mock_pooled):
@@ -295,6 +305,73 @@ class TestNotifyReportStoppedCleanupWebConfig(unittest.TestCase):
         # to protect.
         self.assertTrue(all(value is False for value in autocommit_during_execute))
         mock_conn.commit.assert_called_once()
+
+    @patch("db_notifier.pooled_connection")
+    def test_falls_back_to_an_unlocked_delete_when_the_row_lock_times_out(self, mock_pooled):
+        """A slow/hung storage/config mount, or Rails already writing to this same
+        row, must not make this cleanup block indefinitely on FOR UPDATE: on the
+        SIGTERM path a process blocked here can be SIGKILLed mid-lock, leaving both
+        the credential file and the stale pid/token behind. lock_timeout bounds the
+        wait; on a lock-not-available error, fall back to the pre-lock behaviour
+        (delete unconditionally, without the classification the lock protects) and
+        still clear the pid rather than lose the release entirely."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=1)
+        mock_pooled.return_value = mock_conn
+
+        lock_timeout_error = db_notifier.OperationalError(
+            "canceling statement due to lock timeout"
+        )
+        lock_timeout_error.pgcode = "55P03"  # lock_not_available
+
+        def execute_side_effect(sql, params=None):
+            if "FOR UPDATE" in sql:
+                raise lock_timeout_error
+
+        mock_cur.execute.side_effect = execute_side_effect
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp)
+            web_config = config_path / "lock-timeout_web.json"
+            web_config.write_text('{"cookies": [{"value": "secret"}]}')
+
+            with patch.object(db_notifier, "CONFIG_PATH", config_path):
+                result = db_notifier.notify_report_stopped(
+                    "lock-timeout", execution_token=TOKEN, cleanup_web_config=True
+                )
+
+            self.assertTrue(result)
+            self.assertFalse(web_config.exists(), "credential web config left on disk")
+
+        mock_conn.rollback.assert_called_once()
+        self.assertIs(
+            mock_conn.autocommit,
+            True,
+            "connection must not be handed back to the pool still non-autocommit",
+        )
+
+    @patch("db_notifier.pooled_connection")
+    def test_reraises_a_lock_error_that_is_not_a_timeout(self, mock_pooled):
+        """Only lock_not_available (55P03, the lock_timeout expiry) gets the
+        unlocked-delete fallback. Any other OperationalError is a genuine,
+        undiagnosed failure and must still surface as an indeterminate result."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=1)
+        mock_pooled.return_value = mock_conn
+
+        other_error = db_notifier.OperationalError("connection reset by peer")
+        other_error.pgcode = None
+
+        def execute_side_effect(sql, params=None):
+            if "FOR UPDATE" in sql:
+                raise other_error
+
+        mock_cur.execute.side_effect = execute_side_effect
+
+        with patch.object(db_notifier, "CONFIG_PATH", Path(tempfile.mkdtemp())):
+            result = db_notifier.notify_report_stopped(
+                "other-lock-error", execution_token=TOKEN, cleanup_web_config=True
+            )
+
+        self.assertIsNone(result)
 
     @patch("db_notifier.pooled_connection")
     def test_skips_the_lock_and_delete_when_cleanup_not_requested(self, mock_pooled):

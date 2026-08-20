@@ -1230,6 +1230,18 @@ def notify_report_running(report_uuid: str, pid: int, execution_token: str) -> b
         return False
 
 
+def _delete_web_config(report_uuid: str) -> None:
+    """Delete the credential-bearing <uuid>_web.json, logging (not raising) on
+    failure so a delete error never blocks the caller's ownership release."""
+    try:
+        (CONFIG_PATH / f"{report_uuid}_web.json").unlink(missing_ok=True)
+    except OSError as delete_error:
+        logger.error(
+            f"SECURITY: failed to delete credential web config file for "
+            f"{report_uuid}: {delete_error}"
+        )
+
+
 def notify_report_stopped(
     report_uuid: str,
     expected_pid: int = None,
@@ -1287,37 +1299,49 @@ def notify_report_stopped(
                     # just the SELECT that acquires it -- see the autocommit note
                     # in the docstring.
                     conn.autocommit = False
-                    cur.execute(
-                        "SELECT execution_token FROM reports WHERE uuid = %s FOR UPDATE",
-                        (report_uuid,),
-                    )
-                    row = cur.fetchone()
-                    current_token = row[0] if row is not None else None
-                    replaced = (
-                        current_token is not None
-                        and str(current_token) != str(execution_token)
-                    )
-
-                    if replaced:
-                        logger.warning(
-                            f"Leaving credential config for {report_uuid} in place: "
-                            "another execution attempt owns this report and may be using it"
+                    # Bound how long this waits to acquire the row lock. Without a
+                    # timeout, a slow/hung storage/config mount or a concurrent
+                    # writer already holding this row would block indefinitely --
+                    # Rails writes to the same row queue up behind it, and on the
+                    # SIGTERM path this process can be SIGKILLed while still
+                    # holding the lock, leaving both the file and the stale
+                    # pid/token behind.
+                    cur.execute("SET LOCAL lock_timeout = '5s'")
+                    try:
+                        cur.execute(
+                            "SELECT execution_token FROM reports WHERE uuid = %s FOR UPDATE",
+                            (report_uuid,),
                         )
+                    except OperationalError as lock_error:
+                        if getattr(lock_error, "pgcode", None) != "55P03":  # lock_not_available
+                            raise
+                        # The failed statement aborted the transaction; roll back
+                        # before this connection runs anything else, then fall back
+                        # to the pre-lock behaviour: delete unconditionally, without
+                        # the ownership classification the lock exists to protect,
+                        # rather than risk losing the release too.
+                        conn.rollback()
+                        conn.autocommit = True
+                        logger.warning(
+                            f"Report {report_uuid} row lock not available within "
+                            "timeout; falling back to an unlocked credential delete"
+                        )
+                        _delete_web_config(report_uuid)
                     else:
-                        # A delete failure (EACCES on the config dir, EROFS, a file
-                        # owned by another uid, ...) must not prevent the UPDATE below
-                        # from running: an unguarded unlink() would propagate to the
-                        # outer except and skip it entirely, leaving the report
-                        # running/starting with a stale PID and a live token until
-                        # CheckStaleReportsJob times it out and burns a retry for a
-                        # process that had already exited cleanly.
-                        try:
-                            (CONFIG_PATH / f"{report_uuid}_web.json").unlink(missing_ok=True)
-                        except OSError as delete_error:
-                            logger.error(
-                                "SECURITY: failed to delete credential web config "
-                                f"file for {report_uuid}: {delete_error}"
+                        row = cur.fetchone()
+                        current_token = row[0] if row is not None else None
+                        replaced = (
+                            current_token is not None
+                            and str(current_token) != str(execution_token)
+                        )
+
+                        if replaced:
+                            logger.warning(
+                                f"Leaving credential config for {report_uuid} in place: "
+                                "another execution attempt owns this report and may be using it"
                             )
+                        else:
+                            _delete_web_config(report_uuid)
 
                 cur.execute(
                     """
