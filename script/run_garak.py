@@ -40,7 +40,6 @@ from pathlib import Path
 
 from garak_plugin_cache_guard import install_plugin_cache_guard
 from db_notifier import (
-    execution_attempt_replaced as db_execution_attempt_replaced,
     notify_report_running as db_notify_running,
     notify_report_ready as db_notify_ready,
     notify_report_ready_from_synced as db_notify_ready_from_synced,
@@ -225,15 +224,6 @@ def notify_report_stopped(report_uuid, execution_token, cleanup_web_config=False
         return result
     except Exception as e:
         print(f"Error notifying report stopped: {e}", file=sys.stderr)
-        return None
-
-def execution_attempt_replaced(report_uuid, execution_token):
-    """True when a different attempt owns the report, False when it does not, None
-    when that could not be determined."""
-    try:
-        return db_execution_attempt_replaced(report_uuid, execution_token)
-    except Exception as e:
-        print(f"Error checking execution ownership: {e}", file=sys.stderr)
         return None
 
 
