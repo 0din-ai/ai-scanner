@@ -10,8 +10,11 @@ RSpec.describe Admin::ScansController, type: :controller do
   let!(:target) { ActsAsTenant.with_tenant(company) { create(:target, company: company) } }
   let!(:probe) { create(:probe) }
   let!(:scan) do
+    # Explicit name: the factory default (Faker::App.name) can be "Alpha", a substring of
+    # the hard-coded "*Alpha" fixtures below. Hardens against a collision today's substring
+    # assertions happen not to expose -- not a fix for a live failure.
     ActsAsTenant.with_tenant(company) do
-      create(:complete_scan, company: company)
+      create(:complete_scan, company: company, name: "UnscheduledBaseline#{SecureRandom.hex(4)}")
     end
   end
 
