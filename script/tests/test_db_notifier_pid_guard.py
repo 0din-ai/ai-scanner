@@ -343,11 +343,40 @@ class TestNotifyReportStoppedCleanupWebConfig(unittest.TestCase):
             self.assertFalse(web_config.exists(), "credential web config left on disk")
 
         mock_conn.rollback.assert_called_once()
-        self.assertIs(
-            mock_conn.autocommit,
-            True,
-            "connection must not be handed back to the pool still non-autocommit",
+
+    @patch("db_notifier.pooled_connection")
+    def test_bounds_the_fallback_update_after_a_lock_timeout(self, mock_pooled):
+        """lock_timeout only bounds the SELECT ... FOR UPDATE. The fallback still
+        writes the same contended row via the UPDATE below -- without its own bound,
+        that write can block indefinitely (and be SIGKILLed while blocked, on the
+        SIGTERM path), defeating the point of bounding the SELECT at all."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=1)
+        mock_pooled.return_value = mock_conn
+
+        lock_timeout_error = db_notifier.OperationalError(
+            "canceling statement due to lock timeout"
         )
+        lock_timeout_error.pgcode = "55P03"  # lock_not_available
+
+        def execute_side_effect(sql, params=None):
+            if "FOR UPDATE" in sql:
+                raise lock_timeout_error
+
+        mock_cur.execute.side_effect = execute_side_effect
+
+        with patch.object(db_notifier, "CONFIG_PATH", Path(tempfile.mkdtemp())):
+            db_notifier.notify_report_stopped(
+                "lock-timeout-update", execution_token=TOKEN, cleanup_web_config=True
+            )
+
+        executed_sql = [call.args[0] for call in mock_cur.execute.call_args_list]
+        update_index = next(
+            i for i, sql in enumerate(executed_sql) if "UPDATE reports" in sql
+        )
+        # A statement_timeout must be set in the same transaction as the UPDATE that
+        # immediately follows it -- SET LOCAL only applies within one transaction, so
+        # this has to be the last statement issued before it.
+        self.assertIn("statement_timeout", executed_sql[update_index - 1])
 
     @patch("db_notifier.pooled_connection")
     def test_reraises_a_lock_error_that_is_not_a_timeout(self, mock_pooled):

@@ -1321,12 +1321,19 @@ def notify_report_stopped(
                         # the ownership classification the lock exists to protect,
                         # rather than risk losing the release too.
                         conn.rollback()
-                        conn.autocommit = True
                         logger.warning(
                             f"Report {report_uuid} row lock not available within "
                             "timeout; falling back to an unlocked credential delete"
                         )
                         _delete_web_config(report_uuid)
+                        # lock_timeout only bounded the SELECT above. The UPDATE
+                        # below still targets this same contended row -- without its
+                        # own bound, it could block indefinitely (and be SIGKILLed
+                        # while blocked, on the SIGTERM path), defeating the point
+                        # of bounding the SELECT at all. autocommit is still off
+                        # from before the rollback, so this SET LOCAL scopes to the
+                        # one transaction the UPDATE runs and commits in below.
+                        cur.execute("SET LOCAL statement_timeout = '5s'")
                     else:
                         row = cur.fetchone()
                         current_token = row[0] if row is not None else None
