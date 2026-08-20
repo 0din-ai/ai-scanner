@@ -514,13 +514,46 @@ class Report < ApplicationRecord
     cached_total
   end
 
-  # Detectors that found something. `passed` is successful attacks -- the same column
-  # #total_successful_attacks sums -- so a detector identified a vulnerability when at
-  # least one attack against it succeeded. Counting `passed < total` inverted that: a
-  # report with 0/84 successful attacks claimed two vulnerabilities, and a detector
-  # bypassed on every attempt (80/80) was counted as clean.
+  # Distinct probes (attack techniques) where at least one attack succeeded. Counting
+  # detector_results undercounts: detector_results is unique per (detector, report), and
+  # most 0din probes declare the same shared detector, so a report where one probe was
+  # bypassed and one where twenty were both read "1" detector row. Counting probe_results
+  # via any_detector_passed matches Scans::StatsSerializer#top_vulnerabilities_info, which
+  # already counts probes the same way (grouped by probes.id) for the same page.
+  #
+  # Distinct on probe_id rather than a plain row count: a variant child report stores one
+  # probe_result row per (probe, threat_variant) -- see VariantDefaults -- so a probe with
+  # two successful variants would otherwise read "2" vulnerabilities for one technique.
+  # Ordinary reports have at most one probe_result per probe_id already (uniqueness
+  # validation on [probe_id, threat_variant_id]), so this is a no-op for them.
+  #
+  # any_detector_passed OR passed > 0, not the flag alone: a rolling deploy can finish a
+  # report with an old worker after the backfill migration (db/migrate/20260412044226) has
+  # already run. That worker's insert omits the new column, so it lands on the schema
+  # default -- false -- even when passed > 0 (db/schema.rb: default: false, null: false).
+  # The flag alone would then read "0 vulnerabilities" beside a nonzero successful-attack
+  # count. Falling back to passed > 0 cannot introduce a contradiction, because passed is
+  # the same column the ASR and attack totals are computed from: if it is nonzero the page
+  # already shows successful attacks, so counting that probe agrees with the rest of the
+  # page rather than fighting it.
+  #
+  # Known, accepted under-report: 6e86cca -- the same commit that added any_detector_passed
+  # and its backfill -- also changed probe_result.passed from last-write-wins to max-wins
+  # across a probe's detectors. For a report processed before that commit, a probe bypassed
+  # by one detector but defended by a later-processed detector kept whichever detector wrote
+  # last, so passed can be corrupted to 0 even though an attack against that probe actually
+  # succeeded. The backfill keys any_detector_passed off passed > 0, so it reads that same
+  # already-corrupted value and cannot recover the row; the raw per-detector eval data is
+  # discarded after processing, so there is no reconstruction path either. Unlike the
+  # rolling-deploy case above, passed > 0 does not rescue this one -- both columns derive
+  # from the same corrupted write. Left uncounted rather than patched: the rest of the page
+  # reads "0 / N attacks succeeded" and "ASR 0.0%" from that same corrupted passed column,
+  # so this count still agrees with everything else on the page. The affected population is
+  # historical (reports processed before 6e86cca) and does not grow.
   def security_vulnerabilities_count
-    detector_results.where("passed > 0").count
+    probe_results.where(any_detector_passed: true)
+      .or(probe_results.where("passed > 0"))
+      .distinct.count(:probe_id)
   end
 
   # Compute total input tokens from all probe results
