@@ -33,7 +33,10 @@ module Stats
       @threshold = days.days.ago
     end
 
-    # Returns: { score: (Float), data: { dates: [...], rates: [...] } }
+    # Returns: { score: (Float or nil), data: { dates: [...], rates: [...] } }
+    # score is nil when nothing was measurable (see average_attack_success_rate);
+    # the hash is serialized directly to JSON by DashboardStatsController, so nil
+    # becomes a JSON null the frontend must render as "N/A", not "0%".
     def call
       generate_response(
         average_attack_success_rate(@threshold),
@@ -47,7 +50,8 @@ module Stats
       date_condition = since_date ? "AND reports.created_at >= :since_date" : ""
 
       # SECURITY: raw SQL bypasses acts_as_tenant's default scope, so we MUST filter by
-      # the current tenant's company_id explicitly. Fail closed (no tenant => no rows => 0).
+      # the current tenant's company_id explicitly. Fail closed (no tenant => no rows
+      # => nil, the same "nothing measurable" result as a tenant with no reports at all).
       company_id = ActsAsTenant.current_tenant&.id
 
       sql = <<~SQL.squish
