@@ -10,7 +10,9 @@ WHERE clause won't match and the PID remains intact.
 
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock, patch, call
 
@@ -148,6 +150,144 @@ class TestNotifyReportStoppedPidGuard(unittest.TestCase):
         executed_params = mock_cur.execute.call_args[0][1]
         self.assertIn("AND pid = %s", executed_sql)
         self.assertEqual(executed_params, ("test-uuid-fork", child_pid, TOKEN))
+
+
+class TestNotifyReportStoppedCleanupWebConfig(unittest.TestCase):
+    """cleanup_web_config=True classifies ownership and deletes the UUID-keyed
+    credential file inside the same locked transaction, instead of as a second,
+    separately-racing step. Between an unlocked check and an unlocked delete, a
+    replacement attempt could claim the report and write a fresh credential file
+    that this process then deletes out from under it.
+    """
+
+    def _make_mock_conn(self, rowcount=1, fetchone=None):
+        mock_cur = MagicMock()
+        mock_cur.rowcount = rowcount
+        mock_cur.fetchone.return_value = fetchone
+        mock_cur.__enter__ = MagicMock(return_value=mock_cur)
+        mock_cur.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cur
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        return mock_conn, mock_cur
+
+    @patch("db_notifier.pooled_connection")
+    def test_deletes_the_credential_file_under_the_row_lock(self, mock_pooled):
+        """No other execution token owns the report: delete under the lock."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=1, fetchone=(TOKEN,))
+        mock_pooled.return_value = mock_conn
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp)
+            web_config = config_path / "cleanup-owner_web.json"
+            web_config.write_text('{"cookies": [{"value": "secret"}]}')
+
+            with patch.object(db_notifier, "CONFIG_PATH", config_path):
+                result = db_notifier.notify_report_stopped(
+                    "cleanup-owner", execution_token=TOKEN, cleanup_web_config=True
+                )
+
+            self.assertTrue(result)
+            self.assertFalse(web_config.exists(), "credential web config left on disk")
+
+        select_sql = mock_cur.execute.call_args_list[0].args[0]
+        self.assertIn("FOR UPDATE", select_sql)
+
+    @patch("db_notifier.pooled_connection")
+    def test_preserves_the_file_when_a_different_token_owns_the_report(self, mock_pooled):
+        """A different, non-null execution token means a replacement attempt owns
+        the report -- and therefore the UUID-keyed file this process was about to
+        delete. Leave it in place."""
+        replacement_token = "99999999-9999-4999-8999-999999999999"
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=0, fetchone=(replacement_token,))
+        mock_pooled.return_value = mock_conn
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp)
+            web_config = config_path / "cleanup-replaced_web.json"
+            web_config.write_text('{"cookies": [{"value": "secret"}]}')
+
+            with patch.object(db_notifier, "CONFIG_PATH", config_path):
+                result = db_notifier.notify_report_stopped(
+                    "cleanup-replaced", execution_token=TOKEN, cleanup_web_config=True
+                )
+
+            self.assertFalse(result)
+            self.assertTrue(
+                web_config.exists(),
+                "a superseded process deleted the replacement's live credential file",
+            )
+
+    @patch("db_notifier.pooled_connection")
+    def test_deletes_the_file_when_ownership_was_already_released(self, mock_pooled):
+        """A NULL stored token (Rails revoked it, nobody has replaced it yet) is not
+        a replacement -- this is the ordinary "PID no longer matches" case, and
+        nothing else will ever remove the file."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=0, fetchone=(None,))
+        mock_pooled.return_value = mock_conn
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp)
+            web_config = config_path / "cleanup-released_web.json"
+            web_config.write_text("{}")
+
+            with patch.object(db_notifier, "CONFIG_PATH", config_path):
+                result = db_notifier.notify_report_stopped(
+                    "cleanup-released", execution_token=TOKEN, cleanup_web_config=True
+                )
+
+            self.assertFalse(result)
+            self.assertFalse(web_config.exists(), "credential web config left on disk")
+
+    @patch("db_notifier.pooled_connection")
+    def test_locks_the_row_before_classifying_ownership(self, mock_pooled):
+        """The SELECT that decides keep-vs-delete takes FOR UPDATE on the report's
+        own row, closing the window a replacement could otherwise use to claim the
+        report and write a fresh credential file between an unlocked check and the
+        delete."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=1, fetchone=(TOKEN,))
+        mock_pooled.return_value = mock_conn
+
+        with patch.object(db_notifier, "CONFIG_PATH", Path(tempfile.mkdtemp())):
+            db_notifier.notify_report_stopped(
+                "cleanup-lock", execution_token=TOKEN, cleanup_web_config=True
+            )
+
+        select_sql, select_params = mock_cur.execute.call_args_list[0].args
+        self.assertIn("SELECT", select_sql)
+        self.assertIn("FOR UPDATE", select_sql)
+        self.assertEqual(select_params, ("cleanup-lock",))
+
+    @patch("db_notifier.pooled_connection")
+    def test_skips_the_lock_and_delete_when_cleanup_not_requested(self, mock_pooled):
+        """Existing callers that don't ask for cleanup keep the original
+        single-statement behaviour: no SELECT, no file classification."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=1)
+        mock_pooled.return_value = mock_conn
+
+        db_notifier.notify_report_stopped("no-cleanup", execution_token=TOKEN)
+
+        self.assertEqual(mock_cur.execute.call_count, 1)
+
+    @patch("db_notifier.pooled_connection")
+    def test_cleanup_failure_is_indeterminate(self, mock_pooled):
+        """A failed credential deletion must not be reported as a clean release."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=1, fetchone=(TOKEN,))
+        mock_pooled.return_value = mock_conn
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp)
+            with patch.object(db_notifier, "CONFIG_PATH", config_path), \
+                 patch.object(Path, "unlink", side_effect=PermissionError("denied")):
+                result = db_notifier.notify_report_stopped(
+                    "cleanup-error", execution_token=TOKEN, cleanup_web_config=True
+                )
+
+        self.assertIsNone(result)
+        mock_conn.commit.assert_not_called()
 
 
 if __name__ == "__main__":

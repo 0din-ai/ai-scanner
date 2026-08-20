@@ -10,8 +10,9 @@ Functions:
     notify_report_running(report_uuid, pid, execution_token): Claim running state
     notify_report_ready(report_uuid, *, execution_token): Store data and hand off
     notify_report_ready_from_synced(report_uuid, *, execution_token): Hand off
-    notify_report_stopped(report_uuid, expected_pid=None, *, execution_token):
-        Release this attempt's PID and ownership
+    notify_report_stopped(report_uuid, expected_pid=None, *, execution_token, cleanup_web_config=False):
+        Release this attempt's PID and ownership, optionally deleting the
+        credential web config under the same row lock
 
 Dependencies:
     psycopg2-binary>=2.9.0
@@ -1230,8 +1231,12 @@ def notify_report_running(report_uuid: str, pid: int, execution_token: str) -> b
 
 
 def notify_report_stopped(
-    report_uuid: str, expected_pid: int = None, *, execution_token: str
-) -> bool:
+    report_uuid: str,
+    expected_pid: int = None,
+    *,
+    execution_token: str,
+    cleanup_web_config: bool = False,
+) -> Optional[bool]:
     """
     Clear PID from report using pooled connection (owner-process guard).
 
@@ -1240,9 +1245,20 @@ def notify_report_stopped(
     a child that inherits the signal handler and calls this function will
     have a different os.getpid(), so the UPDATE WHERE clause won't match.
 
+    When cleanup_web_config is requested, the report row is locked with
+    SELECT ... FOR UPDATE before the UUID-keyed credential file is classified
+    and deleted. Doing the classification and the delete under the same lock
+    closes the window where a replacement attempt claims the report and
+    writes a fresh credential file between an unlocked ownership check and
+    the delete -- the file is keyed on the report UUID alone, so a stale
+    delete after that write would remove the replacement's live credentials.
+
     Args:
         report_uuid: UUID of the report
         expected_pid: PID to match against stored PID. Defaults to os.getpid().
+        cleanup_web_config: Delete the credential-bearing <uuid>_web.json while
+            the report row remains locked, unless a different execution token
+            now owns the report.
 
     Returns:
         True if ownership was cleared, False on a definitive PID/token mismatch,
@@ -1255,6 +1271,26 @@ def notify_report_stopped(
     try:
         with pooled_connection("primary") as conn:
             with conn.cursor() as cur:
+                if cleanup_web_config:
+                    cur.execute(
+                        "SELECT execution_token FROM reports WHERE uuid = %s FOR UPDATE",
+                        (report_uuid,),
+                    )
+                    row = cur.fetchone()
+                    current_token = row[0] if row is not None else None
+                    replaced = (
+                        current_token is not None
+                        and str(current_token) != str(execution_token)
+                    )
+
+                    if replaced:
+                        logger.warning(
+                            f"Leaving credential config for {report_uuid} in place: "
+                            "another execution attempt owns this report and may be using it"
+                        )
+                    else:
+                        (CONFIG_PATH / f"{report_uuid}_web.json").unlink(missing_ok=True)
+
                 cur.execute(
                     """
                     UPDATE reports

@@ -95,7 +95,7 @@ class TestParentSignalHandler(unittest.TestCase):
         with patch.object(run_garak, "notify_report_stopped", return_value=True) as mock_stopped:
             with self.assertRaises(SystemExit):
                 run_garak.signal_handler(signal.SIGTERM, None)
-            mock_stopped.assert_called_once_with("parent-test-uuid", TOKEN)
+            mock_stopped.assert_called_once_with("parent-test-uuid", TOKEN, cleanup_web_config=True)
 
     def test_parent_stops_heartbeat_and_journal_sync(self):
         """Parent process stops heartbeat and journal sync threads."""
