@@ -35,11 +35,24 @@ class CheckStaleReportsJob < ApplicationJob
   # DB-persisted and it resumes rather than restarting from scratch.
   DEFAULT_MAX_INTERRUPT_RETRIES = 3
 
-  # Invalid or non-positive values fall back to the default rather than
-  # disabling the budget.
+  # Blank, non-integer, or non-positive values fall back to the default rather
+  # than disabling the budget. 0 is not treated as a deliberate "never retry"
+  # setting -- that would make CheckStaleReportsJob fail a report on its very
+  # first interruption, which is surprising enough to require a real off switch
+  # rather than a bare "0" a typo could produce.
+  #
+  # Uses strict Integer() parsing rather than String#to_i: to_i silently reads a
+  # partially-numeric value like "5oops" as 5 and a decimal like "1.5" as 1,
+  # so a configuration typo would silently change the retry budget instead of
+  # falling back to the default.
   def self.max_interrupt_retries
-    value = ENV.fetch("MAX_INTERRUPT_RETRIES", DEFAULT_MAX_INTERRUPT_RETRIES).to_i
+    raw = ENV["MAX_INTERRUPT_RETRIES"]
+    return DEFAULT_MAX_INTERRUPT_RETRIES if raw.blank?
+
+    value = Integer(raw, 10)
     value.positive? ? value : DEFAULT_MAX_INTERRUPT_RETRIES
+  rescue ArgumentError, TypeError
+    DEFAULT_MAX_INTERRUPT_RETRIES
   end
 
   def perform

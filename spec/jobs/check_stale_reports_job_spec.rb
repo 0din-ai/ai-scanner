@@ -606,6 +606,30 @@ RSpec.describe CheckStaleReportsJob, type: :job do
       ENV["MAX_INTERRUPT_RETRIES"] = "0"
       expect(described_class.max_interrupt_retries).to eq(3)
     end
+
+    it "falls back to the default for a negative value" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "-3"
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "falls back to the default for a blank value" do
+      ENV["MAX_INTERRUPT_RETRIES"] = ""
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "falls back to the default for a partially-numeric value instead of truncating it" do
+      # String#to_i silently reads "5oops" as 5 -- a configuration typo must not
+      # silently change the retry budget.
+      ENV["MAX_INTERRUPT_RETRIES"] = "5oops"
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "falls back to the default for a decimal value instead of truncating it" do
+      # String#to_i silently reads "1.5" as 1 -- reject it rather than accept a
+      # truncated budget the operator did not ask for.
+      ENV["MAX_INTERRUPT_RETRIES"] = "1.5"
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
   end
 
   describe "interrupt budget honours MAX_INTERRUPT_RETRIES" do
