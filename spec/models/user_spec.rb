@@ -8,6 +8,10 @@ RSpec.describe User, type: :model do
       expect(User.devise_modules).to include(:rememberable)
       expect(User.devise_modules).to include(:validatable)
     end
+
+    it 'does not expire inactive sessions' do
+      expect(User.devise_modules).not_to include(:timeoutable)
+    end
   end
 
   describe 'associations' do
