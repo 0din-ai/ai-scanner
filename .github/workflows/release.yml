@@ -45,7 +45,16 @@ jobs:
           node-version: 22
 
       - name: Install semantic-release plugins
-        run: npm install --no-save @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/exec @semantic-release/github conventional-changelog-conventionalcommits
+        # conventional-changelog-conventionalcommits is pinned to 9.3.1: its 10.x line pulls in
+        # @conventional-changelog/template, which refuses to render unless
+        # conventional-changelog-writer@9+ is loaded -- but @semantic-release/release-notes-generator
+        # (installed unpinned below) still bundles writer@8. Left unpinned, this failed every
+        # release with `Missing helper: "conventional-changelog-conventionalcommits requires
+        # conventional-changelog-writer@9 or newer"` the moment a 10.x version was published.
+        # 9.3.1 is the newest release that does not pull in the offending package.
+        # The other packages below are still unpinned and can break the same way; unpin this one
+        # again once @semantic-release/release-notes-generator ships with writer@9+.
+        run: npm install --no-save @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/exec @semantic-release/github conventional-changelog-conventionalcommits@9.3.1
 
       - name: Run semantic-release
         id: semantic
