@@ -1685,6 +1685,20 @@ RSpec.describe Report, type: :model do
       expect(report.security_vulnerabilities_count).to eq(1)
     end
 
+    # A rolling deploy can finish a report with an old worker after the any_detector_passed
+    # backfill has already run: that worker's insert omits the column, so it lands on the
+    # schema default (false) even when passed > 0 (db/schema.rb: default: false, null: false).
+    # The flag alone would then read "0 vulnerabilities" beside a nonzero successful-attack
+    # count -- the same contradiction this method exists to avoid, from the other direction.
+    it 'counts a probe with successful attacks even when any_detector_passed was never set' do
+      ActsAsTenant.with_tenant(company) do
+        create(:probe_result, report: report, probe: create(:probe), passed: 3, total: 10,
+                               any_detector_passed: false)
+      end
+
+      expect(report.security_vulnerabilities_count).to eq(1)
+    end
+
     # A variant child report records one probe_result row per (probe, threat_variant),
     # so the same base probe can appear on several rows -- see the fixture in
     # "a variant child report, whose rows are one per probe and variant"
