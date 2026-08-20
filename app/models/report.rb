@@ -519,9 +519,15 @@ class Report < ApplicationRecord
   # most 0din probes declare the same shared detector, so a report where one probe was
   # bypassed and one where twenty were both read "1" detector row. Counting probe_results
   # via any_detector_passed matches Scans::StatsSerializer#top_vulnerabilities_info, which
-  # already counts probes the same way for the same page.
+  # already counts probes the same way (grouped by probes.id) for the same page.
+  #
+  # Distinct on probe_id rather than a plain row count: a variant child report stores one
+  # probe_result row per (probe, threat_variant) -- see VariantDefaults -- so a probe with
+  # two successful variants would otherwise read "2" vulnerabilities for one technique.
+  # Ordinary reports have at most one probe_result per probe_id already (uniqueness
+  # validation on [probe_id, threat_variant_id]), so this is a no-op for them.
   def security_vulnerabilities_count
-    probe_results.where(any_detector_passed: true).count
+    probe_results.where(any_detector_passed: true).distinct.count(:probe_id)
   end
 
   # Compute total input tokens from all probe results

@@ -1684,5 +1684,24 @@ RSpec.describe Report, type: :model do
 
       expect(report.security_vulnerabilities_count).to eq(1)
     end
+
+    # A variant child report records one probe_result row per (probe, threat_variant),
+    # so the same base probe can appear on several rows -- see the fixture in
+    # "a variant child report, whose rows are one per probe and variant"
+    # (spec/requests/report_metric_reconciliation_spec.rb). "Vulnerabilities Found" names
+    # a distinct attack technique (the glossary's "distinct probes"), not a variant, so
+    # two successful variants of the same probe must still read "1", not "2".
+    it 'counts one vulnerability for a probe with multiple successful threat variants' do
+      ActsAsTenant.with_tenant(company) do
+        shared_probe = create(:probe)
+        2.times do |i|
+          create(:probe_result, report: report, probe: shared_probe,
+                                 threat_variant: create(:threat_variant, probe: shared_probe, prompt: "Variant #{i}"),
+                                 passed: 1, total: 5, any_detector_passed: true)
+        end
+      end
+
+      expect(report.security_vulnerabilities_count).to eq(1)
+    end
   end
 end
