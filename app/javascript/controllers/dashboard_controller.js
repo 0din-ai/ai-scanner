@@ -184,7 +184,10 @@ export default class extends Controller {
         fetch('/dashboard_stats/avg_asr_score?days=' + period)
             .then(response => response.json())
             .then(data => {
-                this.totalHits3Target.innerText = data.score + "%";
+                // A null score means nothing was measurable (e.g. every report in the
+                // window failed with no probe results) -- render N/A rather than the
+                // literal "null%", matching the neighboring Last Five Scans card.
+                this.totalHits3Target.innerText = Number.isFinite(data.score) ? data.score + "%" : "N/A";
                 this.upsertSparklineChart(
                     chartConfig,
                     this.sparklineChart3Target,

@@ -64,7 +64,12 @@ module Stats
       result = ActiveRecord::Base.connection.select_value(
         ActiveRecord::Base.sanitize_sql_array([ sql, { since_date: since_date, company_id: company_id } ])
       )
-      (result.to_f || 0).round(2)
+      # NULLIF(SUM(probe_results.total), 0) already makes the inner per-report rate SQL
+      # NULL when there is nothing to divide by, so AVG() over zero qualifying rows is
+      # SQL NULL -- nothing was measurable. Preserve that as nil rather than coercing it
+      # to 0.0, which would read as a genuine "nothing succeeded" result (see
+      # Reports::AsrFigure and ReportsHelper#asr_display for the same distinction).
+      result.nil? ? nil : result.to_f.round(2)
     end
 
     def average_attack_success_rate_over_time(since_date = nil, interval = "day")
