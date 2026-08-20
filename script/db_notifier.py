@@ -1304,7 +1304,20 @@ def notify_report_stopped(
                             "another execution attempt owns this report and may be using it"
                         )
                     else:
-                        (CONFIG_PATH / f"{report_uuid}_web.json").unlink(missing_ok=True)
+                        # A delete failure (EACCES on the config dir, EROFS, a file
+                        # owned by another uid, ...) must not prevent the UPDATE below
+                        # from running: an unguarded unlink() would propagate to the
+                        # outer except and skip it entirely, leaving the report
+                        # running/starting with a stale PID and a live token until
+                        # CheckStaleReportsJob times it out and burns a retry for a
+                        # process that had already exited cleanly.
+                        try:
+                            (CONFIG_PATH / f"{report_uuid}_web.json").unlink(missing_ok=True)
+                        except OSError as delete_error:
+                            logger.error(
+                                "SECURITY: failed to delete credential web config "
+                                f"file for {report_uuid}: {delete_error}"
+                            )
 
                 cur.execute(
                     """

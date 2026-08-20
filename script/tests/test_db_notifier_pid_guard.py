@@ -308,21 +308,33 @@ class TestNotifyReportStoppedCleanupWebConfig(unittest.TestCase):
         self.assertEqual(mock_cur.execute.call_count, 1)
 
     @patch("db_notifier.pooled_connection")
-    def test_cleanup_failure_is_indeterminate(self, mock_pooled):
-        """A failed credential deletion must not be reported as a clean release."""
+    def test_cleanup_failure_does_not_block_the_ownership_release(self, mock_pooled):
+        """A failed credential deletion (EACCES on the config dir, EROFS, a file
+        owned by another uid, ...) must not prevent the report from being released.
+        An unguarded unlink() would propagate past the UPDATE that clears
+        pid/execution_token, leaving the report running/starting with a stale PID
+        and a live token until CheckStaleReportsJob times it out two minutes later
+        and burns an interrupt retry for a process that had already exited cleanly.
+        The failure is still logged with the SECURITY-prefixed signal
+        remove_web_config_file uses elsewhere, just without aborting the release."""
         mock_conn, mock_cur = self._make_mock_conn(rowcount=1, fetchone=(TOKEN,))
         mock_pooled.return_value = mock_conn
 
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp)
             with patch.object(db_notifier, "CONFIG_PATH", config_path), \
-                 patch.object(Path, "unlink", side_effect=PermissionError("denied")):
+                 patch.object(Path, "unlink", side_effect=PermissionError("denied")), \
+                 self.assertLogs(db_notifier.logger, level="ERROR") as logs:
                 result = db_notifier.notify_report_stopped(
                     "cleanup-error", execution_token=TOKEN, cleanup_web_config=True
                 )
 
-        self.assertIsNone(result)
-        mock_conn.commit.assert_not_called()
+        self.assertTrue(result)
+        mock_conn.commit.assert_called_once()
+        self.assertTrue(
+            any("SECURITY" in message for message in logs.output),
+            "expected the SECURITY-prefixed delete-failure signal to be preserved",
+        )
 
 
 if __name__ == "__main__":
