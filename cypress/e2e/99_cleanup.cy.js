@@ -11,9 +11,14 @@ const shouldSkipByEnv = flagTrue(Cypress.env('SKIP_CLEANUP')) || flagTrue(Cypres
 // Always define the suite; gate execution in a before() hook so we can also
 // skip when any earlier test failed.
 describe('99: cleanup tracked resources', function () {
-  // Ignore Turbo frame errors that occur during cleanup (e.g., 404 responses after deletions)
+  // Ignore expected Turbo-frame and request-abort errors caused by cleanup navigation.
   Cypress.on('uncaught:exception', (err, runnable) => {
     if (err.message.includes('did not contain the expected') && err.message.includes('turbo-frame')) {
+      return false
+    }
+    // Match on err.name alone: the exact wording is engine-specific (Chromium says
+    // "The user aborted a request.", other engines say "The operation was aborted.").
+    if (err.name === 'AbortError') {
       return false
     }
     return true

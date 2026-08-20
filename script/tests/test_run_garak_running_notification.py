@@ -63,7 +63,7 @@ TOKEN = "11111111-2222-3333-4444-555555555555"
 
 class TestRunningNotificationFailureIsFatal(unittest.TestCase):
     def _run_main(self, running_result, uuid="report-uuid-123", config_dir=None, token=TOKEN,
-                  stopped_result=True, replaced_result=False):
+                  stopped_result=True):
         # run_garak is imported once per process, so whichever test module imports it
         # first supplies these module-level constants. Pin them here (as Path, since
         # run_garak builds paths with `/`) so this test does not depend on that order.
@@ -79,7 +79,7 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
              patch.object(run_garak, "notify_report_ready", return_value=True), \
              patch.object(run_garak, "notify_report_ready_from_synced", return_value=True), \
              patch.object(run_garak, "notify_report_stopped", return_value=stopped_result) as mock_stopped, \
-             patch.object(run_garak, "execution_attempt_replaced", return_value=replaced_result), \
+             patch.object(run_garak, "remove_web_config_file") as mock_remove, \
              patch.object(run_garak, "load_existing_jsonl_prefix", return_value=""), \
              patch.object(run_garak, "get_log_file_path", return_value=tmp / "report.log"), \
              patch.object(sys, "argv", ["run_garak.py", uuid]), \
@@ -90,105 +90,66 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
                 os.environ.pop("SCAN_EXECUTION_TOKEN", None)
             with self.assertRaises(SystemExit) as ctx:
                 run_garak.main()
-        return ctx.exception.code, mock_scan, mock_heartbeat, mock_stopped
+        return ctx.exception.code, mock_scan, mock_heartbeat, mock_stopped, mock_remove
 
     def test_exits_nonzero_and_skips_the_scan_when_the_running_write_fails(self):
-        code, mock_scan, mock_heartbeat, _stopped = self._run_main(running_result=False)
+        code, mock_scan, mock_heartbeat, _stopped, _remove = self._run_main(running_result=False)
 
         self.assertEqual(code, 1)
         # Starting the scan would guarantee a SIGTERM from the heartbeat ~30s later.
         mock_scan.assert_not_called()
         mock_heartbeat.assert_not_called()
 
-    def test_removes_the_credential_web_config_on_the_abort_path(self):
-        """The abort returns before main()'s try/finally, so it must delete the
-        credential-bearing <uuid>_web.json itself. Rails writes that file before
-        launching this process, and once the process is accepted as started its own
-        startup rescue no longer removes it."""
-        config_dir = Path(tempfile.mkdtemp())
-        web_config = config_dir / "report-uuid-123_web.json"
-        web_config.write_text('{"cookies": [{"name": "session", "value": "secret"}]}')
-
-        code, _scan, _hb, _stopped = self._run_main(running_result=False, config_dir=config_dir)
-
-        self.assertEqual(code, 1)
-        self.assertFalse(web_config.exists(), "credential web config left on disk")
-
     def test_clears_the_recorded_pid_on_the_abort_path(self):
         """notify_report_running() can return False after the reports row is already
         committed: the pool hands out autocommit connections, so the status/pid UPDATE
         lands before the report_debug_logs statement that follows can fail. Without
         this, a dead process stays recorded as running until the reaper notices.
-        The call is PID-safe, so it is a no-op when nothing was recorded."""
-        code, _scan, _hb, mock_stopped = self._run_main(running_result=False)
+        The call is PID-safe, so it is a no-op when nothing was recorded. It also
+        requests the atomic cleanup path (cleanup_web_config=True), so ownership is
+        classified and the credential file is deleted under the same row lock rather
+        than as a second, separately-racing step."""
+        code, _scan, _hb, mock_stopped, _remove = self._run_main(running_result=False)
 
         self.assertEqual(code, 1)
-        mock_stopped.assert_called_once_with("report-uuid-123", TOKEN)
+        mock_stopped.assert_called_once_with("report-uuid-123", TOKEN, cleanup_web_config=True)
 
     def test_still_runs_the_scan_when_the_running_write_succeeds(self):
-        code, mock_scan, _mock_heartbeat, _stopped = self._run_main(running_result=True)
+        code, mock_scan, _mock_heartbeat, _stopped, _remove = self._run_main(running_result=True)
 
         self.assertEqual(code, 0)
         mock_scan.assert_called_once()
 
-    def test_keeps_the_credential_config_when_another_attempt_owns_the_report(self):
-        # <uuid>_web.json is keyed on the report UUID alone, so it is the same file a
-        # replacement attempt is already using. notify_report_stopped declining is how
-        # this process learns it is no longer the owner.
-        config_dir = Path(tempfile.mkdtemp()) / "config"
-        config_dir.mkdir(parents=True)
-        web_config = config_dir / "report-uuid-123_web.json"
-        web_config.write_text("{}")
-
-        self._run_main(
-            running_result=False,
-            config_dir=config_dir,
-            stopped_result=False,
-            replaced_result=True,
-        )
-
-        self.assertTrue(
-            web_config.exists(),
-            "a superseded process deleted the live attempt's credential file",
-        )
+    def test_does_not_double_delete_the_credential_config_when_release_is_determinate(self):
+        # Whether the report was released (True) or another attempt already owns it
+        # (False), notify_report_stopped(cleanup_web_config=True) has already made the
+        # keep-or-delete decision under the report row's lock. A second, unlocked
+        # remove_web_config_file call here would reopen exactly the race this closes:
+        # a replacement attempt could write a fresh credential file in between.
+        # (The keep-vs-delete decision itself is covered where it now lives --
+        # db_notifier's notify_report_stopped tests.)
+        for stopped_result in (True, False):
+            with self.subTest(stopped_result=stopped_result):
+                _code, _scan, _hb, _stopped, mock_remove = self._run_main(
+                    running_result=False, stopped_result=stopped_result
+                )
+                mock_remove.assert_not_called()
 
     def test_removes_the_credential_config_when_ownership_cleanup_errors(self):
         # A None result means the release could not be determined -- a database outage,
-        # say -- not that another attempt owns the report. Only a definitive mismatch
-        # may keep credentials on disk; nothing else runs after this exit.
-        config_dir = Path(tempfile.mkdtemp()) / "config"
-        config_dir.mkdir(parents=True)
-        web_config = config_dir / "report-uuid-123_web.json"
-        web_config.write_text('{"cookies": [{"name": "session", "value": "secret"}]}')
+        # say -- not that another attempt owns the report. The atomic classify-and-delete
+        # never got to run, so this is the fail-closed fallback: only a definitive
+        # mismatch may keep credentials on disk, and nothing else runs after this exit.
+        code, _scan, _hb, _stopped, mock_remove = self._run_main(running_result=False, stopped_result=None)
 
-        self._run_main(running_result=False, config_dir=config_dir, stopped_result=None)
-
-        self.assertFalse(web_config.exists(), "credential web config left on disk")
-
-    def test_removes_the_credential_config_when_only_the_pid_no_longer_matches(self):
-        # notify_report_stopped also returns False when the stored PID no longer
-        # matches -- RetryInterruptedReportsJob clears both the PID and the token
-        # before the old process reaches this cleanup. Nobody else owns the file then,
-        # and nothing else will ever remove it.
-        config_dir = Path(tempfile.mkdtemp()) / "config"
-        config_dir.mkdir(parents=True)
-        web_config = config_dir / "report-uuid-123_web.json"
-        web_config.write_text('{"cookies": [{"name": "session", "value": "secret"}]}')
-
-        self._run_main(
-            running_result=False,
-            config_dir=config_dir,
-            stopped_result=False,
-            replaced_result=False,
-        )
-
-        self.assertFalse(web_config.exists(), "credential web config left on disk")
+        self.assertEqual(code, 1)
+        mock_remove.assert_called_once_with("report-uuid-123")
 
     def test_refuses_to_start_without_an_execution_token(self):
         # Rails could only omit the token if the attempt was already revoked. Every
         # write this process makes would be rejected, so running the scan would burn
         # a full scan's work to produce nothing. Fail immediately, with a reason.
-        code, mock_scan, mock_heartbeat, _stopped = self._run_main(
+        code, mock_scan, mock_heartbeat, _stopped, _remove = self._run_main(
             running_result=True, token=None
         )
 
@@ -198,7 +159,7 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
 
     def test_validation_runs_do_not_need_an_execution_token(self):
         # Validation runs have no report row to own, so there is nothing to fence.
-        code, mock_scan, _hb, _stopped = self._run_main(
+        code, mock_scan, _hb, _stopped, _remove = self._run_main(
             running_result=True, uuid="validation_abc", token=None
         )
 
@@ -207,7 +168,7 @@ class TestRunningNotificationFailureIsFatal(unittest.TestCase):
 
     def test_validation_runs_do_not_require_the_running_write(self):
         # Validation runs have no database report record, so they never notify.
-        code, mock_scan, mock_heartbeat, _stopped = self._run_main(
+        code, mock_scan, mock_heartbeat, _stopped, _remove = self._run_main(
             running_result=False, uuid="validation_abc"
         )
 

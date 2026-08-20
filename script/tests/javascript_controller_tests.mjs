@@ -1501,6 +1501,66 @@ function testGaugeChartConfigTooltipFormatter() {
   assert.equal(tooltipFormatter({ name: "Success Rate", value: 83.24 }), "Success Rate: 83.24%")
 }
 
+function loadDashboardController() {
+  const source = readFileSync(
+    new URL("../../app/javascript/controllers/dashboard_controller.js", import.meta.url),
+    "utf8"
+  )
+
+  // dashboard_controller.js has several import lines (echarts helpers, chart config);
+  // loadControllerSource only strips the first one, so strip them all here instead.
+  const transformed = source
+    .replace(/^import .*?\n/gm, "")
+    .replace(
+      "export default class extends Controller",
+      "class DashboardController extends Controller"
+    )
+
+  const context = {
+    Controller: class {},
+    fetch: null // set per call by the test below
+  }
+
+  const ControllerClass = vm.runInNewContext(
+    `${transformed}\nDashboardController`,
+    context
+  )
+
+  return { ControllerClass, context }
+}
+
+async function testDashboardControllerAvgAsrScoreRendering() {
+  const { ControllerClass, context } = loadDashboardController()
+  // Isolate the score-text rendering from echarts, which initAvgAsrScores also drives
+  // and which is not available in this harness.
+  ControllerClass.prototype.upsertSparklineChart = function () {}
+
+  async function renderedScoreText(score) {
+    context.fetch = async () => ({
+      json: async () => ({ score, data: { rates: [] } })
+    })
+
+    const instance = new ControllerClass()
+    instance.totalHits3Target = { innerText: "" }
+
+    instance.initAvgAsrScores({})
+    // initAvgAsrScores does not return its fetch().then() chain, so flush the
+    // microtask queue (fetch resolution, then response.json(), then the render
+    // callback) past a macrotask boundary before reading the rendered text.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    return instance.totalHits3Target.innerText
+  }
+
+  // A company whose only reports failed with no probe results has nothing to
+  // average -- the endpoint returns score: null, and that must read N/A rather
+  // than the literal "null%", matching the neighboring Last Five Scans card.
+  assert.equal(await renderedScoreText(null), "N/A")
+  // A company where every measured attack was blocked is a genuine, measured 0%.
+  assert.equal(await renderedScoreText(0), "0%")
+  assert.equal(await renderedScoreText(42.5), "42.5%")
+}
+
 await testDebugStreamLeaseController()
 testActivityStreamController()
 testDebugTabsController()
@@ -1517,4 +1577,5 @@ testProbeCategoryToggleCategory()
 testGaugeChartConfigDetailFormatter()
 testGaugeChartConfigPointer()
 testGaugeChartConfigTooltipFormatter()
+await testDashboardControllerAvgAsrScoreRendering()
 console.log("JavaScript controller tests passed")

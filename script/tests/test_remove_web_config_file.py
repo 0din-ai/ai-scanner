@@ -58,13 +58,16 @@ class TestSignalHandlerCleanup(unittest.TestCase):
     def test_keeps_the_web_config_when_another_attempt_owns_the_report(self):
         # On SIGTERM a superseded process must not delete <uuid>_web.json: it is keyed
         # on the report uuid alone, so it belongs to the attempt that replaced us.
+        # notify_report_stopped(cleanup_web_config=True) classifies ownership and
+        # deletes the file under the same lock, so False (replaced) means the file
+        # was already left alone -- release_attempt_and_cleanup_web_config must not
+        # make a second, separate delete call on top of that.
         with patch.object(run_garak, "_main_pid", os.getpid()), \
              patch.object(run_garak, "current_report_uuid", "uuid-xyz"), \
              patch.object(run_garak, "current_execution_token", TOKEN), \
              patch.object(run_garak, "current_journal_sync", None), \
              patch.object(run_garak, "current_heartbeat", None), \
              patch.object(run_garak, "notify_report_stopped", return_value=False), \
-             patch.object(run_garak, "execution_attempt_replaced", return_value=True), \
              patch.object(run_garak, "remove_web_config_file") as m_rm:
             with self.assertRaises(SystemExit):
                 run_garak.signal_handler(15, None)
@@ -73,17 +76,20 @@ class TestSignalHandlerCleanup(unittest.TestCase):
 
     def test_main_process_removes_web_config_on_signal(self):
         # An early SIGTERM (before the main try/finally) must still delete the
-        # credential file from the parent signal handler.
+        # credential file from the parent signal handler. The deletion happens
+        # inside notify_report_stopped's row lock (cleanup_web_config=True); a
+        # None result means the release was indeterminate (e.g. the database was
+        # unreachable), so remove_web_config_file is the fail-closed fallback.
         with patch.object(run_garak, "_main_pid", os.getpid()), \
              patch.object(run_garak, "current_report_uuid", "uuid-xyz"), \
              patch.object(run_garak, "current_execution_token", TOKEN), \
              patch.object(run_garak, "current_journal_sync", None), \
              patch.object(run_garak, "current_heartbeat", None), \
-             patch.object(run_garak, "notify_report_stopped") as m_stop, \
+             patch.object(run_garak, "notify_report_stopped", return_value=None) as m_stop, \
              patch.object(run_garak, "remove_web_config_file") as m_rm:
             with self.assertRaises(SystemExit):
                 run_garak.signal_handler(15, None)
-        m_stop.assert_called_once_with("uuid-xyz", TOKEN)
+        m_stop.assert_called_once_with("uuid-xyz", TOKEN, cleanup_web_config=True)
         m_rm.assert_called_once_with("uuid-xyz")
 
 

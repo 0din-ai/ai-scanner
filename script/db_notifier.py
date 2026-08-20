@@ -10,8 +10,9 @@ Functions:
     notify_report_running(report_uuid, pid, execution_token): Claim running state
     notify_report_ready(report_uuid, *, execution_token): Store data and hand off
     notify_report_ready_from_synced(report_uuid, *, execution_token): Hand off
-    notify_report_stopped(report_uuid, expected_pid=None, *, execution_token):
-        Release this attempt's PID and ownership
+    notify_report_stopped(report_uuid, expected_pid=None, *, execution_token, cleanup_web_config=False):
+        Release this attempt's PID and ownership, optionally deleting the
+        credential web config under the same row lock
 
 Dependencies:
     psycopg2-binary>=2.9.0
@@ -1229,9 +1230,25 @@ def notify_report_running(report_uuid: str, pid: int, execution_token: str) -> b
         return False
 
 
+def _delete_web_config(report_uuid: str) -> None:
+    """Delete the credential-bearing <uuid>_web.json, logging (not raising) on
+    failure so a delete error never blocks the caller's ownership release."""
+    try:
+        (CONFIG_PATH / f"{report_uuid}_web.json").unlink(missing_ok=True)
+    except OSError as delete_error:
+        logger.error(
+            f"SECURITY: failed to delete credential web config file for "
+            f"{report_uuid}: {delete_error}"
+        )
+
+
 def notify_report_stopped(
-    report_uuid: str, expected_pid: int = None, *, execution_token: str
-) -> bool:
+    report_uuid: str,
+    expected_pid: int = None,
+    *,
+    execution_token: str,
+    cleanup_web_config: bool = False,
+) -> Optional[bool]:
     """
     Clear PID from report using pooled connection (owner-process guard).
 
@@ -1240,9 +1257,31 @@ def notify_report_stopped(
     a child that inherits the signal handler and calls this function will
     have a different os.getpid(), so the UPDATE WHERE clause won't match.
 
+    When cleanup_web_config is requested, the report row is locked with
+    SELECT ... FOR UPDATE before the UUID-keyed credential file is classified
+    and deleted. Doing the classification and the delete under the same lock
+    closes the window where a replacement attempt claims the report and
+    writes a fresh credential file between an unlocked ownership check and
+    the delete -- the file is keyed on the report UUID alone, so a stale
+    delete after that write would remove the replacement's live credentials.
+
+    Pooled connections come back from the pool with autocommit enabled (see
+    ConnectionPoolManager.get_connection's reset-on-checkout), under which every
+    statement is its own implicit transaction -- a bare FOR UPDATE releases its
+    row lock the instant that one SELECT finishes, before the delete or the
+    UPDATE that follow it. autocommit is explicitly disabled for the duration of
+    the cleanup_web_config path so the SELECT, the delete, and the UPDATE share
+    one real transaction held until commit(); the pooled_connection wrapper
+    resets autocommit back to True (and rolls back on any exception) when the
+    connection is returned to the pool, so this does not leak into the next use
+    of the connection.
+
     Args:
         report_uuid: UUID of the report
         expected_pid: PID to match against stored PID. Defaults to os.getpid().
+        cleanup_web_config: Delete the credential-bearing <uuid>_web.json while
+            the report row remains locked, unless a different execution token
+            now owns the report.
 
     Returns:
         True if ownership was cleared, False on a definitive PID/token mismatch,
@@ -1255,6 +1294,62 @@ def notify_report_stopped(
     try:
         with pooled_connection("primary") as conn:
             with conn.cursor() as cur:
+                if cleanup_web_config:
+                    # Hold the row lock across the delete and the UPDATE below, not
+                    # just the SELECT that acquires it -- see the autocommit note
+                    # in the docstring.
+                    conn.autocommit = False
+                    # Bound how long this waits to acquire the row lock. Without a
+                    # timeout, a slow/hung storage/config mount or a concurrent
+                    # writer already holding this row would block indefinitely --
+                    # Rails writes to the same row queue up behind it, and on the
+                    # SIGTERM path this process can be SIGKILLed while still
+                    # holding the lock, leaving both the file and the stale
+                    # pid/token behind.
+                    cur.execute("SET LOCAL lock_timeout = '5s'")
+                    try:
+                        cur.execute(
+                            "SELECT execution_token FROM reports WHERE uuid = %s FOR UPDATE",
+                            (report_uuid,),
+                        )
+                    except OperationalError as lock_error:
+                        if getattr(lock_error, "pgcode", None) != "55P03":  # lock_not_available
+                            raise
+                        # The failed statement aborted the transaction; roll back
+                        # before this connection runs anything else, then fall back
+                        # to the pre-lock behaviour: delete unconditionally, without
+                        # the ownership classification the lock exists to protect,
+                        # rather than risk losing the release too.
+                        conn.rollback()
+                        logger.warning(
+                            f"Report {report_uuid} row lock not available within "
+                            "timeout; falling back to an unlocked credential delete"
+                        )
+                        _delete_web_config(report_uuid)
+                        # lock_timeout only bounded the SELECT above. The UPDATE
+                        # below still targets this same contended row -- without its
+                        # own bound, it could block indefinitely (and be SIGKILLed
+                        # while blocked, on the SIGTERM path), defeating the point
+                        # of bounding the SELECT at all. autocommit is still off
+                        # from before the rollback, so this SET LOCAL scopes to the
+                        # one transaction the UPDATE runs and commits in below.
+                        cur.execute("SET LOCAL statement_timeout = '5s'")
+                    else:
+                        row = cur.fetchone()
+                        current_token = row[0] if row is not None else None
+                        replaced = (
+                            current_token is not None
+                            and str(current_token) != str(execution_token)
+                        )
+
+                        if replaced:
+                            logger.warning(
+                                f"Leaving credential config for {report_uuid} in place: "
+                                "another execution attempt owns this report and may be using it"
+                            )
+                        else:
+                            _delete_web_config(report_uuid)
+
                 cur.execute(
                     """
                     UPDATE reports
@@ -1282,38 +1377,6 @@ def notify_report_stopped(
         # this report" from "the database did not answer", and the two call for
         # opposite handling of the report's credential file.
         logger.error(f"Error in notify_report_stopped: {e}")
-        return None
-
-
-def execution_attempt_replaced(report_uuid: str, execution_token: str):
-    """Has a DIFFERENT attempt taken ownership of this report?
-
-    notify_report_stopped returning False is not evidence of this on its own: it also
-    returns False when the stored PID no longer matches, which happens routinely when
-    the recovery path clears the PID before the old process reaches its cleanup. Only
-    a different, non-null token means someone else owns the report -- and therefore
-    owns the UUID-keyed files that belong to it.
-
-    Returns True when another attempt owns it, False when this attempt does or nobody
-    does, and None when ownership could not be determined.
-    """
-    try:
-        with pooled_connection("primary") as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT execution_token FROM reports WHERE uuid = %s",
-                    (report_uuid,),
-                )
-                row = cur.fetchone()
-
-        if row is None:
-            return False
-
-        current_token = row[0]
-        return current_token is not None and str(current_token) != str(execution_token)
-
-    except Exception as e:
-        logger.error(f"Error checking execution ownership for {report_uuid}: {e}")
         return None
 
 

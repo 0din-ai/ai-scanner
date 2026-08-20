@@ -16,7 +16,6 @@ _mock_db.notify_report_running = MagicMock(return_value=True)
 _mock_db.notify_report_ready = MagicMock(return_value=True)
 _mock_db.notify_report_ready_from_synced = MagicMock(return_value=True)
 _mock_db.notify_report_stopped = MagicMock(return_value=True)
-_mock_db.execution_attempt_replaced = MagicMock(return_value=False)
 _mock_db.load_existing_jsonl_prefix = MagicMock(return_value="")
 _mock_db.get_log_file_path = MagicMock(return_value=Path("/tmp/fake_reports/report.log"))
 _mock_db.HeartbeatThread = MagicMock

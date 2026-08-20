@@ -112,12 +112,21 @@ RSpec.describe Stats::AverageAsrScore do
     end
 
     context 'when no reports exist' do
-      it 'returns zero score with empty data' do
+      it 'reports the score as unmeasurable rather than a false zero' do
         result = subject
 
-        expect(result[:score]).to eq(0)
+        expect(result[:score]).to be_nil
         expect(result[:data][:dates]).to be_present
         expect(result[:data][:rates]).to all eq(0.0)
+      end
+    end
+
+    context 'when every attack was blocked' do
+      it 'reports a genuine zero, not the unmeasurable nil' do
+        report = create(:report, company: company, target: target, scan: scan, created_at: Time.zone.today)
+        create(:probe_result, report: report, probe: probe, detector: detector, passed: 0, total: 10)
+
+        expect(subject[:score]).to eq(0.0)
       end
     end
 
@@ -184,10 +193,10 @@ RSpec.describe Stats::AverageAsrScore do
         create(:probe_result, report: report, probe: probe, detector: detector, passed: 0, total: 0)
       end
 
-      it 'excludes reports with zero totals from calculation' do
+      it 'excludes reports with zero totals from calculation, leaving nothing measurable' do
         result = subject
 
-        expect(result[:score]).to eq(0)
+        expect(result[:score]).to be_nil
       end
     end
   end
@@ -215,9 +224,9 @@ RSpec.describe Stats::AverageAsrScore do
     end
 
     context 'with no reports' do
-      it 'returns zero' do
+      it 'returns nil rather than a false zero' do
         ActsAsTenant.with_tenant(company) do
-          expect(subject.average_attack_success_rate(4.days.ago)).to eq(0)
+          expect(subject.average_attack_success_rate(4.days.ago)).to be_nil
         end
       end
     end

@@ -40,7 +40,6 @@ from pathlib import Path
 
 from garak_plugin_cache_guard import install_plugin_cache_guard
 from db_notifier import (
-    execution_attempt_replaced as db_execution_attempt_replaced,
     notify_report_running as db_notify_running,
     notify_report_ready as db_notify_ready,
     notify_report_ready_from_synced as db_notify_ready_from_synced,
@@ -206,14 +205,18 @@ def notify_report_ready_from_synced(report_uuid, exit_code=None, *, execution_to
         return False
 
 
-def notify_report_stopped(report_uuid, execution_token):
+def notify_report_stopped(report_uuid, execution_token, cleanup_web_config=False):
     """Release this execution attempt in the database.
 
     Returns True when ownership was cleared, False on a definitive mismatch (another
     attempt owns the report), and None when it could not be determined.
     """
     try:
-        result = db_notify_stopped(report_uuid, execution_token=execution_token)
+        result = db_notify_stopped(
+            report_uuid,
+            execution_token=execution_token,
+            cleanup_web_config=cleanup_web_config,
+        )
         if result:
             print(f"Report {report_uuid} PID cleared")
         else:
@@ -223,40 +226,26 @@ def notify_report_stopped(report_uuid, execution_token):
         print(f"Error notifying report stopped: {e}", file=sys.stderr)
         return None
 
-def execution_attempt_replaced(report_uuid, execution_token):
-    """True when a different attempt owns the report, False when it does not, None
-    when that could not be determined."""
-    try:
-        return db_execution_attempt_replaced(report_uuid, execution_token)
-    except Exception as e:
-        print(f"Error checking execution ownership: {e}", file=sys.stderr)
-        return None
-
 
 def release_attempt_and_cleanup_web_config(report_uuid, execution_token):
     """Release this attempt and remove its credential file unless superseded.
 
-    A definitive ownership mismatch means the UUID-keyed file belongs to a newer
-    attempt and must be left alone. Unknown ownership still deletes it, so
-    credentials are not left behind when the database is unavailable.
+    The ownership check and the file deletion happen inside the same row lock
+    (notify_report_stopped's cleanup_web_config path), so a replacement attempt
+    cannot claim the report and write a fresh credential file between the check
+    and the delete. A None result means the release could not be determined (the
+    database was unavailable, say) -- fail closed and delete locally, since there
+    is no way to confirm no replacement exists.
     """
     if not execution_token:
         remove_web_config_file(report_uuid)
         return None
 
-    released = notify_report_stopped(report_uuid, execution_token)
+    released = notify_report_stopped(report_uuid, execution_token, cleanup_web_config=True)
 
-    # Ask who owns the report rather than inferring it from the release result: that
-    # is also False on an ordinary PID mismatch, which the recovery path produces
-    # routinely, and nothing else would ever remove the file in that case.
-    if execution_attempt_replaced(report_uuid, execution_token) is True:
-        logger.warning(
-            f"Leaving credential config for {report_uuid} in place: another "
-            f"execution attempt owns this report and may be using it"
-        )
-        return False
+    if released is None:
+        remove_web_config_file(report_uuid)
 
-    remove_web_config_file(report_uuid)
     return released
 
 
@@ -414,8 +403,17 @@ def main():
             heartbeat.stop()
             current_heartbeat = None
         if not is_validation:
-            notify_report_stopped(report_uuid, execution_token)
-        remove_web_config_file(report_uuid)
+            # Route through release_attempt_and_cleanup_web_config rather than
+            # notify_report_stopped + remove_web_config_file as two separate
+            # unlocked steps: a replacement attempt (e.g. this process was
+            # interrupted and retried elsewhere while it was still unwinding)
+            # could otherwise claim the report and write a fresh credential
+            # file that this exit then deletes.
+            release_attempt_and_cleanup_web_config(report_uuid, execution_token)
+        else:
+            # Validation runs have no report row to own or lock -- nothing to
+            # check ownership against, so delete unconditionally as before.
+            remove_web_config_file(report_uuid)
 
     sys.exit(exit_code)
 

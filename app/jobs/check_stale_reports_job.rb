@@ -29,9 +29,50 @@ class CheckStaleReportsJob < ApplicationJob
   # Maximum start attempts before permanent failure.
   MAX_START_RETRIES = 3
 
-  # Maximum interrupt retries before permanent failure.
-  # Uses same limit as start retries for consistency.
-  MAX_INTERRUPT_RETRIES = 3
+  # Default maximum interrupt retries before permanent failure.
+  # Overridable via the MAX_INTERRUPT_RETRIES env var so the budget can absorb
+  # several deploy-time interruptions -- cheap, since a scan's progress is
+  # DB-persisted and it resumes rather than restarting from scratch.
+  DEFAULT_MAX_INTERRUPT_RETRIES = 3
+
+  # Blank, non-integer, or non-positive values fall back to the default rather
+  # than disabling the budget. 0 is not treated as a deliberate "never retry"
+  # setting -- that would make CheckStaleReportsJob fail a report on its very
+  # first interruption, which is surprising enough to require a real off switch
+  # rather than a bare "0" a typo could produce.
+  #
+  # Uses strict Integer() parsing rather than String#to_i: to_i silently reads a
+  # partially-numeric value like "5oops" as 5 and a decimal like "1.5" as 1,
+  # so a configuration typo would silently change the retry budget instead of
+  # falling back to the default.
+  def self.max_interrupt_retries
+    raw = ENV["MAX_INTERRUPT_RETRIES"]
+    return DEFAULT_MAX_INTERRUPT_RETRIES if raw.blank?
+
+    value = Integer(raw, 10)
+    return value if value.positive?
+
+    Rails.logger.warn(
+      "[CheckStaleReports] MAX_INTERRUPT_RETRIES=#{raw.inspect} is not positive; " \
+      "using default #{DEFAULT_MAX_INTERRUPT_RETRIES}"
+    )
+    DEFAULT_MAX_INTERRUPT_RETRIES
+  rescue ArgumentError, TypeError
+    Rails.logger.warn(
+      "[CheckStaleReports] MAX_INTERRUPT_RETRIES=#{raw.inspect} is not a valid integer; " \
+      "using default #{DEFAULT_MAX_INTERRUPT_RETRIES}"
+    )
+    DEFAULT_MAX_INTERRUPT_RETRIES
+  end
+
+  # Stuck-in-starting failures share Report#retry_count with interrupt recovery (see
+  # check_stuck_starting_reports below). Fail a stuck report only once the LARGER of
+  # the two budgets is exhausted, so a raised MAX_INTERRUPT_RETRIES isn't undercut by
+  # the hardcoded start-attempt limit when a report that already survived several
+  # deploy-time interruptions then hits a transient start stall.
+  def self.start_retry_ceiling
+    [ MAX_START_RETRIES, max_interrupt_retries ].max
+  end
 
   def perform
     check_stale_running_reports
@@ -69,7 +110,7 @@ class CheckStaleReportsJob < ApplicationJob
       heartbeat_age = (Time.current - report.heartbeat_at).round
       reason = "Scan stopped responding (no heartbeat for #{HEARTBEAT_TIMEOUT.inspect})"
 
-      if report.retry_count < MAX_INTERRUPT_RETRIES
+      if report.retry_count < self.class.max_interrupt_retries
         Rails.logger.warn(
           "[CheckStaleReports] Report #{report.id} (#{report.uuid}) has stale heartbeat " \
           "(last: #{report.heartbeat_at}, age: #{heartbeat_age}s) - marking as interrupted"
@@ -79,9 +120,9 @@ class CheckStaleReportsJob < ApplicationJob
         Rails.logger.error(
           "[CheckStaleReports] Report #{report.id} (#{report.uuid}) has stale heartbeat " \
           "(last: #{report.heartbeat_at}, age: #{heartbeat_age}s) - " \
-          "exceeded #{MAX_INTERRUPT_RETRIES} retries, marking as failed"
+          "exceeded #{self.class.max_interrupt_retries} retries, marking as failed"
         )
-        mark_report_failed(report, "#{reason} (after #{MAX_INTERRUPT_RETRIES} retry attempts)")
+        mark_report_failed(report, "#{reason} (after #{self.class.max_interrupt_retries} retry attempts)")
       end
     end
   end
@@ -107,7 +148,7 @@ class CheckStaleReportsJob < ApplicationJob
       age = (Time.current - report.updated_at).round
       reason = "Scan process never started (no heartbeat received after #{HEARTBEAT_TIMEOUT.inspect})"
 
-      if report.retry_count < MAX_INTERRUPT_RETRIES
+      if report.retry_count < self.class.max_interrupt_retries
         Rails.logger.warn(
           "[CheckStaleReports] Report #{report.id} (#{report.uuid}) is running " \
           "but never sent heartbeat (age: #{age}s) - marking as interrupted"
@@ -117,9 +158,9 @@ class CheckStaleReportsJob < ApplicationJob
         Rails.logger.error(
           "[CheckStaleReports] Report #{report.id} (#{report.uuid}) is running " \
           "but never sent heartbeat (age: #{age}s) - " \
-          "exceeded #{MAX_INTERRUPT_RETRIES} retries, marking as failed"
+          "exceeded #{self.class.max_interrupt_retries} retries, marking as failed"
         )
-        mark_report_failed(report, "#{reason} (after #{MAX_INTERRUPT_RETRIES} retry attempts)")
+        mark_report_failed(report, "#{reason} (after #{self.class.max_interrupt_retries} retry attempts)")
       end
     end
   end
@@ -174,7 +215,7 @@ class CheckStaleReportsJob < ApplicationJob
 
       reason = "Scan process orphaned (running with no owning process — pid cleared but status not updated)"
 
-      if report.retry_count < MAX_INTERRUPT_RETRIES
+      if report.retry_count < self.class.max_interrupt_retries
         Rails.logger.warn(
           "[CheckStaleReports] Report #{report.id} (#{report.uuid}) is orphaned " \
           "(running, pid=nil, heartbeat present) - marking as interrupted"
@@ -184,15 +225,16 @@ class CheckStaleReportsJob < ApplicationJob
         Rails.logger.error(
           "[CheckStaleReports] Report #{report.id} (#{report.uuid}) is orphaned " \
           "(running, pid=nil, heartbeat present) - " \
-          "exceeded #{MAX_INTERRUPT_RETRIES} retries, marking as failed"
+          "exceeded #{self.class.max_interrupt_retries} retries, marking as failed"
         )
-        mark_report_failed(report, "#{reason} (after #{MAX_INTERRUPT_RETRIES} retry attempts)")
+        mark_report_failed(report, "#{reason} (after #{self.class.max_interrupt_retries} retry attempts)")
       end
     end
   end
 
   # Detect reports stuck in 'starting' status (process never started).
-  # Retries up to MAX_START_RETRIES times with exponential backoff.
+  # Retries up to the start-retry ceiling (max of MAX_START_RETRIES and the
+  # interrupt budget; see .start_retry_ceiling) with exponential backoff.
   def check_stuck_starting_reports
     stuck_reports = Report.starting
                           .where("updated_at < ?", STARTING_TIMEOUT.ago)
@@ -204,12 +246,12 @@ class CheckStaleReportsJob < ApplicationJob
       # Skip if no longer starting
       next unless report.starting?
 
-      if report.retry_count < MAX_START_RETRIES
+      if report.retry_count < self.class.start_retry_ceiling
         retry_report(report)
       else
         mark_report_failed(
           report,
-          "Failed after #{MAX_START_RETRIES} start attempts. " \
+          "Failed after #{self.class.start_retry_ceiling} start attempts. " \
           "Each attempt timed out after #{STARTING_TIMEOUT.inspect}."
         )
       end
@@ -219,7 +261,7 @@ class CheckStaleReportsJob < ApplicationJob
   def retry_report(report)
     Rails.logger.warn(
       "[CheckStaleReports] Report #{report.id} stuck in starting - " \
-      "moving to pending for retry (attempt #{report.retry_count + 1}/#{MAX_START_RETRIES})"
+      "moving to pending for retry (attempt #{report.retry_count + 1}/#{self.class.start_retry_ceiling})"
     )
 
     Report.transaction do
@@ -242,7 +284,7 @@ class CheckStaleReportsJob < ApplicationJob
   def mark_report_interrupted(report, reason)
     Rails.logger.warn(
       "[CheckStaleReports] Marking report #{report.id} as interrupted " \
-      "(retry #{report.retry_count + 1}/#{MAX_INTERRUPT_RETRIES}): #{reason}"
+      "(retry #{report.retry_count + 1}/#{self.class.max_interrupt_retries}): #{reason}"
     )
 
     report.update!(

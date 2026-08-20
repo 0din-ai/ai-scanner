@@ -519,6 +519,47 @@ RSpec.describe CheckStaleReportsJob, type: :job do
         expect(running_report.reload.status).to eq("running")
         expect(pending_report.reload.status).to eq("pending")
       end
+
+      context "with a raised interrupt budget" do
+        around do |example|
+          original = ENV["MAX_INTERRUPT_RETRIES"]
+          example.run
+        ensure
+          if original.nil?
+            ENV.delete("MAX_INTERRUPT_RETRIES")
+          else
+            ENV["MAX_INTERRUPT_RETRIES"] = original
+          end
+        end
+
+        it "retries past the hardcoded MAX_START_RETRIES when the interrupt budget covers it" do
+          # retry_count 4 already exceeds MAX_START_RETRIES (3), but this report only
+          # got there by surviving several deploy-time interruptions under a raised
+          # budget -- a stuck start attempt right after must not undercut that budget.
+          ENV["MAX_INTERRUPT_RETRIES"] = "6"
+          stuck_time = 3.minutes.ago
+          report = create(:report, target: target, scan: scan, status: :starting, retry_count: 4, updated_at: stuck_time)
+
+          described_class.new.perform
+
+          report.reload
+          expect(report.status).to eq("pending")
+          expect(report.retry_count).to eq(5)
+          expect(report.logs).to include("Retry 5:")
+        end
+
+        it "still fails once the raised budget itself is exhausted" do
+          ENV["MAX_INTERRUPT_RETRIES"] = "6"
+          stuck_time = 3.minutes.ago
+          report = create(:report, target: target, scan: scan, status: :starting, retry_count: 6, updated_at: stuck_time)
+
+          described_class.new.perform
+
+          report.reload
+          expect(report.status).to eq("failed")
+          expect(report.logs).to include("Failed after 6 start attempts")
+        end
+      end
     end
 
     describe "multiple reports" do
@@ -570,8 +611,144 @@ RSpec.describe CheckStaleReportsJob, type: :job do
       expect(described_class::MAX_START_RETRIES).to eq(3)
     end
 
-    it "has max 3 interrupt retries" do
-      expect(described_class::MAX_INTERRUPT_RETRIES).to eq(3)
+    it "defaults to 3 interrupt retries" do
+      expect(described_class::DEFAULT_MAX_INTERRUPT_RETRIES).to eq(3)
+    end
+  end
+
+  describe ".max_interrupt_retries" do
+    around do |example|
+      original = ENV["MAX_INTERRUPT_RETRIES"]
+      example.run
+    ensure
+      if original.nil?
+        ENV.delete("MAX_INTERRUPT_RETRIES")
+      else
+        ENV["MAX_INTERRUPT_RETRIES"] = original
+      end
+    end
+
+    it "defaults to 3 when unset" do
+      ENV.delete("MAX_INTERRUPT_RETRIES")
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "reads a positive integer from the environment" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "6"
+      expect(described_class.max_interrupt_retries).to eq(6)
+    end
+
+    it "falls back to the default for a non-integer value" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "abc"
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "falls back to the default for a non-positive value" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "0"
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "falls back to the default for a negative value" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "-3"
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "falls back to the default for a blank value" do
+      ENV["MAX_INTERRUPT_RETRIES"] = ""
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "falls back to the default for a partially-numeric value instead of truncating it" do
+      # String#to_i silently reads "5oops" as 5 -- a configuration typo must not
+      # silently change the retry budget.
+      ENV["MAX_INTERRUPT_RETRIES"] = "5oops"
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "falls back to the default for a decimal value instead of truncating it" do
+      # String#to_i silently reads "1.5" as 1 -- reject it rather than accept a
+      # truncated budget the operator did not ask for.
+      ENV["MAX_INTERRUPT_RETRIES"] = "1.5"
+      expect(described_class.max_interrupt_retries).to eq(3)
+    end
+
+    it "warns when a malformed value is rejected" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "5oops"
+      expect(Rails.logger).to receive(:warn).with(/MAX_INTERRUPT_RETRIES="5oops"/)
+      described_class.max_interrupt_retries
+    end
+
+    it "warns when a non-positive value is rejected" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "0"
+      expect(Rails.logger).to receive(:warn).with(/MAX_INTERRUPT_RETRIES="0"/)
+      described_class.max_interrupt_retries
+    end
+  end
+
+  describe ".start_retry_ceiling" do
+    around do |example|
+      original = ENV["MAX_INTERRUPT_RETRIES"]
+      example.run
+    ensure
+      if original.nil?
+        ENV.delete("MAX_INTERRUPT_RETRIES")
+      else
+        ENV["MAX_INTERRUPT_RETRIES"] = original
+      end
+    end
+
+    it "equals MAX_START_RETRIES when the interrupt budget is not raised" do
+      ENV.delete("MAX_INTERRUPT_RETRIES")
+      expect(described_class.start_retry_ceiling).to eq(3)
+    end
+
+    it "tracks a raised interrupt budget" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "6"
+      expect(described_class.start_retry_ceiling).to eq(6)
+    end
+
+    it "never drops below MAX_START_RETRIES even if the interrupt budget is lowered" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "1"
+      expect(described_class.start_retry_ceiling).to eq(3)
+    end
+  end
+
+  describe "interrupt budget honours MAX_INTERRUPT_RETRIES" do
+    around do |example|
+      original = ENV["MAX_INTERRUPT_RETRIES"]
+      example.run
+    ensure
+      if original.nil?
+        ENV.delete("MAX_INTERRUPT_RETRIES")
+      else
+        ENV["MAX_INTERRUPT_RETRIES"] = original
+      end
+    end
+
+    it "keeps retrying past the default budget when raised via ENV" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "5"
+      stale_time = 3.minutes.ago
+      # retry_count: 3 would exceed the hardcoded default and be failed outright.
+      report = create(:report, target: target, scan: scan, status: :running, pid: 12345,
+                      heartbeat_at: stale_time, retry_count: 3)
+
+      described_class.new.perform
+
+      report.reload
+      expect(report.status).to eq("interrupted")
+    end
+
+    it "still fails once the raised budget is exhausted" do
+      ENV["MAX_INTERRUPT_RETRIES"] = "5"
+      stale_time = 3.minutes.ago
+      report = create(:report, target: target, scan: scan, status: :running, pid: 12345,
+                      heartbeat_at: stale_time, retry_count: 5)
+
+      described_class.new.perform
+
+      report.reload
+      expect(report.status).to eq("failed")
+      expect(report.logs).to include("after 5 retry attempts")
     end
   end
 

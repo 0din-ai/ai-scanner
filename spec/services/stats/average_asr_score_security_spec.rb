@@ -24,7 +24,7 @@ RSpec.describe Stats::AverageAsrScore do
     end
   end
 
-  it "returns 0.0 (fails closed) when there is no current tenant" do
+  it "fails closed when there is no current tenant, matching no reports rather than leaking any" do
     company = create(:company)
     ActsAsTenant.with_tenant(company) do
       r = create(:report, company: company)
@@ -32,7 +32,10 @@ RSpec.describe Stats::AverageAsrScore do
     end
 
     ActsAsTenant.without_tenant do
-      expect(described_class.new.average_attack_success_rate).to eq(0.0)
+      # company_id: nil means the WHERE clause matches zero rows (company_id = NULL is
+      # never true in SQL) -- the same "nothing measurable" outcome as no reports at all,
+      # so it is nil rather than a false zero, not a leak of the tenant's real 50%.
+      expect(described_class.new.average_attack_success_rate).to be_nil
     end
   end
 
