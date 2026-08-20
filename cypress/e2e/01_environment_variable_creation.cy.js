@@ -202,7 +202,9 @@ describe('Environment Variable Creation', () => {
     cy.visit('/environment_variables')
     
     // Verify page elements
-    cy.contains('Environment Variables').should('be.visible')
+    cy.get('#custom-page-header h1')
+      .should('contain.text', 'Environment Variables')
+      .and('be.visible')
     cy.contains('a', 'New Environment Variable').should('be.visible')
     
     // Verify table headers exist (may not all be visible due to viewport)
