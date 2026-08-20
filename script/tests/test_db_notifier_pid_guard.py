@@ -262,6 +262,41 @@ class TestNotifyReportStoppedCleanupWebConfig(unittest.TestCase):
         self.assertEqual(select_params, ("cleanup-lock",))
 
     @patch("db_notifier.pooled_connection")
+    def test_holds_an_explicit_transaction_across_the_lock_delete_and_update(self, mock_pooled):
+        """Pooled connections come back with autocommit=True (see
+        ConnectionPoolManager.get_connection's reset-on-checkout), which means a bare
+        FOR UPDATE SELECT commits -- and releases its row lock -- the instant that one
+        statement finishes, before the delete or the UPDATE that follow it even run.
+        The lock protects nothing unless autocommit is turned off before the SELECT
+        and held through commit(), so every statement in the cleanup_web_config path
+        shares one real transaction."""
+        mock_conn, mock_cur = self._make_mock_conn(rowcount=1, fetchone=(TOKEN,))
+        mock_pooled.return_value = mock_conn
+
+        autocommit_during_execute = []
+        mock_cur.execute.side_effect = lambda *a, **k: autocommit_during_execute.append(
+            mock_conn.autocommit
+        )
+
+        with patch.object(db_notifier, "CONFIG_PATH", Path(tempfile.mkdtemp())):
+            db_notifier.notify_report_stopped(
+                "lock-scope", execution_token=TOKEN, cleanup_web_config=True
+            )
+
+        # autocommit must already be disabled by the time the locking SELECT runs...
+        self.assertTrue(
+            len(autocommit_during_execute) >= 2,
+            "expected both the SELECT and the UPDATE to execute",
+        )
+        self.assertIs(autocommit_during_execute[0], False)
+        # ...and still disabled for every later statement in the same call (the
+        # UPDATE) -- the connection must never revert to one-statement-per-transaction
+        # mid-sequence, or the lock is released before the delete/update it was meant
+        # to protect.
+        self.assertTrue(all(value is False for value in autocommit_during_execute))
+        mock_conn.commit.assert_called_once()
+
+    @patch("db_notifier.pooled_connection")
     def test_skips_the_lock_and_delete_when_cleanup_not_requested(self, mock_pooled):
         """Existing callers that don't ask for cleanup keep the original
         single-statement behaviour: no SELECT, no file classification."""

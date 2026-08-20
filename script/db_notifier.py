@@ -1253,6 +1253,17 @@ def notify_report_stopped(
     the delete -- the file is keyed on the report UUID alone, so a stale
     delete after that write would remove the replacement's live credentials.
 
+    Pooled connections come back from the pool with autocommit enabled (see
+    ConnectionPoolManager.get_connection's reset-on-checkout), under which every
+    statement is its own implicit transaction -- a bare FOR UPDATE releases its
+    row lock the instant that one SELECT finishes, before the delete or the
+    UPDATE that follow it. autocommit is explicitly disabled for the duration of
+    the cleanup_web_config path so the SELECT, the delete, and the UPDATE share
+    one real transaction held until commit(); the pooled_connection wrapper
+    resets autocommit back to True (and rolls back on any exception) when the
+    connection is returned to the pool, so this does not leak into the next use
+    of the connection.
+
     Args:
         report_uuid: UUID of the report
         expected_pid: PID to match against stored PID. Defaults to os.getpid().
@@ -1272,6 +1283,10 @@ def notify_report_stopped(
         with pooled_connection("primary") as conn:
             with conn.cursor() as cur:
                 if cleanup_web_config:
+                    # Hold the row lock across the delete and the UPDATE below, not
+                    # just the SELECT that acquires it -- see the autocommit note
+                    # in the docstring.
+                    conn.autocommit = False
                     cur.execute(
                         "SELECT execution_token FROM reports WHERE uuid = %s FOR UPDATE",
                         (report_uuid,),
