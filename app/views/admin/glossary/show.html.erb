@@ -39,7 +39,7 @@
         <%= render "admin/glossary/term", term: "Security Grade", definition: "An A+ through F letter grade for a scan, computed from the Attack Success Rate adjusted by a risk penalty. Probes with higher Social Impact Scores that succeed carry heavier penalties." %>
         <%= render "admin/glossary/term", term: "Max Score", definition: "The highest detector confidence score reached by a probe across all its attempts, shown as a percentage. Indicates how definitively the detector classified a response as vulnerable." %>
         <%= render "admin/glossary/term", term: "Successful Attacks / Passed", definition: "The number of probe attempts where the attack succeeded — meaning the target model responded in a way that the detector classified as vulnerable. Shown as a ratio (e.g., 3 / 40)." %>
-        <%= render "admin/glossary/term", term: "Vulnerabilities Found", definition: "The number of detectors that recorded at least one successful attack in a report — one count per detector that found something, not per attack attempt." %>
+        <%= render "admin/glossary/term", term: "Vulnerabilities Found", definition: "The number of distinct probes (attack techniques) where at least one attack succeeded — one count per bypassed probe, not per detector and not per attack attempt." %>
         <%= render "admin/glossary/term", term: "Token Usage", definition: "The number of LLM tokens consumed during a scan, broken down into input tokens (prompts sent) and output tokens (model responses). Used for cost estimation and monitoring." %>
       </dl>
     </div>

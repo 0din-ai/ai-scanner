@@ -514,13 +514,14 @@ class Report < ApplicationRecord
     cached_total
   end
 
-  # Detectors that found something. `passed` is successful attacks -- the same column
-  # #total_successful_attacks sums -- so a detector identified a vulnerability when at
-  # least one attack against it succeeded. Counting `passed < total` inverted that: a
-  # report with 0/84 successful attacks claimed two vulnerabilities, and a detector
-  # bypassed on every attempt (80/80) was counted as clean.
+  # Distinct probes (attack techniques) where at least one attack succeeded. Counting
+  # detector_results undercounts: detector_results is unique per (detector, report), and
+  # most 0din probes declare the same shared detector, so a report where one probe was
+  # bypassed and one where twenty were both read "1" detector row. Counting probe_results
+  # via any_detector_passed matches Scans::StatsSerializer#top_vulnerabilities_info, which
+  # already counts probes the same way for the same page.
   def security_vulnerabilities_count
-    detector_results.where("passed > 0").count
+    probe_results.where(any_detector_passed: true).count
   end
 
   # Compute total input tokens from all probe results

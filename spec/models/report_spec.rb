@@ -1627,37 +1627,59 @@ RSpec.describe Report, type: :model do
       end
     end
 
-    # `passed` is successful attacks (Report#total_successful_attacks sums the same column).
-    # Counting `passed < total` read it as "attempts resisted", so a report where nothing
-    # succeeded claimed vulnerabilities and the detector that found every one was ignored.
+    # "Vulnerabilities Found" names an attack technique that worked, not a detector row.
+    # `detector_results` is unique per (detector, report) -- most 0din probes declare the
+    # same shared detector (e.g. 0din.MitigationBypass), so a report where three distinct
+    # probes were each bypassed still has exactly one detector_result row for that
+    # detector. Counting detector_results therefore reads "1" next to a probe list that
+    # enumerates three bypassed techniques. Counting probe_results.any_detector_passed
+    # matches Scans::StatsSerializer#top_vulnerabilities_info, which already counts probes
+    # the same way for the same page.
     #
-    # Two fully-bypassed detectors (passed == total, both > 0) and one clean detector
-    # (passed == 0) make the old and new queries diverge: `passed < total` counts only
-    # the clean row (old = 1), `passed > 0` counts both bypassed rows (new = 2). A
-    # fixture with just one bypassed row and one clean row lands on the same integer
-    # under both queries and would not pin the regression.
-    it 'counts detectors where at least one attack succeeded' do
+    # Three probes sharing one detector, all bypassed: the old detector-row count and the
+    # new probe count diverge here (old = 1 detector_result row, new = 3 bypassed probes),
+    # so this fixture pins the regression -- a fixture where both queries land on the same
+    # integer would not.
+    it 'counts distinct probes where at least one attack succeeded, not detector rows' do
       ActsAsTenant.with_tenant(company) do
-        create(:detector_result, report: report, detector: create(:detector), passed: 4, total: 4)
-        create(:detector_result, report: report, detector: create(:detector), passed: 10, total: 10)
-        create(:detector_result, report: report, detector: create(:detector), passed: 0, total: 80)
+        shared_detector = create(:detector, name: "0din.MitigationBypass")
+        create(:detector_result, report: report, detector: shared_detector, passed: 14, total: 14)
+
+        create(:probe_result, report: report, probe: create(:probe), detector: shared_detector,
+                               passed: 4, total: 4, any_detector_passed: true)
+        create(:probe_result, report: report, probe: create(:probe), detector: shared_detector,
+                               passed: 10, total: 10, any_detector_passed: true)
+        create(:probe_result, report: report, probe: create(:probe), detector: shared_detector,
+                               passed: 0, total: 80, any_detector_passed: false)
       end
 
       expect(report.security_vulnerabilities_count).to eq(2)
     end
 
-    it 'counts nothing when every attack was blocked' do
+    it 'counts nothing when every probe was blocked' do
       ActsAsTenant.with_tenant(company) do
-        create(:detector_result, report: report, detector: create(:detector), passed: 0, total: 4)
-        create(:detector_result, report: report, detector: create(:detector), passed: 0, total: 80)
+        create(:probe_result, report: report, probe: create(:probe), passed: 0, total: 4,
+                               any_detector_passed: false)
+        create(:probe_result, report: report, probe: create(:probe), passed: 0, total: 80,
+                               any_detector_passed: false)
       end
 
       expect(report.security_vulnerabilities_count).to eq(0)
     end
 
-    it 'counts a detector that was fully bypassed' do
+    it 'counts a probe that was fully bypassed' do
       ActsAsTenant.with_tenant(company) do
-        create(:detector_result, report: report, detector: create(:detector), passed: 80, total: 80)
+        create(:probe_result, report: report, probe: create(:probe), passed: 80, total: 80,
+                               any_detector_passed: true)
+      end
+
+      expect(report.security_vulnerabilities_count).to eq(1)
+    end
+
+    it 'counts a multi-detector probe where any_detector_passed is true even though the stored passed is 0' do
+      ActsAsTenant.with_tenant(company) do
+        create(:probe_result, report: report, probe: create(:probe), passed: 0, total: 10,
+                               any_detector_passed: true)
       end
 
       expect(report.security_vulnerabilities_count).to eq(1)
