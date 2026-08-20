@@ -16,7 +16,9 @@ describe('99: cleanup tracked resources', function () {
     if (err.message.includes('did not contain the expected') && err.message.includes('turbo-frame')) {
       return false
     }
-    if (err.name === 'AbortError' && err.message === 'The user aborted a request.') {
+    // Match on err.name alone: the exact wording is engine-specific (Chromium says
+    // "The user aborted a request.", other engines say "The operation was aborted.").
+    if (err.name === 'AbortError') {
       return false
     }
     return true
