@@ -121,6 +121,63 @@ RSpec.describe Target, type: :model do
         target = build(:target, target_type: :api, json_config: "")
         expect(target).to be_valid
       end
+
+      it "does not re-resolve an unchanged URI for a save that touches only an unrelated column" do
+        allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+          UrlSafetyValidator::Result.new("safe?": true, error: nil, resolved_ips: [ "93.184.216.34" ])
+        )
+        target = create(
+          :target,
+          target_type: :api,
+          json_config: { rest: { RestGenerator: { uri: "https://example.com/v1/generate" } } }.to_json
+        )
+
+        # The URI would now fail DNS resolution -- prove the validator is not
+        # even consulted for a save that never touched json_config.
+        allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+          UrlSafetyValidator::Result.new("safe?": false, error: "Could not resolve hostname")
+        )
+
+        expect(UrlSafetyValidator).not_to receive(:safe_url?)
+        target.update!(status: :good, validation_text: "Target validated successfully")
+        expect(target.reload).to be_good
+      end
+
+      it "still re-resolves a changed URI before persisting it" do
+        allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+          UrlSafetyValidator::Result.new("safe?": true, error: nil, resolved_ips: [ "93.184.216.34" ])
+        )
+        target = create(
+          :target,
+          target_type: :api,
+          json_config: { rest: { RestGenerator: { uri: "https://example.com/v1/generate" } } }.to_json
+        )
+
+        allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+          UrlSafetyValidator::Result.new("safe?": false, error: "Could not resolve hostname")
+        )
+
+        expect {
+          target.update!(
+            json_config: { rest: { RestGenerator: { uri: "https://unresolved.example/v1/generate" } } }.to_json
+          )
+        }.to raise_error(ActiveRecord::RecordInvalid, /Could not resolve hostname/)
+      end
+
+      it "re-validates a brand new record even though nothing has changed yet" do
+        allow(UrlSafetyValidator).to receive(:safe_url?).and_return(
+          UrlSafetyValidator::Result.new("safe?": false, error: "Could not resolve hostname")
+        )
+
+        target = build(
+          :target,
+          target_type: :api,
+          json_config: { rest: { RestGenerator: { uri: "https://unresolved.example/v1/generate" } } }.to_json
+        )
+
+        expect(target).not_to be_valid
+        expect(target.errors[:json_config]).to include(/Could not resolve hostname/)
+      end
     end
 
     context "for webchat targets" do

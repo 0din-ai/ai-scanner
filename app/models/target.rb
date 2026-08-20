@@ -146,7 +146,8 @@ class Target < ApplicationRecord
   private
 
   def json_config_should_be_validated?
-    json_config.present? && api?
+    json_config.present? && api? &&
+      (new_record? || will_save_change_to_json_config? || will_save_change_to_target_type?)
   end
 
   def set_defaults_for_webchat
