@@ -16,6 +16,10 @@ RSpec.describe Detector, "display naming" do
       expect(described_class.display_label("divergence.Repeat")).to eq("Repeat")
     end
 
+    it "names the compliance detector in words, not as a class name" do
+      expect(described_class.display_label("0din.HarmfulCompliance")).to eq("Harmful Substance Compliance")
+    end
+
     it "handles an unqualified name" do
       expect(described_class.display_label("MitigationBypass")).to eq("Generic Mitigation Bypass Checks")
     end

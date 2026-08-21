@@ -114,5 +114,63 @@ class TestMultiShotConversationNotes(unittest.TestCase):
         self.assertNotIn("multiturn_conversation", result.notes)
 
 
+class _FailOnTurnsGenerator:
+    """Raises on the given 1-indexed turn numbers, otherwise returns a compliant reply."""
+
+    def __init__(self, fail_on, reply="Step 1: heat to 80 C for 3 hours. Step 2: filter."):
+        self.fail_on = set(fail_on)
+        self.reply = reply
+        self.calls = 0
+
+    def generate(self, conversation, generations_this_call=1):
+        from garak.attempt import Message
+
+        self.calls += 1
+        if self.calls in self.fail_on:
+            raise RuntimeError("transient generator error")
+        return [Message(text=self.reply, lang="en")]
+
+
+@unittest.skipUnless(_garak_available(), "garak is not importable")
+class TestMultiShotGenerationFailureNote(unittest.TestCase):
+    """C2: GENERATION_FAILED_NOTE must reflect whether ANY evidence about the model
+    survived the attempt, not whether any single turn raised. A note set whenever any
+    turn fails discards a confirmed bypass on a later, successful turn -- the detector
+    returns [None] for the whole attempt and it vanishes from the report entirely."""
+
+    def setUp(self):
+        from garak.attempt import Attempt, Message
+
+        self.module = _load_local_plugin("local_0din_multishot_failure", "probes/0din.py")
+        self.probe = object.__new__(self.module.NotionTemplate)
+        self.probe.lang = "en"
+        self.combined_prompt = "first ask\n\n--\n\nsecond ask"
+        self.probe._prompt_data_map = {
+            self.combined_prompt: ("sarin gas", ["first ask", "second ask"])
+        }
+        self.attempt = Attempt(
+            prompt=Message(text=self.combined_prompt, lang="en"),
+            probe_classname="0din.NotionTemplate",
+        )
+
+    def test_a_surviving_turn_after_a_failed_one_is_not_our_failure(self):
+        # Turn 1 raises; turn 2 comes back with a full compliant answer. That answer
+        # is evidence about the model and must be scored -- so the note must NOT be
+        # set, and the surviving turn's text must reach the combined output.
+        self.probe.generator = _FailOnTurnsGenerator(fail_on={1})
+        result = self.probe._execute_attempt(self.attempt)
+
+        self.assertNotIn(self.module.GENERATION_FAILED_NOTE, result.notes)
+        self.assertIn("heat to 80 C", result.all_outputs[0].text)
+
+    def test_a_wholly_failed_attempt_still_sets_the_note(self):
+        # Nothing came back at all -- this is our infrastructure's problem, not the
+        # model's, and the note must still be set so the detector returns None.
+        self.probe.generator = _FailOnTurnsGenerator(fail_on={1, 2})
+        result = self.probe._execute_attempt(self.attempt)
+
+        self.assertTrue(result.notes.get(self.module.GENERATION_FAILED_NOTE))
+
+
 if __name__ == "__main__":
     unittest.main()

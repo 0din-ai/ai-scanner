@@ -124,6 +124,23 @@ class TestLocalPluginSources(unittest.TestCase):
             match = PROMPT_REASSIGNMENT_RE.search(source)
             self.assertIsNone(match, f"{relative_path} reassigns attempt.prompt: {match and match.group(0)!r}")
 
+    def test_both_install_paths_ship_every_helper_the_detectors_import(self):
+        # detectors/0din.py imports these at module scope: a path that ships the
+        # detector without them fails to import EVERY 0din detector in that image.
+        helpers = [
+            name.stem
+            for name in (PLUGIN_DIR / "detectors").glob("_*.py")
+        ]
+        self.assertTrue(helpers, "expected at least one private helper module")
+
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        dockerfile_dev = (ROOT / "Dockerfile.dev").read_text()
+
+        for helper in helpers:
+            with self.subTest(helper=helper):
+                self.assertIn(f"detectors/{helper}.py", dockerfile)
+                self.assertIn(f"detectors/{helper}.py", dockerfile_dev)
+
 
 @unittest.skipUnless(_garak_available(), "garak is not importable")
 class TestOpenRouterTerminalErrors(unittest.TestCase):

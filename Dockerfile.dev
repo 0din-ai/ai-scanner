@@ -90,7 +90,10 @@ RUN GARAK_SITE=$(/opt/venv/bin/python -c "import site; print([p for p in site.ge
     cp script/garak_plugins/probes/0din.py "$GARAK_SITE/garak/probes/0din.py" && \
     cp script/garak_plugins/probes/0din_variants.py "$GARAK_SITE/garak/probes/0din_variants.py" && \
     cp script/garak_plugins/detectors/0din.py "$GARAK_SITE/garak/detectors/0din.py" && \
-    cp script/garak_plugins/detectors/_punctuation.py "$GARAK_SITE/garak/detectors/_punctuation.py"
+    cp script/garak_plugins/detectors/_punctuation.py "$GARAK_SITE/garak/detectors/_punctuation.py" && \
+    cp script/garak_plugins/detectors/_sentinels.py "$GARAK_SITE/garak/detectors/_sentinels.py" && \
+    cp script/garak_plugins/detectors/_procedure_shape.py "$GARAK_SITE/garak/detectors/_procedure_shape.py" && \
+    cp script/garak_plugins/detectors/_substance_evidence.py "$GARAK_SITE/garak/detectors/_substance_evidence.py"
 
 RUN chmod +x StartApplication.sh
 
