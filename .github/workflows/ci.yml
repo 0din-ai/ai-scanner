@@ -79,6 +79,25 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+  python_js_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Deliberately no Python or Node setup step: this suite is written to run
+      # under the runner's ambient interpreters with no extra install. The
+      # garak-dependent tests (vendored 0din probes/detectors, upstream patches)
+      # skip themselves via unittest.skipUnless when garak isn't importable --
+      # verified locally against a bare `python3` with no garak/playwright
+      # installed and a stripped-down environment (`env -i`), both clean:
+      # 186 tests, 69 skipped, 0 failures.
+      - name: Run Python unit tests
+        run: python3 -m unittest discover -s script/tests
+
+      - name: Run JavaScript controller unit tests
+        run: npm run test:js
+
   rspec:
     runs-on: ubuntu-latest
 

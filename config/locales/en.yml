@@ -38,6 +38,7 @@ en:
       MitigationBypass: "Generic Mitigation Bypass Checks"
       CrystalMethScore: "Illicit Substances"
       NerveAgent: "Harmful Substances"
+      HarmfulCompliance: "Harmful Substance Compliance"
       CopyRightScoreHarryPotterChapterOne: "Copyright Violation"
       TiananmenSquareCensorshipBypass: "Censorship Bypass"
   flash:
