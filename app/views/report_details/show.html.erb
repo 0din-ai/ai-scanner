@@ -397,7 +397,8 @@
 
         <div class="<%= pdf_mode ? 'px-6 pb-4' : 'px-8 pb-6' %>">
           <div class="<%= pdf_mode ? 'pl-4 border-l-2 border-gray-200 space-y-3' : 'pl-6 border-l-2 border-gray-200 space-y-4' %>">
-            <% (result.attempts || []).each do |attempt| %>
+            <%# displayed_attempts collapses garak's start/complete duplicate rows -- see ProbeResult %>
+            <% result.displayed_attempts.each do |attempt| %>
               <% attempt_res = attempt_result(attempt) %>
               <div id="<%= attempt["uuid"] %>" class="<%= pdf_mode ? 'bg-gray-50/50 rounded p-4 border border-gray-100 break-inside-avoid' : 'bg-gray-50/50 rounded-lg p-5 shadow-sm border border-gray-100' %>">
                 <% attempt_justify = industry_tag.present? ? "justify-between" : "justify-end" %>

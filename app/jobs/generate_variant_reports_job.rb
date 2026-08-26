@@ -46,6 +46,13 @@ class GenerateVariantReportsJob < ApplicationJob
       company: parent_report.company,
       parent_report_id: parent_report.id,
       status: :pending,
+      # Inherited, not re-resolved: the child re-runs probes the parent selected under
+      # ITS threshold, so resolving afresh could score them against a different one and
+      # make the pair incomparable. pin_evaluation_threshold! rather than a bare read,
+      # because a parent created before the column exists is still NULL -- and
+      # inheriting nil would let the child resolve its own value and reintroduce
+      # exactly that mismatch.
+      evaluation_threshold: parent_report.pin_evaluation_threshold!,
       name: "#{parent_report.name} - All Variants"
     )
 

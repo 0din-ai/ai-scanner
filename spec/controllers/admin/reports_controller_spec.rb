@@ -278,6 +278,55 @@ RSpec.describe Admin::ReportsController, type: :controller do
     end
   end
 
+  describe "duplicate lifecycle rows" do
+    # garak records each evaluated item twice, once at attempt start and once at
+    # completion, and both rows carry the output text.
+    def lifecycle_pair(uuid:, response:)
+      [
+        { "uuid" => uuid, "prompt" => "how is it made?", "outputs" => [ response ], "attack_succeeded" => nil },
+        { "uuid" => uuid, "prompt" => "how is it made?", "outputs" => [ response ], "attack_succeeded" => true }
+      ]
+    end
+
+    let!(:duplicated_result) do
+      ActsAsTenant.with_tenant(company) do
+        create(:probe_result, report: report, total: 2, passed: 1,
+               attempts: lifecycle_pair(uuid: "one", response: "first response") +
+                         lifecycle_pair(uuid: "two", response: "second response"))
+      end
+    end
+
+    it "renders one row per evaluated item, not one per stored row" do
+      get :probe_attempts, params: { id: report.id, probe_result_id: duplicated_result.id }
+
+      # Two evaluated items, four stored rows. Each rendered card carries its own
+      # data-attempt-index value, so the distinct values count the rows on screen.
+      indexes = response.body.scan(/data-attempt-index="([^"]+)"/).flatten.uniq
+
+      expect(indexes.length).to eq(2)
+    end
+
+    it "resolves attempt_content against the same de-duplicated ordering" do
+      # Index 1 is the SECOND ITEM once duplicates collapse. Against the raw list it
+      # was the start copy of the first item, so the reader clicking the second row
+      # was served the first row's response.
+      get :attempt_content, params: {
+        id: report.id, probe_result_id: duplicated_result.id, attempt_index: 1
+      }
+
+      expect(response.body).to include("second response")
+      expect(response.body).not_to include("first response")
+    end
+
+    it "has no index beyond the number of evaluated items" do
+      get :attempt_content, params: {
+        id: report.id, probe_result_id: duplicated_result.id, attempt_index: 2
+      }
+
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
   describe "GET #attempt_content" do
     let!(:probe_result) do
       ActsAsTenant.with_tenant(company) do

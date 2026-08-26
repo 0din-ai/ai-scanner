@@ -9,6 +9,87 @@ RSpec.describe ProbeResult, type: :model do
   describe 'validations' do
   end
 
+  describe '#displayed_attempts' do
+    # garak records each evaluated item twice -- once when the attempt starts and
+    # again when it completes -- and both copies carry the same output text. The
+    # start copy has no detector results yet, so it renders with no verdict.
+    def lifecycle_pair(uuid:, text:, prompt: "how is it made?")
+      [
+        { "uuid" => uuid, "prompt" => { "turns" => [ { "role" => "user", "content" => { "text" => prompt } } ] },
+          "outputs" => [ { "text" => text } ], "attack_succeeded" => nil },
+        { "uuid" => uuid, "prompt" => { "turns" => [ { "role" => "user", "content" => { "text" => prompt } } ] },
+          "outputs" => [ { "text" => text } ], "attack_succeeded" => true }
+      ]
+    end
+
+    it 'collapses each start/completion pair to one row' do
+      result = build(:probe_result, attempts: lifecycle_pair(uuid: "a", text: "one") +
+                                              lifecycle_pair(uuid: "b", text: "two"))
+
+      expect(result.displayed_attempts.length).to eq(2)
+    end
+
+    it 'keeps the completed copy, which is the one carrying the verdict' do
+      result = build(:probe_result, attempts: lifecycle_pair(uuid: "a", text: "one"))
+
+      expect(result.displayed_attempts.first["attack_succeeded"]).to be(true)
+    end
+
+    it 'collapses interleaved copies rather than only adjacent ones' do
+      a = lifecycle_pair(uuid: "a", text: "one")
+      b = lifecycle_pair(uuid: "b", text: "two")
+      result = build(:probe_result, attempts: [ a[0], b[0], a[1], b[1] ])
+
+      expect(result.displayed_attempts.map { |x| x["uuid"] }).to eq(%w[a b])
+    end
+
+    it 'keeps distinct responses to the same prompt when rows carry no uuid' do
+      # Without a uuid the only identity available is the prompt, which two genuinely
+      # different responses share. Collapsing those would drop a response, and a
+      # dropped response can be a successful attack.
+      result = build(:probe_result, attempts: [
+        { "prompt" => "same", "outputs" => [ { "text" => "first" } ] },
+        { "prompt" => "same", "outputs" => [ { "text" => "second" } ] }
+      ])
+
+      expect(result.displayed_attempts.length).to eq(2)
+    end
+
+    it 'keeps uuid-less rows even when prompt and response are identical' do
+      # The duplication this collapses is garak's attempt lifecycle, and those two
+      # rows always share a uuid -- so a row without one cannot be a lifecycle copy.
+      # Two genuine calls can produce the same prompt and response against a
+      # deterministic target, and dropping one would lose evidence and undercount
+      # tokens. Losing a real response is the unsafe direction.
+      row = { "prompt" => "same", "outputs" => [ { "text" => "one" } ] }
+      result = build(:probe_result, attempts: [ row, row.dup ])
+
+      expect(result.displayed_attempts.length).to eq(2)
+    end
+
+    it 'skips malformed rows rather than raising' do
+      result = build(:probe_result, attempts: [ "not a hash", nil, { "uuid" => "a" } ])
+
+      expect(result.displayed_attempts).to eq([ { "uuid" => "a" } ])
+    end
+
+    it 'returns an empty list when there are no attempts' do
+      expect(build(:probe_result, attempts: []).displayed_attempts).to eq([])
+    end
+
+    it 'is what token estimation must count, so one API call counts once' do
+      # The lifecycle pair describes ONE call to the model. Summing the raw rows
+      # doubled every reported token count and every cost projection built on it.
+      result = build(:probe_result, attempts: lifecycle_pair(uuid: "a", text: "a response"))
+
+      raw = TokenEstimator.estimate_from_attempts(result.attempts)
+      deduped = TokenEstimator.estimate_from_attempts(result.displayed_attempts)
+
+      expect(deduped[:output_tokens]).to eq(raw[:output_tokens] / 2)
+      expect(deduped[:output_tokens]).to be > 0
+    end
+  end
+
   describe 'attempts normalization' do
     it 'normalizes nil attempts to empty array before validation' do
       result = build(:probe_result, :nil_attempts)

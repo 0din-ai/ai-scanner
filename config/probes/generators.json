@@ -2,9 +2,6 @@
   "azure": [
     "AzureOpenAIGenerator"
   ],
-  "base": [
-    "Generator"
-  ],
   "bedrock": [
     "BedrockGenerator"
   ],
@@ -21,9 +18,6 @@
     "NeMoGuardrails"
   ],
   "huggingface": [
-    "HFInternalServerError",
-    "HFLoadingException",
-    "HFRateLimitException",
     "InferenceAPI",
     "InferenceEndpoint",
     "LLaVA",
@@ -41,9 +35,6 @@
   ],
   "mistral": [
     "MistralGenerator"
-  ],
-  "nemo": [
-    "NeMoGenerator"
   ],
   "nim": [
     "NVMultimodal",

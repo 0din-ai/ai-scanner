@@ -26,6 +26,46 @@ class ProbeResult < ApplicationRecord
 
   before_validation :normalize_attempts
 
+  # One row per evaluated ITEM, for display.
+  #
+  # garak writes each evaluated item TWICE -- once when the attempt starts and again
+  # when it completes -- and BOTH copies carry the output text, so the raw list shows
+  # every prompt/response pair twice. `passed`/`total` come from garak's eval row and
+  # count items rather than rows, so the headline count stayed correct while the
+  # evidence list below it doubled: a probe result reporting "0 of 4" rendered eight
+  # pairs. Worse, the start copy has no detector results yet, so half the rendered
+  # rows carried no verdict at all. Rendering the raw list also emitted duplicate DOM
+  # ids, since the uuid is used as the element id.
+  #
+  # The LAST copy wins: that is the completed one, carrying the detector's verdict.
+  def displayed_attempts
+    Array(attempts).each_with_object({}) do |attempt, kept|
+      next unless attempt.is_a?(Hash)
+
+      kept[self.class.send(:displayed_attempt_key, attempt)] = attempt
+    end.values
+  end
+
+  # garak assigns one uuid per evaluated item and reuses it for BOTH lifecycle rows,
+  # so the uuid is the item identity -- correct however many generations there are,
+  # in whatever order the rows arrive, and even when two items carry the same prompt.
+  #
+  # A row with no uuid is deliberately left alone rather than keyed on its content.
+  # The duplication this collapses is garak's attempt lifecycle, and those two rows
+  # always share a uuid -- so a row without one cannot be a lifecycle copy, and
+  # nothing is gained by folding it into a neighbour. Two genuine calls CAN produce
+  # the same prompt and the same response, especially against a deterministic target,
+  # and collapsing them would drop evidence and undercount tokens. Losing a real
+  # response is the unsafe direction: a dropped response can be a successful attack.
+  def self.displayed_attempt_key(attempt)
+    uuid = attempt["uuid"]
+    return [ :uuid, uuid ] if uuid.present?
+
+    # Identity for a row we cannot identify: unique per row, so it survives.
+    [ :unkeyed, attempt.object_id ]
+  end
+  private_class_method :displayed_attempt_key
+
   def asr_percentage
     return 0 if total.nil? || total.zero?
 

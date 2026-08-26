@@ -29,6 +29,12 @@ class RunGarakScan
     # If all probes already completed (from a previous interrupted run),
     # skip garak and go straight to processing
     if all_probes_completed?
+      # Pin BEFORE returning. This path skips garak entirely and never builds argv, so
+      # without it a report with no snapshot goes straight to processing unpinned:
+      # processing would resolve the live value without persisting it, and a variant
+      # child generated after a later config edit would resolve a different one,
+      # leaving parent and child incomparable.
+      report.pin_evaluation_threshold!
       handle_all_probes_completed
       return
     end
@@ -521,16 +527,33 @@ class RunGarakScan
   end
 
   def evaluation_threshold
-    with_report_tenant do
-      env_var = target.environment_variables.find_by(env_name: EVALUATION_THRESHOLD_ENV_NAME) ||
-        EnvironmentVariable.global.find_by(env_name: EVALUATION_THRESHOLD_ENV_NAME)
+    # The report's snapshot, never a fresh resolve. It is written once at creation and
+    # survives retries, so every segment of a report -- including one relaunched after
+    # an interruption -- is evaluated against the same value. Re-resolving here would
+    # let an edit to EVALUATION_THRESHOLD land mid-report and desync garak's own passed
+    # count from the success flags derived at processing time.
+    #
+    # A report with no snapshot predates the column, or was created by an old pod
+    # during a rolling deploy. pin_evaluation_threshold! resolves it once and PERSISTS
+    # it before this launch, so processing cannot later resolve a different value.
+    #
+    # Always emitted, including at the default. Omitting the flag would leave garak to
+    # apply its own default -- a second default that happens to equal ours today;
+    # passing the resolved value explicitly removes the chance of the two drifting.
+    value = with_report_tenant { report.pin_evaluation_threshold! }
+    return if value.nil?
 
-      if env_var&.env_value
-        value = env_var.env_value.to_s.strip
-        raise ArgumentError, "Invalid evaluation threshold: #{value}" unless value.match?(/\A\d+(\.\d+)?\z/)
-        [ "--eval_threshold", value ]
-      end
+    # Checked as a NUMBER, not as decimal text. EnvironmentVariable validates this
+    # value with `numericality: 0..1`, which accepts 0.00001 -- and Float#to_s renders
+    # that as "1.0e-05", which a decimal-only pattern rejects. Matching on the string
+    # would fail the scan while building argv for a threshold the app accepted.
+    # garak parses the flag with float(), which reads exponent notation fine.
+    threshold = Float(value)
+    unless threshold.finite? && threshold.between?(0, 1)
+      raise ArgumentError, "Invalid evaluation threshold: #{value.inspect}"
     end
+
+    [ "--eval_threshold", threshold.to_s ]
   end
 
   def with_report_tenant(&block)

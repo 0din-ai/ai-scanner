@@ -26,6 +26,17 @@ class SyncProbesJob < ApplicationJob
   private
 
   def perform_sync
+    # Runs on every sync, BEFORE the unchanged-source early return below.
+    #
+    # It repairs detectors an earlier cleanup hid, and that repair is needed exactly
+    # where the sources have NOT changed -- a deploy that ships no probe-catalog edit
+    # would otherwise never reach it, so the installations most in need of the repair
+    # would never get it. The detector graph can also go stale without a source
+    # change: probes are enabled and disabled independently of it.
+    #
+    # A handful of queries, and idempotent, so running it every tick costs nothing.
+    cleanup_detectors
+
     # Skip if nothing has changed since last sync
     unless needs_sync?
       Rails.logger.info "[SyncProbesJob] Probe data unchanged since last sync, skipping"
@@ -45,6 +56,8 @@ class SyncProbesJob < ApplicationJob
       had_failures = true if result && result[:success] == false
     end
 
+    # Again after the sources ran: this pass is the one that acts on what they just
+    # changed -- newly disabled probes, detectors a repoint left behind.
     cleanup_detectors
 
     if had_failures
@@ -59,16 +72,36 @@ class SyncProbesJob < ApplicationJob
     ProbeSourceRegistry.sources.any? { |source_class| source_class.new.needs_sync? }
   end
 
+  # A detector cited by any stored result must survive cleanup, whichever query is
+  # about to remove it. Shared so the two cannot drift apart.
+  NOT_REFERENCED_BY_STORED_RESULTS = <<~SQL.squish
+    NOT EXISTS (SELECT 1 FROM detector_results WHERE detector_results.detector_id = detectors.id)
+    AND NOT EXISTS (SELECT 1 FROM probe_results WHERE probe_results.detector_id = detectors.id)
+  SQL
+
   def cleanup_detectors
     Rails.logger.info "Cleaning up detectors..."
 
-    # Get all detectors that are not referenced by any probes (including deleted detectors)
+    # Detectors nothing references at all -- no probes, and no stored results.
+    #
+    # The stored-results half is not optional. detector_results is
+    # `dependent: :destroy`, so hard-deleting a detector a report still cites throws
+    # that report's rows away, and the probe_results foreign key then raises and
+    # aborts the sync partway through, leaving the catalog half-updated.
     unreferenced_detectors = Detector.with_deleted
                                     .left_joins(:probes)
                                     .where(probes: { detector_id: nil })
+                                    .where(NOT_REFERENCED_BY_STORED_RESULTS)
                                     .distinct
 
-    # Get detectors only referenced by disabled probes (including deleted detectors)
+    # Detectors only reachable through disabled probes, and cited by no stored result.
+    #
+    # Detector has `default_scope { where(deleted_at: nil) }`, so soft-deleting one
+    # does not merely hide it from probe pickers -- it drops out of every association
+    # and join in the app. Historical reports then read `probe_result.detector` as nil
+    # and vanish from any detector breakdown that joins detectors. Repointing a probe
+    # family to a new detector is enough to trigger it: the old detector is left
+    # holding only disabled probes, however much history still cites it.
     detectors_with_only_disabled_probes = Detector.with_deleted
                                                  .joins(:probes)
                                                  .where(probes: { enabled: false })
@@ -76,6 +109,7 @@ class SyncProbesJob < ApplicationJob
                                                                        .joins(:probes)
                                                                        .where(probes: { enabled: true })
                                                                        .select(:id))
+                                                 .where(NOT_REFERENCED_BY_STORED_RESULTS)
                                                  .distinct
 
     # Hard delete unreferenced detectors
@@ -96,11 +130,23 @@ class SyncProbesJob < ApplicationJob
       end
     end
 
-    # Restore detectors that are now referenced by enabled probes
-    restored_detectors = Detector.deleted_only.joins(:probes).where(probes: { enabled: true }).distinct
+    # Restore detectors that are referenced again -- by an enabled probe, OR by stored
+    # results.
+    #
+    # The stored-results half is what repairs an installation that already ran the old
+    # cleanup. Guarding the deletes above only stops the bleeding: a detector hidden by
+    # an earlier run has no enabled probe, so a restore query looking at probes alone
+    # would leave it hidden for good. It also unblocks probe sync itself -- the unique
+    # index on detectors.name covers deleted rows too, so `find_or_create_by!` cannot
+    # see the hidden row, tries to insert, and raises.
+    restored_detectors = Detector.deleted_only.where(<<~SQL.squish).distinct
+      EXISTS (SELECT 1 FROM probes WHERE probes.detector_id = detectors.id AND probes.enabled = TRUE)
+      OR EXISTS (SELECT 1 FROM detector_results WHERE detector_results.detector_id = detectors.id)
+      OR EXISTS (SELECT 1 FROM probe_results WHERE probe_results.detector_id = detectors.id)
+    SQL
     restored_count = 0
     restored_detectors.find_each do |detector|
-      Rails.logger.info "Restoring detector (now referenced by enabled probes): #{detector.name} (ID: #{detector.id})"
+      Rails.logger.info "Restoring detector (referenced by an enabled probe or stored results): #{detector.name} (ID: #{detector.id})"
       detector.restore!
       restored_count += 1
     end

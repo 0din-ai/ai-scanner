@@ -13,7 +13,6 @@ module TargetsHelper
     "LangChainServeLLMGenerator" => "LangChain Serve",
     "LiteLLMGenerator" => "LiteLLM",
     "MistralGenerator" => "Mistral AI",
-    "NeMoGenerator" => "NVIDIA NeMo",
     "NVMultimodal" => "NVIDIA Multimodal",
     "NVOpenAIChat" => "NVIDIA OpenAI Chat",
     "NVOpenAICompletion" => "NVIDIA OpenAI Completion",
@@ -32,11 +31,15 @@ module TargetsHelper
     "WatsonXGenerator" => "IBM watsonx"
   }.freeze
 
+  # Real generators we do not offer in the wizard: both load a model into this
+  # process rather than calling a hosted endpoint.
+  #
+  # This list is the WIZARD's choice, not a validation boundary -- Target's model_type
+  # inclusion check reads the catalog file directly, so a name here is still accepted
+  # by the model. The abstract base and Hugging Face's exception classes used to be
+  # listed here too; they are gone because they were never generators and no longer
+  # appear in config/probes/generators.json, not because this list enforces anything.
   EXCLUDED_GENERATORS = %w[
-    Generator
-    HFInternalServerError
-    HFLoadingException
-    HFRateLimitException
     Model
     Pipeline
   ].freeze
@@ -53,7 +56,6 @@ module TargetsHelper
     "langchain_serve" => "LangChain Serve",
     "litellm" => "LiteLLM",
     "mistral" => "Mistral",
-    "nemo" => "NVIDIA NeMo",
     "nim" => "NVIDIA NIM",
     "nvcf" => "NVIDIA Cloud Functions",
     "ollama" => "Ollama",
