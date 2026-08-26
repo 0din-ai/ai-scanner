@@ -121,7 +121,10 @@ module VariantDefaults
   def all_attempts_for_probe(probe_result)
     return [] unless probe_result
 
-    attempts = (probe_result.attempts || []).map do |a|
+    # displayed_attempts collapses garak's start/completion duplicate rows -- see
+    # ProbeResult. Every caller of this list must use the same de-duplicated
+    # ordering, because the attempt_content endpoint looks items up BY INDEX into it.
+    attempts = probe_result.displayed_attempts.map do |a|
       { attempt: a, is_variant: false, variant_industry: nil }
     end
 
@@ -133,7 +136,7 @@ module VariantDefaults
       .order(:id)
       .each do |vpr|
         label = build_variant_label(vpr)
-        (vpr.attempts || []).each do |a|
+        vpr.displayed_attempts.each do |a|
           attempts << { attempt: a, is_variant: true, variant_industry: label }
         end
       end

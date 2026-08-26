@@ -34,6 +34,16 @@ module Reports
       @raw_data.mark_processing!
       report.update!(status: :processing)
 
+      # Pin BEFORE the result transaction, not lazily from inside it. A report
+      # created before the snapshot column exists is pinned the first time anything
+      # asks -- and if that write happened inside the transaction below, a later step
+      # raising would roll the pin back with everything else. The retry would then
+      # resolve live config afresh and could score a run that used a different value,
+      # which is the exact desync the snapshot exists to prevent. A nested
+      # `requires_new` would not help: its savepoint still unwinds with the outer
+      # transaction.
+      report.pin_evaluation_threshold!
+
       Report.transaction do
         process_jsonl_data(@raw_data.jsonl_data, mark_processing: false)
 
@@ -343,14 +353,32 @@ module Reports
       scores.max >= eval_threshold
     end
 
-    # The eval threshold for this report's target, so the per-attempt success
-    # flag agrees with garak's eval rows / the ASR. Prefer the threshold garak
-    # actually used for this run (captured from its start_run setup config dump);
-    # fall back to the live env config only when raw data lacks that entry.
-    # A run value of 0/0.0 is a valid threshold and is honored (only nil/false
-    # are falsy in Ruby, so `0.0 || resolver` correctly keeps 0.0).
+    # The threshold this report was evaluated against, so the per-attempt success flag
+    # agrees with garak's eval rows and the ASR.
+    #
+    # Three sources, in order of authority:
+    #   1. The per-segment value garak reported. Currently NEVER present: garak filters
+    #      its start_run setup row by type and float is the one type it drops, so
+    #      `run.eval_threshold` is absent. Kept for forward compatibility -- if garak
+    #      starts emitting it, it is what actually governed that segment.
+    #   2. The report's snapshot, resolved once at creation and passed to garak at
+    #      launch. This is the live path.
+    #   3. Live config, for reports created before the snapshot column existed.
+    #
+    # Re-resolving from live config -- the old behaviour, and the only one that ever
+    # ran -- meant an edit to EVALUATION_THRESHOLD between launch and processing
+    # silently changed the verdict on a run that had already finished.
+    #
+    # A run value of 0/0.0 is a valid threshold and is honored (only nil/false are
+    # falsy in Ruby, so `0.0 || resolver` correctly keeps 0.0).
     def eval_threshold
-      @eval_threshold ||= (@scan_eval_threshold || EnvironmentVariable.evaluation_threshold_for(report.target)).to_f
+      # pin_evaluation_threshold! persists the legacy fallback rather than re-resolving
+      # it on every pass, so two passes over the same report cannot disagree.
+      @eval_threshold ||= (
+        @scan_eval_threshold ||
+        report.pin_evaluation_threshold! ||
+        EnvironmentVariable.evaluation_threshold_for(report.target)
+      ).to_f
     end
 
     def process_eval(data)
@@ -385,7 +413,11 @@ module Reports
       attempts_data = report_data.dig(probe_classname, "attempts")
       if attempts_data.present?
         probe_result.attempts = attempts_data
-        token_estimate = TokenEstimator.estimate_from_attempts(probe_result.attempts)
+        # Estimated over the DE-DUPLICATED list. garak records each evaluated item
+        # twice and both copies carry the prompt and the output text, but only one
+        # API call was ever made -- summing the raw rows doubled every token count
+        # and every cost projection built on them.
+        token_estimate = TokenEstimator.estimate_from_attempts(probe_result.displayed_attempts)
         probe_result.input_tokens = token_estimate[:input_tokens]
         probe_result.output_tokens = token_estimate[:output_tokens]
       end

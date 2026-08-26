@@ -26,6 +26,7 @@ Rails 8 + NVIDIA garak scanner for AI model safety assessments.
 ## Pitfalls
 - Always `RAILS_ENV=test` for rspec | Max 5 concurrent scans | `Shellwords.escape` for shell
 - Report execution logs live in `report_debug_logs.logs`; live tails live in `report_debug_logs.tail`; Rails callers should use `Report#logs`
+- `garak` (`garak-requirements.txt`) and `0din-jef` (`scanner-requirements.txt`) are pinned exactly. JEF scores every JEF-backed detector, so relaxing its pin lets a release change customer-visible ASR between two runs of the same scan. Its version string does not order by behaviour (v1.0.0/v1.0.1 were tagged but never published), so `script/tests/test_jef_scoring_contract.py` asserts behaviour instead
 
 ## HTTP/HTTPS
 Localhost: HTTP allowed | Production: `ASSUME_SSL=true` (behind TLS-terminating proxy)

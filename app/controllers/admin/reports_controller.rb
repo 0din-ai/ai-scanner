@@ -188,14 +188,12 @@ module Admin
       end
       attempt_index = raw_index.to_i
 
-      if @report.has_variant_data?
-        all_attempts = @report.all_attempts_for_probe(probe_result)
-        item = all_attempts[attempt_index]
-      else
-        attempts = probe_result.attempts || []
-        raw_attempt = attempts[attempt_index]
-        item = raw_attempt ? { attempt: raw_attempt, variant_industry: nil } : nil
-      end
+      # The same list probe_attempts renders, unconditionally. This endpoint resolves
+      # an item BY INDEX, so any list that differs from the rendered one -- in
+      # de-duplication or in order -- serves the wrong prompt and response for the row
+      # the reader clicked. all_attempts_for_probe already returns main attempts alone
+      # when there is no variant data, so there is nothing for a branch to save.
+      item = @report.all_attempts_for_probe(probe_result)[attempt_index]
 
       if item.nil?
         Rails.logger.warn(

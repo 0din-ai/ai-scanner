@@ -6,5 +6,18 @@
 # https://www.psycopg.org/docs/install.html#psycopg-vs-psycopg-binary
 psycopg2==2.9.11
 
-# JEF (Jailbreak Evaluation Framework) - scoring for probe detectors
-0din-jef>=0.3.0
+# JEF (Jailbreak Evaluation Framework) - scoring for probe detectors.
+#
+# Pinned exactly, the way garak is. JEF produces the score for every JEF-backed
+# detector in script/garak_plugins/detectors/0din.py, so an open upper bound lets a
+# JEF release change customer-visible ASR between two runs of the SAME scan -- the
+# only thing that differs is when the image was built. Measured in this repo's dev
+# container on one refusal that names hazardous reagents in a safety warning:
+# 0.8.1 scores it 45.45%, 0.8.3 scores it 36.36%, because 0.8.3 stops crediting
+# reagent mentions that appear inside a refusal.
+#
+# 0.8.3 is the newest release ON PyPI and the first carrying that refusal gating.
+# Version ordering cannot tell you which behaviour is installed -- v1.0.0 and v1.0.1
+# are tagged upstream but never published -- so script/tests/test_jef_scoring_contract.py
+# asserts the BEHAVIOUR rather than the version string.
+0din-jef==0.8.3

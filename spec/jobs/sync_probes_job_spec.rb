@@ -138,7 +138,7 @@ RSpec.describe SyncProbesJob, type: :job do
 
       it 'restores previously deleted detectors referenced by enabled probes' do
         expect(Rails.logger).to receive(:info).with("Cleaning up detectors...")
-        expect(Rails.logger).to receive(:info).with("Restoring detector (now referenced by enabled probes): active_detector (ID: #{detector.id})")
+        expect(Rails.logger).to receive(:info).with("Restoring detector (referenced by an enabled probe or stored results): active_detector (ID: #{detector.id})")
         expect(Rails.logger).to receive(:info).with("Detector cleanup complete: 0 deleted, 0 soft deleted, 1 restored")
 
         job.send(:cleanup_detectors)
@@ -163,7 +163,7 @@ RSpec.describe SyncProbesJob, type: :job do
         expect(Rails.logger).to receive(:info).with("Cleaning up detectors...")
         expect(Rails.logger).to receive(:info).with("Deleting unreferenced detector: unreferenced (ID: #{unreferenced_detector.id})")
         expect(Rails.logger).to receive(:info).with("Soft deleting detector (only referenced by disabled probes): disabled_only (ID: #{detector_with_disabled_probes.id})")
-        expect(Rails.logger).to receive(:info).with("Restoring detector (now referenced by enabled probes): enabled (ID: #{detector_with_enabled_probes.id})")
+        expect(Rails.logger).to receive(:info).with("Restoring detector (referenced by an enabled probe or stored results): enabled (ID: #{detector_with_enabled_probes.id})")
         expect(Rails.logger).to receive(:info).with("Detector cleanup complete: 1 deleted, 1 soft deleted, 1 restored")
 
         job.send(:cleanup_detectors)

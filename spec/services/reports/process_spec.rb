@@ -676,10 +676,9 @@ RSpec.describe Reports::Process, type: :service do
         expect(by_uuid['a-hit']).not_to have_key('detector_results')
       end
 
-      it 'uses the configured eval threshold so a 0.3 score below garak default still counts as a success' do
+      it "uses the report's own threshold so a 0.3 score below garak default still counts as a success" do
         ActsAsTenant.with_tenant(report.company) do
-          create(:global_environment_variable, company: report.company,
-                 env_name: 'EVALUATION_THRESHOLD', env_value: '0.2')
+          report.update!(evaluation_threshold: 0.2)
           raw_data.update!(jsonl_data: [
             { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
             { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a-low', prompt: 'p', outputs: [ 'o' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.3 ] } }.to_json,
@@ -692,6 +691,55 @@ RSpec.describe Reports::Process, type: :service do
 
         by_uuid = ProbeResult.last.attempts.index_by { |a| a['uuid'] }
         expect(by_uuid['a-low']['attack_succeeded']).to be(true)
+      end
+
+      it 'keeps a legacy pin when the processing transaction rolls back' do
+        # A report created before the snapshot column is pinned the first time
+        # processing asks. That write must not live inside the result transaction:
+        # if a later step raises, the rollback takes the pin with it, and the retry
+        # resolves whatever live config says by then -- scoring a run that actually
+        # used the earlier value.
+        legacy_company = create(:company)
+        legacy_report = ActsAsTenant.with_tenant(legacy_company) do
+          create(:global_environment_variable, company: legacy_company,
+                 env_name: 'EVALUATION_THRESHOLD', env_value: '0.2')
+          create(:report, :running, company: legacy_company,
+                 target: create(:target, company: legacy_company))
+        end
+        create(:raw_report_data, report: legacy_report, jsonl_data: jsonl_content, logs_data: 'logs')
+        Report.unscoped.where(id: legacy_report.id).update_all(evaluation_threshold: nil)
+
+        allow_any_instance_of(described_class).to receive(:save_detector_results)
+          .and_raise(StandardError, "boom")
+
+        ActsAsTenant.with_tenant(legacy_company) do
+          expect { described_class.new(legacy_report.id).call }.to raise_error(StandardError, "boom")
+        end
+
+        expect(Report.unscoped.where(id: legacy_report.id).pick(:evaluation_threshold)).to eq(0.2)
+      end
+
+      it 'ignores a live config change made after the report was created' do
+        # The run already happened, under the threshold the report was pinned to.
+        # Re-resolving live config here would let an edit rewrite the verdict on
+        # finished work, so garak's own passed count and these flags would disagree
+        # over the same items.
+        ActsAsTenant.with_tenant(report.company) do
+          report.update!(evaluation_threshold: 0.5)
+          create(:global_environment_variable, company: report.company,
+                 env_name: 'EVALUATION_THRESHOLD', env_value: '0.2')
+          raw_data.update!(jsonl_data: [
+            { entry_type: 'init', start_time: '2023-06-01T10:00:00Z' }.to_json,
+            { entry_type: 'attempt', probe_classname: '0din.TestProbe', uuid: 'a-low', prompt: 'p', outputs: [ 'o' ], notes: {}, detector_results: { 'detector.test_detector' => [ 0.3 ] } }.to_json,
+            { entry_type: 'eval', detector: 'detector.test_detector', probe: '0din.TestProbe', passed: 1, total_evaluated: 1 }.to_json,
+            { entry_type: 'completion', end_time: '2023-06-01T11:00:00Z' }.to_json
+          ].join("\n"))
+
+          service.call
+        end
+
+        by_uuid = ProbeResult.last.attempts.index_by { |a| a['uuid'] }
+        expect(by_uuid['a-low']['attack_succeeded']).to be(false)
       end
 
       it 'prefers the threshold garak used for the run over live env config' do

@@ -17,6 +17,62 @@ class Report < ApplicationRecord
   validates :target, presence: true
   validates :scan, presence: true
 
+  before_create :snapshot_evaluation_threshold
+
+  # The threshold this report is pinned to, resolving and persisting it if it is still
+  # NULL. Returns the value that WON, which is not necessarily the one this caller
+  # resolved.
+  #
+  # Compare-and-set on purpose. Reading `evaluation_threshold.nil?` in Ruby and then
+  # writing unconditionally loses a race: a caller that reads NULL and stalls can wake
+  # up and overwrite a value a later caller already launched garak with, so the run
+  # would be scored against a threshold it never used. The `evaluation_threshold: nil`
+  # predicate makes the write a no-op once anyone has won, and the read-back hands the
+  # winner's value to every caller.
+  def pin_evaluation_threshold!
+    existing = evaluation_threshold
+    return existing if existing.present?
+
+    # Company is not tenant-scoped, so this association loads under any tenant. The
+    # target IS scoped, which is why it is looked up inside the block below rather
+    # than read from the association here.
+    tenant = company || ActsAsTenant.without_tenant { Target.find_by(id: target_id)&.company }
+    return nil if tenant.blank?
+
+    # Everything below runs under THIS report's tenant, never the ambient one. Report
+    # and Target are both acts_as_tenant, so their default scopes follow whatever
+    # tenant happens to be current. Called with a different one set, the target reads
+    # as nil and the update matches no row: the pin silently does nothing and the
+    # caller falls back to live config, or the read-back returns nil and raises below
+    # as though the report had been deleted.
+    ActsAsTenant.with_tenant(tenant) do
+      # By id, not through the association: a foreign-tenant read may already have
+      # memoized nil on this instance.
+      pinned_target = Target.find_by(id: target_id)
+      return nil if pinned_target.blank?
+
+      resolved = EnvironmentVariable.evaluation_threshold_for(pinned_target)
+
+      self.class.where(id: id, evaluation_threshold: nil).update_all(evaluation_threshold: resolved)
+
+      # Fetch ONLY the winning threshold. A full `reload` would refresh every column
+      # on this instance, execution_token included -- so a launcher that lost the race
+      # would pick up its replacement's token and launch garak holding it, claiming a
+      # slot that is not its own. Write it in memory without marking the attribute
+      # dirty, so a later save on this instance cannot push it back.
+      won = self.class.where(id: id).pick(:evaluation_threshold)
+
+      # nil here means the row was deleted between the write and this read. Failing
+      # open would let the caller resolve live config and spawn garak for a report
+      # that no longer exists -- harmless, but it hides the vanished row. Fail loudly.
+      raise ActiveRecord::RecordNotFound, "Report #{id} vanished while pinning its evaluation threshold" if won.nil?
+
+      write_attribute(:evaluation_threshold, won)
+      clear_attribute_changes([ :evaluation_threshold ])
+      won
+    end
+  end
+
   before_validation :generate_uuid, if: :new_record?
   before_validation :generate_name, if: :new_record?
 
@@ -605,6 +661,31 @@ class Report < ApplicationRecord
   def refund_scan_quota
     return unless failed? || stopped?
     company&.decrement_scan_count!
+  end
+
+  # Pin this report to the evaluation threshold its run will be launched with, once.
+  #
+  # before_create, not before_save: a retry must re-launch under the SAME threshold.
+  # One report evaluating its segments at different thresholds is the bug, not a case
+  # to model faithfully -- an operator wanting a different threshold starts a new run.
+  #
+  # A caller that sets the value explicitly (a variant child inheriting its parent's)
+  # is left alone.
+  def snapshot_evaluation_threshold
+    return if evaluation_threshold.present?
+    return if target.blank?
+
+    # Resolved under THIS report's tenant, never the ambient one. The value lives in a
+    # per-tenant encrypted EnvironmentVariable, and reports are created on paths that
+    # set no tenant. Resolving there would decrypt nothing and return 0.0, pinning the
+    # report to a threshold that makes `scores.max >= threshold` true for EVERY numeric
+    # score -- reporting every attempt as a successful attack.
+    tenant = company || target.company
+    return if tenant.blank?
+
+    ActsAsTenant.with_tenant(tenant) do
+      self.evaluation_threshold = EnvironmentVariable.evaluation_threshold_for(target)
+    end
   end
 
   def generate_uuid
