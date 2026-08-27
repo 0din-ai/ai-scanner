@@ -14,8 +14,10 @@ import json
 from playwright.async_api import async_playwright, Page, Browser, TimeoutError as PlaywrightTimeoutError
 
 from garak.generators.base import Generator
+from garak.generators._network_guard import NetworkGuard
 from garak import _config
 from garak.attempt import Conversation, Message
+
 
 class WebChatbotGenerator(Generator):
     """Web-based chatbot interface using browser automation
@@ -71,6 +73,9 @@ class WebChatbotGenerator(Generator):
             "headers": {},          # extra_http_headers
             "storage_state": None,  # Playwright storage_state object
         },
+        # Supplied by Rails from UrlSafetyValidator::BLOCKED_RANGES. Required:
+        # _init_browser refuses to launch without it rather than browsing unguarded.
+        "network_guard": None,      # {"blocked_cidrs": [...], "allow_loopback": bool}
     }
 
     generator_family_name = "WebChatbot"
@@ -83,6 +88,7 @@ class WebChatbotGenerator(Generator):
         self._context = None
         self._page = None
         self._playwright = None
+        self._network_guard = None
 
         # Call parent to load configuration
         super().__init__(name=name, config_root=config_root)
@@ -161,6 +167,13 @@ class WebChatbotGenerator(Generator):
             self._context = await self._browser.new_context(
                 **self._build_context_kwargs(getattr(self, "auth", None), self.browser_options)
             )
+
+            # Before the first navigation: Rails validated self.url at scan launch,
+            # but a redirect or in-page JS can move the browser somewhere it never
+            # checked. The guard re-screens every request for the life of the context.
+            self._network_guard = NetworkGuard(getattr(self, "network_guard", None))
+            await self._context.route("**/*", self._network_guard.handle)
+
             cookies = self._normalize_cookies((getattr(self, "auth", None) or {}).get("cookies") or [])
             if cookies:
                 await self._context.add_cookies(cookies)

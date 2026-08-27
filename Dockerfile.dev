@@ -89,6 +89,7 @@ RUN GARAK_SITE=$(/opt/venv/bin/python -c "import site; print([p for p in site.ge
     mkdir -p "$GARAK_SITE/garak/generators" "$GARAK_SITE/garak/probes" "$GARAK_SITE/garak/detectors" && \
     cp script/garak_plugins/openrouter.py "$GARAK_SITE/garak/generators/openrouter.py" && \
     cp script/garak_plugins/web_chatbot.py "$GARAK_SITE/garak/generators/web_chatbot.py" && \
+    cp script/garak_plugins/_network_guard.py "$GARAK_SITE/garak/generators/_network_guard.py" && \
     cp script/garak_plugins/probes/0din.py "$GARAK_SITE/garak/probes/0din.py" && \
     cp script/garak_plugins/probes/0din_variants.py "$GARAK_SITE/garak/probes/0din_variants.py" && \
     cp script/garak_plugins/detectors/0din.py "$GARAK_SITE/garak/detectors/0din.py" && \

@@ -352,4 +352,26 @@ RSpec.describe UrlSafetyValidator do
       expect(result.safe?).to be true
     end
   end
+
+  # The out-of-process browser drivers (the Node Playwright scripts and the Python
+  # WebChatbotGenerator) re-screen every request the browser makes. They read this
+  # list rather than redeclaring the ranges, so a range added here reaches them too.
+  describe ".blocked_cidrs" do
+    it "serializes every blocked range" do
+      expect(described_class.blocked_cidrs.size).to eq(described_class::BLOCKED_RANGES.size)
+    end
+
+    it "emits parsable CIDR strings that round-trip to the same ranges" do
+      described_class.blocked_cidrs.zip(described_class::BLOCKED_RANGES).each do |cidr, range|
+        expect(IPAddr.new(cidr)).to eq(range)
+        expect(IPAddr.new(cidr).prefix).to eq(range.prefix)
+      end
+    end
+
+    it "includes the RFC1918 and cloud-metadata ranges an SSRF aims at" do
+      expect(described_class.blocked_cidrs).to include(
+        "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"
+      )
+    end
+  end
 end

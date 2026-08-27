@@ -32,13 +32,14 @@ module BrowserAutomation
         url: url,
         output_path: output_path.to_s,
         wait_until: options[:wait_until] || "networkidle",
-        type: options[:type] || "png"
+        type: options[:type] || "png",
+        network_guard: NetworkGuard.payload
       }
 
       script = <<~JS
         const { chromium } = require('playwright');
         const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
-
+        #{NetworkGuard::GUARD_JS}
         (async () => {
           const browser = await chromium.launch({
             headless: true,
@@ -49,6 +50,7 @@ module BrowserAutomation
             const context = await browser.newContext({
               viewport: { width: #{(options[:width] || 1920).to_i}, height: #{(options[:height] || 1080).to_i} }
             });
+            const __guard = await __installNetworkGuard(context, __data.network_guard);
             const page = await context.newPage();
 
             await page.goto(__data.url, {
@@ -62,7 +64,7 @@ module BrowserAutomation
               type: __data.type
             });
 
-            console.log(JSON.stringify({ success: true, path: __data.output_path }));
+            console.log(JSON.stringify({ success: true, path: __data.output_path, blocked_requests: __guard.blocked() }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
             process.exitCode = 1;
@@ -81,6 +83,10 @@ module BrowserAutomation
       end
     end
 
+    # No NetworkGuard here on purpose: this renders Scanner's own report URL, not a
+    # tenant-supplied one, and the app is routinely reachable only on a container
+    # address that the blocklist covers (RFC1918). Guarding it would block Scanner
+    # from rendering its own pages. The tenant-driven surfaces are guarded instead.
     def generate_pdf(url, output_path = nil, options = {})
       validate_url_safety!(url, allow_localhost: options[:allow_localhost])
       output_path ||= generate_pdf_path
@@ -163,13 +169,14 @@ module BrowserAutomation
         container_selector: container_selector,
         send_selector: (send_selector.present? && send_selector != "null") ? send_selector : nil,
         test_message: test_message,
-        auth: auth_payload(config[:auth] || config["auth"])
+        auth: auth_payload(config[:auth] || config["auth"]),
+        network_guard: NetworkGuard.payload
       }
 
       script = <<~JS
         const { chromium } = require('playwright');
         const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
-
+        #{NetworkGuard::GUARD_JS}
         (async () => {
           const browser = await chromium.launch({
             headless: true,
@@ -183,6 +190,7 @@ module BrowserAutomation
               ...(__auth.storage_state ? { storageState: __auth.storage_state } : {}),
               extraHTTPHeaders: Object.assign({}, __auth.headers || {})
             });
+            const __guard = await __installNetworkGuard(context, __data.network_guard);
             if (Array.isArray(__auth.cookies) && __auth.cookies.length) {
               await context.addCookies(__auth.cookies);
             }
@@ -248,7 +256,8 @@ module BrowserAutomation
               console.log(JSON.stringify({
                 success: false,
                 errors: errors,
-                response_detected: false
+                response_detected: false,
+                blocked_requests: __guard.blocked()
               }));
               await browser.close();
               return;
@@ -287,7 +296,8 @@ module BrowserAutomation
               console.log(JSON.stringify({
                 success: false,
                 errors: errors,
-                response_detected: false
+                response_detected: false,
+                blocked_requests: __guard.blocked()
               }));
               await browser.close();
               return;
@@ -305,7 +315,8 @@ module BrowserAutomation
               response_detected: contentChanged,
               test_message_found: testMessagePresent,
               baseline_length: baselineHistory.length,
-              new_length: newHistory.length
+              new_length: newHistory.length,
+              blocked_requests: __guard.blocked()
             }));
 
           } catch (error) {
@@ -345,13 +356,14 @@ module BrowserAutomation
       data = {
         url: url,
         user_agent: options[:user_agent] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        auth: auth_payload(options[:auth])
+        auth: auth_payload(options[:auth]),
+        network_guard: NetworkGuard.payload
       }
 
       script = <<~JS
         const { chromium } = require('playwright');
         const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
-
+        #{NetworkGuard::GUARD_JS}
         (async () => {
           const browser = await chromium.launch({
             headless: true,
@@ -366,6 +378,7 @@ module BrowserAutomation
               ...(__auth.storage_state ? { storageState: __auth.storage_state } : {}),
               extraHTTPHeaders: Object.assign({}, __auth.headers || {})
             });
+            const __guard = await __installNetworkGuard(context, __data.network_guard);
             if (Array.isArray(__auth.cookies) && __auth.cookies.length) {
               await context.addCookies(__auth.cookies);
             }
@@ -531,7 +544,7 @@ module BrowserAutomation
               screenshot: screenshotBase64
             };
 
-            console.log(JSON.stringify({ success: true, data: result }));
+            console.log(JSON.stringify({ success: true, data: result, blocked_requests: __guard.blocked() }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
             process.exitCode = 1;
@@ -574,6 +587,19 @@ module BrowserAutomation
     end
 
     private
+
+    # Surface what the in-browser guard aborted. These are requests the target tried
+    # to make to an internal address after its URL had already passed validation, so
+    # they are worth seeing even when the overall operation succeeded.
+    def log_blocked_requests(result)
+      blocked = result.is_a?(Hash) ? result["blocked_requests"] : nil
+      return if blocked.blank?
+
+      Rails.logger.warn(
+        "PlaywrightService: network guard blocked #{blocked.size} request(s): " \
+        "#{blocked.map { |b| "#{b['reason']} #{b['url']}" }.join('; ')}"
+      )
+    end
 
     def validate_url_safety!(url, allow_localhost: nil)
       allow = allow_localhost.nil? ? UrlSafetyValidator.allow_localhost? : allow_localhost
@@ -657,6 +683,7 @@ module BrowserAutomation
           if status.success?
             result = extract_json.call(output)
             if result
+              log_blocked_requests(result)
               result
             else
               Rails.logger.error "No JSON found in Playwright output: #{redact_for_log(output)}"
@@ -683,13 +710,14 @@ module BrowserAutomation
     def build_page_script(url, options)
       data = {
         url: url,
-        wait_until: options[:wait_until] || "networkidle"
+        wait_until: options[:wait_until] || "networkidle",
+        network_guard: NetworkGuard.payload
       }
 
       script = <<~JS
         const { chromium } = require('playwright');
         const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
-
+        #{NetworkGuard::GUARD_JS}
         (async () => {
           const browser = await chromium.launch({
             headless: #{options[:headless] != false}
@@ -699,13 +727,14 @@ module BrowserAutomation
             const context = await browser.newContext({
               viewport: { width: #{(options[:width] || 1920).to_i}, height: #{(options[:height] || 1080).to_i} }
             });
+            const __guard = await __installNetworkGuard(context, __data.network_guard);
             const page = await context.newPage();
 
             if (__data.url) {
               await page.goto(__data.url, { waitUntil: __data.wait_until });
             }
 
-            console.log(JSON.stringify({ success: true }));
+            console.log(JSON.stringify({ success: true, blocked_requests: __guard.blocked() }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
             process.exitCode = 1;
