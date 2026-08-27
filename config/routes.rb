@@ -52,6 +52,7 @@ Rails.application.routes.draw do
         get :top_probes
         get :probes_tab
         get :probe_attempts
+        get :progress
         get :attempt_content
         post :refresh_debug_lease
       end

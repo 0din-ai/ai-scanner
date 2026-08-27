@@ -3,7 +3,7 @@
 module Admin
   class ReportsController < Admin::BaseController
     # probes_tab and attempt_content load @report with custom includes — excluded intentionally
-    before_action :set_report, only: [ :show, :destroy, :stop, :asr_history, :top_probes ]
+    before_action :set_report, only: [ :show, :destroy, :stop, :asr_history, :top_probes, :progress ]
     before_action :set_debug_lease_report, only: [ :refresh_debug_lease ]
 
     include TargetsHelper
@@ -161,6 +161,25 @@ module Admin
       authorize @report
       @probe_results = @report.probe_results.for_report_probe_cards.to_a
       render layout: false
+    end
+
+    # Live progress for a run that has not finished, polled from the report page.
+    #
+    # Conditional on the DERIVED representation rather than on updated_at. A run
+    # crossing the stall threshold writes nothing to the database, so an updated_at
+    # etag would serve the same card indefinitely while the answer changed underneath
+    # it -- and a matching etag lets this skip the journal read entirely, which is the
+    # expensive half.
+    def progress
+      authorize @report
+
+      @progress = Reports::Progress.new(@report)
+
+      return unless stale?(etag: @progress.representation_key, public: false)
+
+      render partial: "admin/reports/progress_card_body",
+             locals: { report: @report, progress: @progress },
+             layout: false
     end
 
     # Probe attempt rows loaded on demand from each probe card.

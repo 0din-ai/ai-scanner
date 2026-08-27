@@ -42,7 +42,13 @@
         <%= render partial: 'reports/partial_results_notice', locals: { report: report } %>
       <% end %>
 
-      <%= render partial: 'admin/reports/statistics_section', locals: { report: report } %>
+      <% progress = Reports::Progress.new(report) %>
+      <% if progress.in_flight? %>
+        <%= render partial: 'admin/reports/progress_card', locals: { report: report, progress: progress } %>
+      <% end %>
+
+      <%= render partial: 'admin/reports/statistics_section',
+                 locals: { report: report, in_flight: progress.in_flight? } %>
 
       <% if show_activity_stream_for_report?(report, params: params, user: current_user) %>
         <%= render partial: 'admin/reports/logs_section',
