@@ -245,8 +245,12 @@ RSpec.describe BrowserAutomation::PlaywrightService, "screening proxy wiring" do
     # array and drops the proxy's count of what it truncated.
     script, = capture { service.screenshot("https://example.com", "/tmp/x.png") }
 
-    expect(script).to include("__mergeBlocked")
-    expect(script).not_to include("__guard.blocked().concat")
+    # Assert the helper is CALLED, not merely defined. Reverting the call site to
+    # __guard.blocked() leaves the definition in place, so a containment check on
+    # the name alone passes while every proxy-only block is silently discarded --
+    # and those are exactly the blocks the proxy exists to catch.
+    expect(script).to include("blocked_requests: __mergeBlocked(__guard, proxy)")
+    expect(script).not_to match(/blocked_requests: __guard\.blocked\(\)/)
 
     expect(script).to include("reason: 'blocked by screening proxy'")
     expect(script).to include("blocked_request_count"), "must carry the proxy's overflow count"
