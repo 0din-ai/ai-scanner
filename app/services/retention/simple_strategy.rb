@@ -33,7 +33,12 @@ module Retention
     private
 
     def retention_days
-      days = ENV.fetch("RETENTION_DAYS", DEFAULT_RETENTION_DAYS).to_i
+      # Strict Integer(), not String#to_i. This setting decides what gets DELETED, and
+      # to_i reads a partially-numeric "5oops" as 5 and a decimal "1.5" as 1 -- so a
+      # typo would quietly shorten retention rather than being rejected. Blank,
+      # unparseable and non-positive values all fall back to the default.
+      days = Integer(ENV["RETENTION_DAYS"].to_s.strip, exception: false).to_i
+      days = DEFAULT_RETENTION_DAYS unless days.positive?
       [ days, 1 ].max
     end
 

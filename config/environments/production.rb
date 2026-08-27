@@ -1,5 +1,6 @@
 require "active_support/core_ext/integer/time"
 require "logging"
+require "trusted_proxies"
 
 require "dotenv"
 env_file = Rails.root.join("storage", ".env")
@@ -60,7 +61,12 @@ Rails.application.configure do
   # Trust reverse proxies to read X-Forwarded-For for real client IPs.
   # Set TRUSTED_PROXIES as a comma-separated list of CIDRs in .env.
   # Example: TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12
-  trusted = ENV.fetch("TRUSTED_PROXIES", "").split(",").map(&:strip).reject(&:empty?)
+  #
+  # Parsed rather than passed through: see lib/trusted_proxies.rb for why raw
+  # strings matched nothing, and why an invalid entry is fatal instead of dropped.
+  # It lives in lib/ and is required at the top of this file because environment
+  # configuration runs before autoloading is available -- the same reason Logging is.
+  trusted = TrustedProxies.parse(ENV["TRUSTED_PROXIES"])
   config.action_dispatch.trusted_proxies = trusted if trusted.any?
 
   # Configure SSL options with localhost exception
@@ -125,7 +131,11 @@ Rails.application.configure do
   config.log_formatter = Logging::JSONFormatter.new
 
   # Change to "debug" to log everything (including potentially personally-identifiable information!)
-  config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
+  # `.presence`, not `fetch`'s default: an operator who writes RAILS_LOG_LEVEL= with
+  # no value, or a Compose passthrough that forwards the variable as an empty string
+  # when it is unset, both hand this an empty string -- which fetch happily returns
+  # and Logger rejects with "invalid log level", taking down boot.
+  config.log_level = ENV["RAILS_LOG_LEVEL"].presence || "info"
 
   # Prevent health checks from clogging up the logs.
   config.silence_healthcheck_path = "/up"
