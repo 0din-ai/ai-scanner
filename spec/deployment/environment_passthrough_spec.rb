@@ -59,6 +59,15 @@ RSpec.describe "deployment environment passthrough" do
   # The raw `environment:` entries for the scanner service, as written. List form is
   # what makes pass-through-if-set possible, so the shape matters and is not normalised
   # away here.
+  # Every environment entry in the file, whatever service it belongs to and whichever
+  # syntax it uses -- the required-secret guards live on postgres as well as scanner.
+  def compose_entries(path)
+    YAML.load_file(Rails.root.join(path), aliases: true)
+        .fetch("services").values
+        .filter_map { |service| service["environment"] }
+        .flat_map { |env| env.is_a?(Array) ? env : env.map { |k, v| "#{k}=#{v}" } }
+  end
+
   def scanner_environment(path)
     entries = YAML.load_file(Rails.root.join(path), aliases: true)
                   .fetch("services").fetch("scanner").fetch("environment")
@@ -150,6 +159,58 @@ RSpec.describe "deployment environment passthrough" do
     expect(unaccounted).to be_empty,
       "advertised in .env.example and read by the app, but neither forwarded nor listed " \
       "as deliberately excluded: #{unaccounted.join(', ')}"
+  end
+
+  describe "secrets the operator must supply" do
+    # Compose guards these with ${VAR:?...}, which fires on an unset or EMPTY value and
+    # not on a non-empty one. A placeholder in .env.example therefore sails through the
+    # guard, and every deployment that copied the file unchanged shares the value --
+    # published, in a public repository. Rails derives the ActiveRecord encryption keys
+    # from SECRET_KEY_BASE, so that is the keys protecting stored target credentials.
+    #
+    # Empty is not laziness here: it is the only value the guard can catch.
+    #
+    # Derived from the Compose files rather than hand-listed, so a secret added there
+    # cannot be left out of this contract by omission.
+    def required_secret_names
+      COMPOSE_FILES.flat_map { |path| compose_entries(path) }
+                   .flat_map { |entry| entry.to_s.scan(/\$\{([A-Z][A-Z0-9_]*):\?/) }
+                   .flatten.uniq.sort
+    end
+
+    it "finds the secrets Compose refuses to start without" do
+      expect(required_secret_names).to include("SECRET_KEY_BASE", "POSTGRES_PASSWORD",
+                                               "ADMIN_INITIAL_PASSWORD")
+    end
+
+    it "leaves every required secret empty in .env.example so the guard can fire" do
+      offenders = required_secret_names.filter_map do |name|
+        match = env_example[/^\s*#{name}=(.*)$/, 1]
+        # A DELETED assignment must not read as an empty one: nil.to_s would pass while
+        # telling an operator nothing about a secret they still have to supply.
+        next "#{name} (no assignment line)" if match.nil?
+
+        "#{name}=#{match.strip}" unless match.strip.empty?
+      end
+
+      expect(offenders).to be_empty,
+        "a non-empty value here passes Compose's required-variable guard and ships as a " \
+        "shared secret: #{offenders.join(', ')}"
+    end
+
+    it "keeps trailing comments off the required-secret value lines" do
+      # Compose strips a trailing comment from a NON-EMPTY value, but with nothing
+      # before the `#` it takes the whole remainder as the value -- so
+      # `POSTGRES_PASSWORD=   # Required` sets the password to the words "# Required"
+      # and passes the required-variable guard just like a placeholder would.
+      offenders = required_secret_names.select do |name|
+        env_example[/^\s*#{name}=.*$/].to_s.include?("#")
+      end
+
+      expect(offenders).to be_empty,
+        "value line carries a trailing comment; put it on its own line above: " \
+        "#{offenders.join(', ')}"
+    end
   end
 
   describe "a variable an operator sets to nothing" do
