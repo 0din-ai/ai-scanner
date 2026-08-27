@@ -25,14 +25,37 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      SECRET_KEY_BASE: "${SECRET_KEY_BASE:?Set SECRET_KEY_BASE in .env}"
-      SOLID_QUEUE_IN_PUMA: "true"
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_USER: ${POSTGRES_USER:-scanner}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in environment or .env file}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
-      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?ADMIN_INITIAL_PASSWORD must be set in environment or .env file}
+      # Deployment settings the app reads at runtime.
+      #
+      # A .env file is only an INTERPOLATION source for Compose: a variable that is not
+      # named here never reaches the container, however carefully an operator sets it.
+      # Every name below was read by the app and silently inert -- ASSUME_SSL among them,
+      # which also decides whether the session cookie is issued with Secure.
+      #
+      # Listed BARE, without a value. That is Compose's pass-through-if-set form: it reads
+      # the value from the environment or .env, and when the variable is unset it is not
+      # placed in the container AT ALL. The `${VAR:-}` map form cannot express that -- it
+      # forwards an empty string, which would make every reader's empty-value behaviour
+      # load-bearing, and an empty log level fails Rails' bootstrap outright.
+      - ASSUME_SSL
+      - RAILS_ALLOWED_HOSTS
+      - SESSION_COOKIE_DOMAIN
+      - ACTION_CABLE_URL
+      - TRUSTED_PROXIES
+      - RAILS_LOG_LEVEL
+      - CLARITY_PROJECT_ID
+      - RETENTION_DAYS
+      - MAX_INTERRUPT_RETRIES
+      - DEBUG_LOG_TAIL_BYTES
+      # Values this file sets or defaults, rather than passes through.
+      - "SECRET_KEY_BASE=${SECRET_KEY_BASE:?Set SECRET_KEY_BASE in .env}"
+      - "SOLID_QUEUE_IN_PUMA=true"
+      - "POSTGRES_HOST=${POSTGRES_HOST:-postgres}"
+      - "POSTGRES_PORT=${POSTGRES_PORT:-5432}"
+      - "POSTGRES_USER=${POSTGRES_USER:-scanner}"
+      - "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in environment or .env file}"
+      - "ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}"
+      - "ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD:?ADMIN_INITIAL_PASSWORD must be set in environment or .env file}"
     working_dir: /rails
     restart: always
     stdin_open: true
