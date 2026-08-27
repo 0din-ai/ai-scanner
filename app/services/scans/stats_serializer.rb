@@ -4,7 +4,19 @@ module Scans
 
     def initialize(scan)
       @scan = scan
+      # Two different questions, deliberately not one relation.
+      #
+      # completed_reports answers "how many runs of this scan finished" -- a lifecycle
+      # fact, and the figure shown as the completed count.
+      #
+      # measured_reports answers "which runs measured a real workload to completion",
+      # and is what every MEASUREMENT-derived field below is built from: ASR, the risk
+      # and disclosure breakdowns, top vulnerabilities, the detector breakdown, coverage,
+      # the trend and the security grade. A partial run measured less work than it
+      # planned, so averaging its totals in drags the scan's figures toward zero and
+      # would contradict the report page, which already marks that run partial.
       @completed_reports = scan.reports.completed.parent_reports
+      @measured_reports = Scans::HistoryEligibility.apply(scan.reports.parent_reports)
     end
 
     def call
@@ -28,7 +40,7 @@ module Scans
 
     private
 
-    attr_reader :scan, :completed_reports
+    attr_reader :scan, :completed_reports, :measured_reports
 
     def scan_info
       {
@@ -41,6 +53,9 @@ module Scans
     end
 
     def aggregate_stats
+      # Lifecycle, like the two counts beside it: "when did a run of this scan last
+      # finish". Derived from measured_reports it would read nil for a scan whose only
+      # completed run was partial, contradicting completed_reports: 1 in the same hash.
       last_report = completed_reports.order(created_at: :desc).first
 
       {
@@ -66,7 +81,7 @@ module Scans
     def attacks_info
       # Aggregate attack stats from all completed reports
       # probe_results, matching Report#asr and the scan average: one row per attack.
-      totals = completed_reports
+      totals = measured_reports
         .joins(:probe_results)
         .select(
           "SUM(probe_results.passed) as total_passed",
@@ -82,7 +97,7 @@ module Scans
       overall_asr = total_tests > 0 ? (total_passed.to_f / total_tests * 100).round(2) : nil
 
       # Per-target breakdown (single grouped query instead of N+1)
-      grouped = completed_reports
+      grouped = measured_reports
         .joins(:probe_results)
         .group(:target_id)
         .pluck(
@@ -165,12 +180,12 @@ module Scans
     # TIER 1: Risk distribution by social_impact_score
     # Shows breakdown of tested probes by risk level (Critical → Minimal)
     def risk_distribution_info
-      return {} if completed_reports.empty?
+      return {} if measured_reports.empty?
 
       # Get all probe results with their probes' social_impact_score
       probe_data = ProbeResult
         .joins(:probe)
-        .where(report_id: completed_reports.select(:id))
+        .where(report_id: measured_reports.select(:id))
         .group("probes.social_impact_score")
         .select(
           "probes.social_impact_score",
@@ -203,11 +218,11 @@ module Scans
     # TIER 1: Disclosure breakdown (0-day vs n-day)
     # Shows how many novel vs known vulnerabilities were tested
     def disclosure_breakdown_info
-      return {} if completed_reports.empty?
+      return {} if measured_reports.empty?
 
       probe_data = ProbeResult
         .joins(:probe)
-        .where(report_id: completed_reports.select(:id))
+        .where(report_id: measured_reports.select(:id))
         .group("probes.disclosure_status")
         .select(
           "probes.disclosure_status",
@@ -239,14 +254,14 @@ module Scans
     # TIER 1: Top vulnerabilities - most dangerous successful attacks
     # Highlights probes with highest risk that had successful attacks
     def top_vulnerabilities_info
-      return [] if completed_reports.empty?
+      return [] if measured_reports.empty?
 
       # Find probes with successful attacks, prioritized by risk level.
       # Uses any_detector_passed so multi-detector probes where any detector
       # was bypassed count as vulnerable, even if the last detector defended.
       vulnerable_probes = ProbeResult
         .joins(:probe)
-        .where(report_id: completed_reports.select(:id))
+        .where(report_id: measured_reports.select(:id))
         .where(any_detector_passed: true)
         .group("probes.id", "probes.name", "probes.category", "probes.social_impact_score", "probes.disclosure_status")
         .select(
@@ -282,11 +297,11 @@ module Scans
 
     # TIER 1: Detector breakdown - per-detector success rates
     def detector_breakdown_info
-      return [] if completed_reports.empty?
+      return [] if measured_reports.empty?
 
       DetectorResult
         .joins(:detector)
-        .where(report_id: completed_reports.select(:id))
+        .where(report_id: measured_reports.select(:id))
         .group("detectors.id", "detectors.name")
         .select(
           "detectors.id",
@@ -357,11 +372,11 @@ module Scans
 
     # TIER 2: Security grade - A-F letter grade based on weighted formula
     def security_grade_info
-      return { grade: "N/A", score: nil, description: "No completed scans" } if completed_reports.empty?
+      return { grade: "N/A", score: nil, description: "No completed scans" } if measured_reports.empty?
 
       # Calculate overall ASR (lower is better for security)
       # probe_results, matching Report#asr and the scan average: one row per attack.
-      totals = completed_reports
+      totals = measured_reports
         .joins(:probe_results)
         .select(
           "SUM(probe_results.passed) as total_passed",
@@ -426,9 +441,7 @@ module Scans
     # TIER 2: Trend data - historical ASR over time
     def trend_data_info
       # Get ASR for each completed parent report in the last 30 days
-      recent_reports = scan.reports
-        .parent_reports
-        .completed
+      recent_reports = Scans::HistoryEligibility.apply(scan.reports.parent_reports)
         .where("created_at >= ?", 30.days.ago)
         .order(created_at: :asc)
 
@@ -475,14 +488,14 @@ module Scans
 
     # Helper: Calculate risk penalty based on high-risk successful attacks
     def calculate_risk_penalty
-      return 0 if completed_reports.empty?
+      return 0 if measured_reports.empty?
 
       # Get successful attacks by risk level. Filter by any_detector_passed
       # for correct multi-detector semantics; sum still uses passed (last
       # detector's value) which is the best signal we have for magnitude.
       risk_data = ProbeResult
         .joins(:probe)
-        .where(report_id: completed_reports.select(:id))
+        .where(report_id: measured_reports.select(:id))
         .where(any_detector_passed: true)
         .group("probes.social_impact_score")
         .sum("probe_results.passed")

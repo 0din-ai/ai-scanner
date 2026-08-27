@@ -108,8 +108,15 @@ module Admin
       authorize @report
       # Get ASR history for this scan - last 10 reports or current report if alone
       # with_result_stats provides cached_passed/cached_total to avoid N+1 on the ASR figure
-      reports = Report.where(scan_id: @report.scan_id)
-                      .where(status: :completed)
+      # Measurement-eligible runs only, the same rule the scan's aggregate figures and
+      # the projections apply. A partial run measured less work than it planned, so
+      # plotting its ASR alongside full runs shows a drop that is an artefact of how
+      # much ran rather than of how the target behaved -- and the report page already
+      # marks that run partial, so the chart would contradict it.
+      # parent_reports: a variant child is a re-run of probes its parent already
+      # measured, so plotting it puts the same work on the chart twice as if it were a
+      # later, separate run.
+      reports = Scans::HistoryEligibility.apply(Report.where(scan_id: @report.scan_id).parent_reports)
                       .with_result_stats
                       .order(created_at: :desc)
                       .limit(10)
