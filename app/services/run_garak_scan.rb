@@ -646,29 +646,12 @@ class RunGarakScan
   # Parses existing raw_report_data JSONL for eval entries to identify completed probes.
   # A probe is "completed" if it has at least one eval entry in the saved data.
   # Memoized because it's called from both all_probes_completed? and probes_config.
+  # Delegated so resumption and the progress card cannot disagree about what "done"
+  # means. The definition -- a probe with at least one valid eval row -- was already
+  # here; JournalSummary is where it now lives, and it reads the journal through SQL
+  # rather than pulling a long run's whole jsonl_data column into Ruby.
   def completed_probes_from_raw_data
-    @completed_probes_from_raw_data ||= begin
-      raw_data = report.raw_report_data
-      if raw_data&.jsonl_data.present?
-        completed = Set.new
-        raw_data.jsonl_data.each_line do |line|
-          line = line.strip
-          next if line.empty?
-          begin
-            entry = JSON.parse(line)
-            if GarakEvalRowValidator.valid?(entry, require_probe_detector: true)
-              probe_name = entry["probe"]
-              completed.add(probe_name)
-            end
-          rescue JSON::ParserError
-            next
-          end
-        end
-        completed
-      else
-        Set.new
-      end
-    end
+    @completed_probes_from_raw_data ||= Reports::JournalSummary.for(report).completed_probes
   end
 
   # Returns true if all probes have already been completed in a previous run.

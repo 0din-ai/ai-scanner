@@ -1561,6 +1561,165 @@ async function testDashboardControllerAvgAsrScoreRendering() {
   assert.equal(await renderedScoreText(42.5), "42.5%")
 }
 
+
+// The progress controller polls an endpoint and swaps the rendered card body in. Its
+// whole job is deciding WHEN to ask again, so the tests drive the clock and the
+// responses rather than the DOM.
+function loadReportProgressController({ responses = [] } = {}) {
+  const transformed = loadControllerSource(
+    "report_progress_controller.js",
+    "ReportProgressController"
+  )
+
+  const timers = []
+  const calls = []
+
+  const makeElement = (attrs = {}) => ({
+    dataset: { ...attrs },
+    replaced: null,
+    replaceWith(next) { this.replaced = next }
+  })
+
+  const context = {
+    Controller: class {},
+    console: { warn() {} },
+    clearTimeout(id) {
+      const timer = timers[id - 1]
+      if (timer) timer.cancelled = true
+    },
+    setTimeout(fn, delay) {
+      timers.push({ fn, delay, cancelled: false })
+      return timers.length
+    },
+    document: {
+      createElement() {
+        return {
+          innerHTML: "",
+          content: { get firstElementChild() { return makeElement({ poll: "false" }) } }
+        }
+      }
+    },
+    fetch: async (url) => {
+      calls.push(url)
+      const next = responses.shift()
+      if (next instanceof Error) throw next
+      return next || { ok: true, status: 200, text: async () => "<div></div>" }
+    }
+  }
+  context.Math = Math
+
+  const ControllerClass = vm.runInNewContext(
+    `${transformed}\nReportProgressController`,
+    context
+  )
+
+  const build = ({ poll = "true" } = {}) => {
+    const instance = new ControllerClass()
+    const body = makeElement({ poll })
+    instance.hasBodyTarget = true
+    instance.bodyTarget = body
+    instance.urlValue = "/reports/1/progress"
+    instance.intervalValue = 5000
+    return { instance, body }
+  }
+
+  return { build, timers, calls, makeElement }
+}
+
+function testReportProgressSchedulesOnlyWhileWorkRemains() {
+  const { build, timers } = loadReportProgressController()
+
+  const running = build({ poll: "true" })
+  running.instance.connect()
+  // The SERVER decides whether there is more to learn; a client guessing from a label
+  // would poll a finished run forever.
+  assert.equal(timers.filter((t) => !t.cancelled).length, 1)
+
+  const finished = build({ poll: "false" })
+  finished.instance.connect()
+  assert.equal(timers.filter((t) => !t.cancelled).length, 1)
+}
+
+function testReportProgressStopsOnDisconnect() {
+  const { build, timers } = loadReportProgressController()
+  const { instance } = build()
+
+  instance.connect()
+  instance.disconnect()
+
+  assert.equal(timers.every((t) => t.cancelled), true)
+}
+
+async function testReportProgressTreatsNotModifiedAsSuccess() {
+  const { build, timers, calls } = loadReportProgressController({
+    responses: [ { ok: false, status: 304 } ]
+  })
+  const { instance } = build()
+
+  instance.connect()
+  await instance.refresh()
+
+  // 304 is the endpoint working as designed, not a failure -- backing off on it would
+  // slow the poll down exactly when nothing is wrong.
+  assert.equal(instance.failures, 0)
+  assert.equal(calls.length, 1)
+  assert.equal(timers[timers.length - 1].delay, 5000)
+}
+
+async function testReportProgressBacksOffThenGivesUp() {
+  const { build, timers } = loadReportProgressController({
+    responses: [
+      { ok: false, status: 500 },
+      { ok: false, status: 500 },
+      { ok: false, status: 500 },
+      { ok: false, status: 500 },
+      { ok: false, status: 500 }
+    ]
+  })
+  const { instance } = build()
+
+  instance.connect()
+  await instance.refresh()
+  assert.equal(instance.failures, 1)
+  assert.equal(timers[timers.length - 1].delay, 10000)
+
+  await instance.refresh()
+  assert.equal(timers[timers.length - 1].delay, 20000)
+
+  await instance.refresh()
+  await instance.refresh()
+  const scheduledBeforeGivingUp = timers.length
+
+  await instance.refresh()
+  // After a run of failures it stops rather than polling forever in a tab nobody is
+  // watching. The card keeps showing the last thing we knew, which is stale, not wrong.
+  assert.equal(instance.failures, 5)
+  assert.equal(timers.length, scheduledBeforeGivingUp)
+}
+
+async function testReportProgressSurvivesANetworkError() {
+  const { build } = loadReportProgressController({
+    responses: [ new Error("offline") ]
+  })
+  const { instance } = build()
+
+  instance.connect()
+  await instance.refresh()
+
+  assert.equal(instance.failures, 1)
+}
+
+async function testReportProgressSwapsTheRenderedBody() {
+  const { build } = loadReportProgressController({
+    responses: [ { ok: true, status: 200, text: async () => "<div data-poll=\"false\"></div>" } ]
+  })
+  const { instance, body } = build()
+
+  await instance.refresh()
+
+  assert.notEqual(body.replaced, null)
+}
+
 await testDebugStreamLeaseController()
 testActivityStreamController()
 testDebugTabsController()
@@ -1578,4 +1737,10 @@ testGaugeChartConfigDetailFormatter()
 testGaugeChartConfigPointer()
 testGaugeChartConfigTooltipFormatter()
 await testDashboardControllerAvgAsrScoreRendering()
+testReportProgressSchedulesOnlyWhileWorkRemains()
+testReportProgressStopsOnDisconnect()
+await testReportProgressTreatsNotModifiedAsSuccess()
+await testReportProgressBacksOffThenGivesUp()
+await testReportProgressSurvivesANetworkError()
+await testReportProgressSwapsTheRenderedBody()
 console.log("JavaScript controller tests passed")

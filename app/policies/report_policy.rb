@@ -9,6 +9,10 @@ class ReportPolicy < TenantScopedPolicy
     true
   end
 
+  def progress?
+    true
+  end
+
   def top_probes?
     true
   end

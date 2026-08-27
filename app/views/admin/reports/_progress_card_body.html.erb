@@ -1,0 +1,73 @@
+<%#
+  The live half of the progress card, re-rendered by the polling controller.
+
+  Everything here is derived from Reports::Progress, which answers phase, ownership and
+  feed freshness separately -- so a run whose process has exited with results queued for
+  ingest reads as "Recording results" rather than as one that stopped responding.
+
+  locals: report, progress
+%>
+<div class="space-y-3"
+     data-report-progress-target="body"
+     data-poll="<%= progress.poll? %>"
+     data-phase="<%= progress.phase %>">
+
+  <div class="flex items-center justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <span class="<%= progress.stalled? ? "text-amber-400" : "text-primary" %> font-sans text-sm font-semibold">
+        <%= progress.phase_label %>
+      </span>
+      <% if progress.feed_state == :stale && !progress.stalled? %>
+        <%# Distinct from stalled: we have heard nothing lately, which is not the same
+            as having decided the run is stuck. %>
+        <span class="text-contentTertiary font-sans text-xs">no recent activity</span>
+      <% end %>
+    </div>
+
+    <% if progress.elapsed_seconds %>
+      <span class="text-contentSecondary font-sans text-xs" data-report-progress-target="elapsed">
+        <%= progress.elapsed_label %> elapsed
+      </span>
+    <% end %>
+  </div>
+
+  <% if progress.determinate? %>
+    <div>
+      <div class="flex justify-between items-baseline mb-1">
+        <span class="text-contentSecondary font-sans text-xs">
+          <%= progress.completed_units %> of <%= progress.total_units %> <%= progress.unit.pluralize %>
+        </span>
+        <span class="text-white font-sans text-xs font-semibold"><%= progress.percent_complete %>%</span>
+      </div>
+      <div class="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
+        <div class="bg-primary h-2 rounded-full transition-all duration-500"
+             style="width: <%= progress.percent_complete %>%"></div>
+      </div>
+    </div>
+  <% elsif progress.completed_units.positive? %>
+    <%# Completed work alone, rather than inventing a denominator we do not have. %>
+    <p class="text-contentSecondary font-sans text-xs">
+      <%= pluralize(progress.completed_units, progress.unit) %> completed so far
+    </p>
+  <% end %>
+
+  <% if progress.last_completed_probe.present? %>
+    <p class="text-contentTertiary font-sans text-xs truncate">
+      Last finished: <%= progress.last_completed_probe %>
+    </p>
+  <% end %>
+
+  <% if progress.stalled? %>
+    <p class="text-amber-400 font-sans text-xs"><%= progress.stall_reason %></p>
+  <% end %>
+
+  <% if progress.retry_attempt.positive? %>
+    <p class="text-contentTertiary font-sans text-xs">
+      Attempt <%= progress.retry_attempt + 1 %> after an interruption
+    </p>
+  <% end %>
+
+  <p class="text-contentTertiary font-sans text-xs">
+    Results are recorded when the scan finishes, so the figures below stay pending until then.
+  </p>
+</div>

@@ -43,7 +43,7 @@ RSpec.describe "Interrupted Reports E2E", type: :feature do
     # Don't actually run garak scans
     allow_any_instance_of(RunGarakScan).to receive(:call)
     # Stub the Solid Queue lookup - in test env we don't have Solid Queue tables
-    allow_any_instance_of(CheckStaleReportsJob).to receive(:pending_process_job_report_ids).and_return(Set.new)
+    allow(Reports::StallDetection).to receive(:awaiting_processing_report_ids).and_return(Set.new)
   end
 
   describe "Scenario 1: Pod crash during scan execution" do

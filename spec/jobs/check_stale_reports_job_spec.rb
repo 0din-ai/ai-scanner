@@ -12,7 +12,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
     allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
     # Stub the Solid Queue lookup - in test env we don't have Solid Queue tables
     # Default: return empty set (no pending jobs found)
-    allow_any_instance_of(described_class).to receive(:pending_process_job_report_ids).and_return(Set.new)
+    allow(Reports::StallDetection).to receive(:awaiting_processing_report_ids).and_return(Set.new)
   end
 
   describe "#perform" do
@@ -411,8 +411,7 @@ RSpec.describe CheckStaleReportsJob, type: :job do
           report = create(:report, target: target, scan: scan, status: :running,
                           pid: nil, heartbeat_at: 1.minute.ago, updated_at: 3.minutes.ago, retry_count: 0)
 
-          allow_any_instance_of(described_class).to receive(:pending_process_job_report_ids)
-            .and_return(Set.new([ report.id ]))
+          allow(Reports::StallDetection).to receive(:awaiting_processing_report_ids).and_return(Set.new([ report.id ]))
 
           described_class.new.perform
 

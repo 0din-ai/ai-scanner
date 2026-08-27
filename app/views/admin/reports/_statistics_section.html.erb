@@ -1,3 +1,13 @@
+<%#
+  in_flight: the run has not been ingested yet, so probe_results is still empty and
+  every figure below would render as N/A, 0 / 0 and 0. Those are not partial results --
+  they are the absence of any -- and showing them in the identical layout a finished
+  report uses is what made an in-progress scan read as one that found nothing. Live
+  progress belongs to the progress card; this section says, once, that results arrive
+  at the end.
+%>
+<% in_flight = local_assigns.fetch(:in_flight, false) %>
+<% pending_marker = content_tag(:span, "Pending", class: "text-contentTertiary font-sans text-sm italic") %>
 <div class="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <%# Left Column - Key Statistics %>
@@ -9,22 +19,22 @@
       <div class="space-y-2">
         <div class="flex justify-between items-center">
           <span class="text-contentSecondary font-sans text-sm">Duration</span>
-          <span class="text-white font-sans text-sm"><%= formatted_duration(report) %></span>
+          <span class="text-white font-sans text-sm"><%= in_flight ? pending_marker : formatted_duration(report) %></span>
         </div>
 
         <div class="flex justify-between items-center">
           <span class="text-contentSecondary font-sans text-sm">Attack Success Rate</span>
-          <% asr_figure = report.asr %><span class="<%= asr_color_class(asr_figure.percent) %> font-sans text-sm font-semibold"><%= asr_display(asr_figure) %></span>
+          <% if in_flight %><%= pending_marker %><% else %><% asr_figure = report.asr %><span class="<%= asr_color_class(asr_figure.percent) %> font-sans text-sm font-semibold"><%= asr_display(asr_figure) %></span><% end %>
         </div>
 
         <div class="flex justify-between items-center">
           <span class="text-contentSecondary font-sans text-sm">Attacks Succeeded</span>
-          <span class="text-white font-sans text-sm"><%= report.total_successful_attacks %> / <%= report.total_attacks %></span>
+          <span class="text-white font-sans text-sm"><%= in_flight ? pending_marker : "#{report.total_successful_attacks} / #{report.total_attacks}" %></span>
         </div>
 
         <div class="flex justify-between items-center">
           <span class="text-contentSecondary font-sans text-sm">Vulnerabilities Found</span>
-          <span class="text-primary font-sans text-sm font-semibold"><%= report.security_vulnerabilities_count %></span>
+          <span class="text-primary font-sans text-sm font-semibold"><%= in_flight ? pending_marker : report.security_vulnerabilities_count %></span>
         </div>
       </div>
 

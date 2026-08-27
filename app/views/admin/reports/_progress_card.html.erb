@@ -1,0 +1,17 @@
+<%#
+  Shown only while a run has not finished. The body is swapped in by polling; this
+  wrapper is what the Stimulus controller attaches to and is rendered once.
+
+  locals: report, progress
+%>
+<div class="bg-zinc-900 rounded-lg border border-zinc-700 p-4 mb-4"
+     data-controller="report-progress"
+     data-report-progress-url-value="<%= progress_report_path(report) %>"
+     data-report-progress-interval-value="5000">
+  <h2 class="text-xl font-sans font-semibold text-primary tracking-wide mb-3">
+    Scan Progress
+  </h2>
+
+  <%= render partial: "admin/reports/progress_card_body",
+             locals: { report: report, progress: progress } %>
+</div>
