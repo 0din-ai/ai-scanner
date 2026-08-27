@@ -7,6 +7,19 @@
 # Ignore bundler config.
 /.bundle
 
+# Ignore Python bytecode. The build context is the working tree, so a local
+# `docker compose build` would otherwise bake whatever __pycache__ happens to be
+# lying about -- and a .pyc embeds the ABSOLUTE path of the machine that compiled
+# it. CI builds from a fresh checkout and none of these are tracked, so this
+# protects local and repackaged images rather than the published one.
+# `**/` because .dockerignore uses Go filepath.Match, where `*` does not cross a
+# `/` -- a bare `__pycache__/` or `*.pyc` matches only at the context root and lets
+# script/garak_plugins/__pycache__/*.pyc straight through. Verified by building a
+# throwaway image both ways.
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
 # Ignore all environment files.
 /.env*
 
