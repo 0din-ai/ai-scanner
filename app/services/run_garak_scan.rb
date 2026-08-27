@@ -93,7 +93,21 @@ class RunGarakScan
   # between, and a read-then-write would overwrite that attempt's token and leave two
   # garak processes running for one report.
   def start_execution_attempt!
-    return true if report.starting?
+    if report.starting?
+      # Already ours: StartPendingScansJob claimed it before handing the report over,
+      # which is how every ordinary run arrives. The claim below is a no-op here, and
+      # the plan used to be recorded inside it -- so an ordinary run never recorded one
+      # at all, and nothing downstream could tell a run that finished its whole plan
+      # from one that stopped a third of the way through.
+      #
+      # Recorded only by whoever OWNS the attempt. A caller that goes on to lose the
+      # claim must not write a plan: it would be derived from the probe list as that
+      # caller saw it, and Scanner.run_hooks(:before_scan_start) can still change which
+      # probes the winner actually runs. A stale higher plan survives "never lower" and
+      # marks the winner's complete run partial.
+      record_planned_probe_count!
+      return true
+    end
 
     token = SecureRandom.uuid
     claimed = Report.where(id: report.id).where.not(status: :starting).update_all(
@@ -143,10 +157,19 @@ class RunGarakScan
     planned = report.planned_probe_count_for_run
     return if planned.nil? || planned.zero?
 
-    recorded = report.planned_probe_count
-    return if recorded.present? && recorded >= planned
+    # Conditional UPDATE, not read-then-write. Two attempts can both read the old value
+    # and let the SMALLER write land last, which is the one direction this must never
+    # go: a plan below what the run actually executed marks a complete run partial.
+    updated = Report.unscoped
+                    .where(id: report.id)
+                    .where("planned_probe_count IS NULL OR planned_probe_count < ?", planned)
+                    .update_all(planned_probe_count: planned)
+    return unless updated.positive?
 
-    report.update_columns(planned_probe_count: planned)
+    # Reflect the write in memory without marking it dirty, so a later save on this
+    # instance cannot push a stale value back over a concurrent attempt's higher plan.
+    report.write_attribute(:planned_probe_count, planned)
+    report.clear_attribute_changes([ :planned_probe_count ])
   rescue StandardError => e
     Rails.logger.warn(
       "[RunGarakScan] failed to record planned probe count for #{report.uuid}: #{e.class}: #{e.message}"

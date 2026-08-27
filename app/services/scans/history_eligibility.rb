@@ -1,16 +1,20 @@
 # frozen_string_literal: true
 
 module Scans
-  # Which past reports may inform a projection.
+  # Which past reports may inform a MEASUREMENT.
   #
-  # A projection is customer-facing, so it may only be built from runs that measured a
+  # A measurement is customer-facing, so it may only be built from runs that measured a
   # real workload to completion: a run that failed, was stopped, or dropped eval rows
-  # measured less work than it planned, so feeding its totals in drags every later
-  # projection of the same probes downward -- the same direction as the defect this
-  # projection replaced.
+  # measured less work than it planned, so feeding its totals in moves the answer by how
+  # much of the plan executed rather than by how the target behaved.
   #
-  # One place, so every rung of the ladder (own-run tokens, own-run duration, per-probe
-  # history, the seconds-per-output rate) agrees on what counts as evidence.
+  # One place, so every surface built on measurement agrees about what counts as
+  # evidence: the projections (own-run tokens, own-run duration, per-probe history, the
+  # seconds-per-output rate), the scan's aggregate figures and security grade, its ASR
+  # trend, and the per-report ASR history chart.
+  #
+  # NOT a lifecycle question. "How many runs of this scan finished" includes partial
+  # ones and must not come through here.
   module HistoryEligibility
     module_function
 

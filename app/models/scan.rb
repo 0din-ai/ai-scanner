@@ -161,7 +161,10 @@ class Scan < ApplicationRecord
   # Uses single SQL query with COUNT and SUM aggregation to avoid N+1 queries
   # @return [Hash, nil] { input: Float, output: Float, count: Integer } or nil if no reports
   def actual_token_averages
-    completed = reports.completed
+    # Measurement-eligible runs only. A partial run consumed tokens for less work than
+    # it planned, so averaging it in reports a per-scan cost below what a full run
+    # actually costs -- the same reason the projections already exclude it.
+    completed = Scans::HistoryEligibility.apply(reports.parent_reports)
     return nil if completed.empty?
 
     # Single query: filter to reports with token data AND aggregate
