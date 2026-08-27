@@ -44,6 +44,37 @@ module BrowserAutomation
       }
     end
 
+    # Configuration for the screening proxy each guarded browser launches behind.
+    #
+    # The route guard screens the URLs it is handed, but it cannot reach three
+    # things: the browser resolves each host again, independently of the lookup
+    # just validated, so a name answering publicly for us and privately for the
+    # browser walks past the check; a redirect hop the browser follows internally
+    # never reaches a route handler; and WebSocket traffic is not intercepted at
+    # all, including a socket opened from a Worker.
+    #
+    # The proxy sits below all of it. It resolves each authority once, validates
+    # every answer against the same blocklist, and connects to the address it
+    # approved -- while the hostname stays in the CONNECT authority, so TLS still
+    # verifies strictly against the real host.
+    def proxy_payload(allow_localhost: nil, allowed_addresses: [])
+      allow = allow_localhost.nil? ? UrlSafetyValidator.allow_localhost? : allow_localhost
+      cidrs = UrlSafetyValidator.blocked_cidrs
+      cidrs = cidrs.reject { |cidr| LOOPBACK_CIDRS.include?(cidr) } if allow
+
+      {
+        "modulePath" => Rails.root.join("app", "services", "browser_automation", "screening_proxy_runner.cjs").to_s,
+        "blockedCidrs" => cidrs,
+        # Scoped to this launch: an address approved for this navigation does not
+        # stay approved for whatever DNS returns later.
+        "allowedAddresses" => Array(allowed_addresses).compact.map(&:to_s)
+      }
+    end
+
+    # The proxy takes no allow-loopback flag, so permitting loopback means
+    # omitting those ranges from the blocklist it screens against.
+    LOOPBACK_CIDRS = [ "127.0.0.0/8", "::1/128" ].freeze
+
     # Defines __installNetworkGuard(context, guard). Returns a handle whose
     # .blocked() lists what was aborted, for the caller to report back to Rails.
     #
