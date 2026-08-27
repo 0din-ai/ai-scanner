@@ -256,6 +256,29 @@ RSpec.describe BrowserAutomation::PlaywrightService, "screening proxy wiring" do
     expect(script).to include("blocked_request_count"), "must carry the proxy's overflow count"
   end
 
+  it "drops both loopback families when localhost is permitted" do
+    # blocked_cidrs renders IPv6 canonically, so a literal "::1/128" comparison
+    # silently misses it. localhost resolves to both ::1 and 127.0.0.1 and the
+    # proxy refuses if ANY answer is blocked, so a half-match denies localhost
+    # outright -- which dev and test rely on.
+    allow(UrlSafetyValidator).to receive(:allow_localhost?).and_return(true)
+    _script, data = capture { service.screenshot("http://localhost:3000/", "/tmp/x.png") }
+    cidrs = data["screening_proxy"]["blockedCidrs"]
+
+    expect(cidrs.any? { |c| c.start_with?("127.") }).to be(false), "IPv4 loopback still blocked"
+    expect(cidrs.any? { |c| IPAddr.new(c) == IPAddr.new("::1") rescue false }).to be(false), "IPv6 loopback still blocked"
+    expect(cidrs.any? { |c| c.start_with?("169.254.") }).to be(true), "link-local must stay blocked"
+  end
+
+  it "keeps both loopback families blocked when localhost is not permitted" do
+    allow(UrlSafetyValidator).to receive(:allow_localhost?).and_return(false)
+    _script, data = capture { service.screenshot("https://example.com/", "/tmp/x.png") }
+    cidrs = data["screening_proxy"]["blockedCidrs"]
+
+    expect(cidrs.any? { |c| c.start_with?("127.") }).to be(true)
+    expect(cidrs.any? { |c| (IPAddr.new(c) == IPAddr.new("::1") rescue false) }).to be(true)
+  end
+
   it "keeps TLS verification strict" do
     script, = capture { service.screenshot("https://example.com", "/tmp/x.png") }
 

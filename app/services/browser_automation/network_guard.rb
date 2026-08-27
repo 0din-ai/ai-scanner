@@ -60,7 +60,7 @@ module BrowserAutomation
     def proxy_payload(allow_localhost: nil, allowed_addresses: [])
       allow = allow_localhost.nil? ? UrlSafetyValidator.allow_localhost? : allow_localhost
       cidrs = UrlSafetyValidator.blocked_cidrs
-      cidrs = cidrs.reject { |cidr| LOOPBACK_CIDRS.include?(cidr) } if allow
+      cidrs = cidrs.reject { |cidr| loopback_cidr?(cidr) } if allow
 
       {
         "modulePath" => Rails.root.join("app", "services", "browser_automation", "screening_proxy_runner.cjs").to_s,
@@ -73,7 +73,20 @@ module BrowserAutomation
 
     # The proxy takes no allow-loopback flag, so permitting loopback means
     # omitting those ranges from the blocklist it screens against.
-    LOOPBACK_CIDRS = [ "127.0.0.0/8", "::1/128" ].freeze
+    #
+    # Compared semantically, not by string: blocked_cidrs renders IPv6 in full
+    # canonical form, so "::1/128" never matches "0000:...:0001/128" and IPv6
+    # loopback would stay blocked while IPv4 loopback was allowed. localhost
+    # resolves to both, and the proxy refuses if ANY answer is blocked, so the
+    # mismatch denies localhost outright.
+    LOOPBACK_RANGES = [ IPAddr.new("127.0.0.0/8"), IPAddr.new("::1/128") ].freeze
+
+    def loopback_cidr?(cidr)
+      address = IPAddr.new(cidr)
+      LOOPBACK_RANGES.any? { |range| range.include?(address) && range.prefix == address.prefix }
+    rescue IPAddr::Error
+      false
+    end
 
     # Defines __installNetworkGuard(context, guard). Returns a handle whose
     # .blocked() lists what was aborted, for the caller to report back to Rails.
