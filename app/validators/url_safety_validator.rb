@@ -24,6 +24,14 @@ class UrlSafetyValidator
 
   Result = Struct.new(:safe?, :error, :resolved_ips, keyword_init: true)
 
+  # BLOCKED_RANGES as CIDR strings, for the out-of-process browser drivers
+  # (the Node Playwright scripts and the Python WebChatbotGenerator) that
+  # re-check every request the browser makes. They receive the list instead of
+  # redeclaring it so there is exactly one blocklist in the codebase.
+  def self.blocked_cidrs
+    @blocked_cidrs ||= BLOCKED_RANGES.map { |range| "#{range.to_string}/#{range.prefix}" }.freeze
+  end
+
   def self.safe_url?(url, allow_localhost: false)
     new(url, allow_localhost: allow_localhost).validate
   end

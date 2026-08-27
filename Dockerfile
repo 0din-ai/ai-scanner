@@ -173,6 +173,7 @@ COPY --from=build /rails/RELEASE_NOTES.md* /rails/
 # Install custom garak plugins (OpenRouter + WebChatbot generators, 0din probes & detectors)
 COPY --from=build /rails/script/garak_plugins/openrouter.py /opt/venv/lib/python3.13/site-packages/garak/generators/openrouter.py
 COPY --from=build /rails/script/garak_plugins/web_chatbot.py /opt/venv/lib/python3.13/site-packages/garak/generators/web_chatbot.py
+COPY --from=build /rails/script/garak_plugins/_network_guard.py /opt/venv/lib/python3.13/site-packages/garak/generators/_network_guard.py
 COPY --from=build /rails/script/garak_plugins/probes/0din.py /opt/venv/lib/python3.13/site-packages/garak/probes/0din.py
 COPY --from=build /rails/script/garak_plugins/probes/0din_variants.py /opt/venv/lib/python3.13/site-packages/garak/probes/0din_variants.py
 COPY --from=build /rails/script/garak_plugins/detectors/0din.py /opt/venv/lib/python3.13/site-packages/garak/detectors/0din.py
