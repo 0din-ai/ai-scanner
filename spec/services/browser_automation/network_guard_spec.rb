@@ -40,12 +40,32 @@ RSpec.describe BrowserAutomation::NetworkGuard do
       expect(described_class::GUARD_JS).to include("context.route('**/*'")
     end
 
-    it "walks the redirect chain itself" do
-      # Chromium follows 3xx internally without re-invoking route handlers, so a
-      # guard that only screens route.request().url() misses the redirect pivot -
-      # which is the exact bug being fixed.
-      expect(described_class::GUARD_JS).to include("maxRedirects: 0")
-      expect(described_class::GUARD_JS).to include("redirect to ")
+    it "hands an allowed request back to Chromium instead of re-issuing it" do
+      # This layer screens and reports; the screening proxy enforces, and it screens
+      # every hop of any redirect Chromium follows.
+      #
+      # Re-issuing the request here is what had to stop. route.fetch defaults to the
+      # ORIGINAL request's method, headers and post data, so a 303 from an
+      # authenticated origin to a third party replayed the body and credentials a
+      # native browser redirect would have stripped, and route.fulfill then ran that
+      # third party's response under the first origin.
+      expect(described_class::GUARD_JS).to include("route.continue()")
+      expect(described_class::GUARD_JS).not_to include("route.fetch")
+      expect(described_class::GUARD_JS).not_to include("route.fulfill")
+    end
+
+    it "keeps no hostname decision cache" do
+      # A cached verdict cannot make an unsafe request safe now that the proxy
+      # enforces -- it can only make this layer report a host by a verdict it no
+      # longer holds. The Python guard keeps none either.
+      expect(described_class::GUARD_JS).not_to include("new Map()")
+    end
+
+    it "bounds what it records" do
+      # A page hammering a blocked host must not grow the report array for the
+      # lifetime of the browser.
+      expect(described_class::GUARD_JS).to include("REPORT_LIMIT")
+      expect(described_class::GUARD_JS).to include("blocked.length < REPORT_LIMIT")
     end
 
     it "refuses to run without a blocklist instead of browsing unguarded" do

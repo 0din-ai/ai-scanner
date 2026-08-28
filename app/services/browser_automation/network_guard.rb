@@ -14,23 +14,29 @@ module BrowserAutomation
   # the host of every request the browser makes, against the CIDR list that
   # UrlSafetyValidator already owns. Requests to a blocked address are aborted.
   #
-  # Screening the request URL alone is NOT enough: Chromium follows 3xx responses
-  # internally and does not re-invoke route handlers for the redirected hop, for
-  # navigations and sub-resources alike. So the handler also walks the redirect
-  # chain itself (route.fetch with maxRedirects: 0), screens every hop, and only
-  # then hands the final response to the browser.
+  # This layer SCREENS AND REPORTS. It does not enforce.
   #
-  # Known limits, deliberately not papered over:
-  #   * TOCTOU remains. The guard resolves the host and Chromium resolves it
-  #     again for the connection it actually opens; a DNS record that flips
-  #     between the two can still slip past. This narrows the window from
-  #     "once per scan" to "once per request", which is the most an app-layer
-  #     check can do. Network-level egress control is the real fix.
-  #   * WebSocket handshakes are not intercepted by route(), so ws:// and wss://
-  #     are not covered here.
-  #   * Server-Sent Events are host-screened but not redirect-screened: buffering
-  #     them through route.fetch() would hold the stream open forever and hang
-  #     any chat target that streams tokens.
+  # Enforcement belongs to the screening proxy every browser connection is routed
+  # through: the proxy resolves each host itself, screens every DNS answer, and
+  # connects to the validated numeric address, so it also covers what route() never
+  # sees -- WebSocket upgrades, Server-Sent Event redirects, and service-worker
+  # traffic. Anything this handler allowed and the proxy disagrees with is stopped
+  # at the socket.
+  #
+  # So the handler screens the visible URL, records what it would have refused, and
+  # hands the request straight back to Chromium. It deliberately does NOT walk
+  # redirect chains any more. Doing that meant re-issuing the request itself with
+  # `route.fetch`, which defaults to the ORIGINAL request's method, headers and post
+  # data -- so a 303 from an authenticated origin to a third party replayed the body
+  # and credentials that a native browser redirect would have stripped, and the final
+  # response was fulfilled into the first request's route, running that content under
+  # the wrong origin. It also buffered every non-streaming response. Chromium's own
+  # redirect handling gets all of that right, and the proxy screens each new hop.
+  #
+  # Known limit, deliberately not papered over: a host this layer allows may resolve
+  # differently by the time Chromium connects. That is not a hole, because the proxy
+  # re-resolves and screens for the connection it actually opens; it only means this
+  # layer's REPORT can name a host the proxy later refuses.
   module NetworkGuard
     module_function
 
@@ -95,8 +101,6 @@ module BrowserAutomation
     # navigation happens, rather than silently running an unguarded browser.
     GUARD_JS = <<~JS
       const __dnsPromises = require('dns').promises;
-
-      const MAX_REDIRECTS = 20;
 
       const __netGuard = {
         parseIp(input) {
@@ -211,11 +215,12 @@ module BrowserAutomation
         const loopback = [ '127.0.0.0/8', '::1/128' ].map(__netGuard.parseCidr);
         const allowLoopback = guard.allow_loopback === true;
         const blocked = [];
-        const decisions = new Map();
+        let blockedCount = 0;
 
+        // No decision cache. Python keeps none either, and with the proxy enforcing,
+        // a cached verdict cannot make an unsafe request safe -- it can only make this
+        // layer's report describe a host by a verdict it no longer holds.
         const hostAllowed = async (host) => {
-          if (decisions.has(host)) return decisions.get(host);
-
           const verdict = await (async () => {
             let addresses;
             const literal = __netGuard.parseIp(host);
@@ -243,7 +248,6 @@ module BrowserAutomation
             return { allowed: true };
           })();
 
-          decisions.set(host, verdict);
           return verdict;
         };
 
@@ -262,8 +266,15 @@ module BrowserAutomation
           return verdict.allowed ? null : verdict.reason;
         };
 
+        // Bounded, like Python's report_limit: a page that hammers a blocked host must
+        // not grow this array without limit for the lifetime of the browser.
+        const REPORT_LIMIT = 50;
+
         const deny = (route, url, reason) => {
-          blocked.push({ url: String(url).slice(0, 200), reason });
+          blockedCount += 1;
+          if (blocked.length < REPORT_LIMIT) {
+            blocked.push({ url: String(url).slice(0, 200), reason });
+          }
           return route.abort('blockedbyclient');
         };
 
@@ -277,40 +288,12 @@ module BrowserAutomation
           const reason = await screen(url);
           if (reason) return deny(route, url, reason);
 
-          // Server-Sent Events must stay streaming; route.fetch() would buffer the
-          // response and hang the connection open forever. Host-screened only.
-          const accept = (request.headers()['accept'] || '').toLowerCase();
-          if (accept.includes('text/event-stream')) return route.continue();
-
-          // Chromium follows 3xx internally and does NOT re-invoke route handlers
-          // for the redirected hop (verified on Playwright 1.59 for both navigation
-          // and sub-resource requests), so screening only the request URL leaves the
-          // redirect pivot wide open. Walk the chain here instead, screening every
-          // hop, and hand the browser the final response.
-          let current = url;
-          let response;
-          try {
-            response = await route.fetch({ maxRedirects: 0 });
-            for (let hop = 0; hop < MAX_REDIRECTS; hop++) {
-              const status = response.status();
-              if (status < 300 || status > 399) break;
-
-              const location = response.headers()['location'];
-              if (!location) break;
-
-              const next = new URL(location, current).toString();
-              const nextReason = await screen(next);
-              if (nextReason) return deny(route, next, 'redirect to ' + nextReason);
-
-              current = next;
-              response = await route.fetch({ url: next, maxRedirects: 0 });
-              if (hop === MAX_REDIRECTS - 1) return deny(route, next, 'too many redirects');
-            }
-          } catch (error) {
-            return route.abort('failed');
-          }
-
-          return route.fulfill({ response });
+          // Straight back to Chromium. The proxy screens the connection this
+          // becomes, and every hop of any redirect it follows, so there is nothing
+          // for this layer to add by re-issuing the request itself -- and doing so
+          // replayed the original method, headers and body across redirects and
+          // fulfilled a third party's response under the first origin.
+          return route.continue();
         });
 
         return { blocked: () => blocked };
