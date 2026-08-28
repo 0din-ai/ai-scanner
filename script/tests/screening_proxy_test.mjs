@@ -187,9 +187,21 @@ function proxyOptions(overrides = {}) {
   };
 }
 
+// Skipping is fine on a developer machine with no browsers installed. It is NOT fine
+// where these tests are the only thing standing behind a security control: a third of
+// this suite covers the CONNECT/TLS path, and a silent skip there is indistinguishable
+// from a pass. REQUIRE_BROWSER_TESTS makes the absence fatal, and CI sets it.
+const requireBrowser = process.env.REQUIRE_BROWSER_TESTS === '1';
+
 function requireChromium(t) {
   if (chromium) return true;
   observed.chromium = { skipped: true, reason: playwrightUnavailable };
+  if (requireBrowser) {
+    throw new Error(
+      `REQUIRE_BROWSER_TESTS=1 but Playwright Chromium is unavailable: ${playwrightUnavailable}. ` +
+      'These tests cover the proxy CONNECT/TLS path; skipping them here would hide a broken control.'
+    );
+  }
   t.skip(`Playwright Chromium unavailable: ${playwrightUnavailable}`);
   return false;
 }
