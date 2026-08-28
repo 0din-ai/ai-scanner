@@ -1580,9 +1580,11 @@ function loadReportProgressController({ responses = [] } = {}) {
     replaceWith(next) { this.replaced = next }
   })
 
+  const reloads = []
   const context = {
     Controller: class {},
     console: { warn() {} },
+    window: { location: { reload() { reloads.push(1) } } },
     clearTimeout(id) {
       const timer = timers[id - 1]
       if (timer) timer.cancelled = true
@@ -1623,7 +1625,7 @@ function loadReportProgressController({ responses = [] } = {}) {
     return { instance, body }
   }
 
-  return { build, timers, calls, makeElement }
+  return { build, timers, calls, makeElement, reloads }
 }
 
 function testReportProgressSchedulesOnlyWhileWorkRemains() {
@@ -1709,6 +1711,24 @@ async function testReportProgressSurvivesANetworkError() {
   assert.equal(instance.failures, 1)
 }
 
+async function testReportProgressReloadsWhenTheRunFinishes() {
+  const { build, reloads } = loadReportProgressController({
+    responses: [ { ok: true, status: 200, text: async () => "<div data-poll=\"false\"></div>" } ]
+  })
+  const { instance } = build()
+
+  await instance.refresh()
+
+  // Everything outside the card was rendered server-side for a run in flight -- Key
+  // Statistics says "Pending" until results are ingested. Swapping only the card would
+  // leave a finished report reading Pending beside a card that says otherwise.
+  assert.equal(reloads.length, 1)
+
+  // Guarded: a second pass must not start a reload loop.
+  await instance.refresh()
+  assert.equal(reloads.length, 1)
+}
+
 async function testReportProgressSwapsTheRenderedBody() {
   const { build } = loadReportProgressController({
     responses: [ { ok: true, status: 200, text: async () => "<div data-poll=\"false\"></div>" } ]
@@ -1743,4 +1763,5 @@ await testReportProgressTreatsNotModifiedAsSuccess()
 await testReportProgressBacksOffThenGivesUp()
 await testReportProgressSurvivesANetworkError()
 await testReportProgressSwapsTheRenderedBody()
+await testReportProgressReloadsWhenTheRunFinishes()
 console.log("JavaScript controller tests passed")
