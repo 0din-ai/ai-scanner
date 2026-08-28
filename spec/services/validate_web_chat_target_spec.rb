@@ -47,6 +47,56 @@ RSpec.describe ValidateWebChatTarget do
         expect(target.reload.status).to eq("good")
       end
 
+      context "when the guard or proxy blocked requests" do
+        def validate_with(result)
+          allow(playwright_service).to receive(:validate_webchat_config).and_return(result)
+          service.call
+          target.reload.validation_text
+        end
+
+        it "tells the operator, without condemning a chat that answered" do
+          # A blocked third-party beacon must not fail a working target -- but a silent
+          # block is indistinguishable from a site that never made the call, which is
+          # exactly what makes an odd-behaving target impossible to debug.
+          text = validate_with(success: true, response_detected: true, errors: [],
+                               blocked_request_count: 3)
+
+          expect(target.reload.status).to eq("good")
+          expect(text).to include("3 request(s) to disallowed addresses were blocked")
+        end
+
+        it "reports the TRUE count, not the size of the sampled list" do
+          # The returned list is a bounded sample plus a synthetic overflow entry per
+          # layer, so counting it would understate a page hammering a blocked host.
+          text = validate_with(success: true, response_detected: true, errors: [],
+                               blocked_requests: [ { url: "a", reason: "x" }, { url: "(48 more)", reason: "x" } ],
+                               blocked_request_count: 4321)
+
+          expect(text).to include("4321 request(s)")
+        end
+
+        it "falls back to the list when no count was reported" do
+          text = validate_with(success: true, response_detected: true, errors: [],
+                               blocked_requests: [ { url: "a", reason: "x" }, { url: "b", reason: "x" } ])
+
+          expect(text).to include("2 request(s)")
+        end
+
+        it "says nothing when nothing was blocked" do
+          text = validate_with(success: true, response_detected: true, errors: [])
+
+          expect(text).not_to include("disallowed addresses")
+        end
+
+        it "appends the note to a failure too" do
+          text = validate_with(success: false, response_detected: false, errors: [ "boom" ],
+                               blocked_request_count: 2)
+
+          expect(target.reload.status).to eq("bad")
+          expect(text).to include("2 request(s) to disallowed addresses were blocked")
+        end
+      end
+
       context "when validation succeeds with response detected" do
         it "updates target to good status" do
           allow(playwright_service).to receive(:validate_webchat_config).and_return({

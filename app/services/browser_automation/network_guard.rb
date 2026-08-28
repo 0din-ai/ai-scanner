@@ -95,7 +95,8 @@ module BrowserAutomation
     end
 
     # Defines __installNetworkGuard(context, guard). Returns a handle whose
-    # .blocked() lists what was aborted, for the caller to report back to Rails.
+    # .blocked() lists a bounded sample of what was aborted and .blockedCount() the
+    # true total, for the caller to report back to Rails.
     #
     # Fails closed: a missing, empty, or unparsable blocklist raises before any
     # navigation happens, rather than silently running an unguarded browser.
@@ -296,7 +297,10 @@ module BrowserAutomation
           return route.continue();
         });
 
-        return { blocked: () => blocked };
+        // blocked() is a bounded SAMPLE; blockedCount() is the truth. A caller that
+        // reported only the sample would understate a page hammering a blocked host --
+        // fifty entries whatever the real number was.
+        return { blocked: () => blocked, blockedCount: () => blockedCount };
       }
     JS
   end

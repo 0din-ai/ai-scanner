@@ -78,25 +78,27 @@ class ValidateWebChatTarget
 
     # Use existing Phase 2 validation (smart waits, 100% success rate)
     result = service.validate_webchat_config(url, config)
+    blocked_note = blocked_requests_note(result)
 
     if result[:success] && result[:response_detected]
       target.update(
         status: :good,
         validation_text: "Web chat configuration validated successfully. " \
                         "Test message was sent and response was detected. " \
-                        "Selectors: #{selectors.to_json}"
+                        "Selectors: #{selectors.to_json}#{blocked_note}"
       )
     elsif result[:success] && !result[:response_detected]
       target.update(
         status: :bad,
         validation_text: "Web chat validation partial: Selectors found but no response detected. " \
-                        "The chat may require login or have slow response times."
+                        "The chat may require login or have slow response times.#{blocked_note}"
       )
     else
       target.update(
         status: :bad,
         validation_text: sanitize("Web chat validation failed: #{result[:errors].join(', ')}. " \
-                        "The selectors may be incorrect or the chat interface may have changed.")
+                        "The selectors may be incorrect or the chat interface may have changed." \
+                        "#{blocked_note}")
       )
     end
   rescue StandardError => e
@@ -115,5 +117,21 @@ class ValidateWebChatTarget
 
   def sanitize(text)
     Reports::FailureClassifier.sanitize_text(text)
+  end
+
+  # The page tried to reach an address the guard or the proxy refused.
+  #
+  # Appended to every outcome, including success, and never fatal on its own: a blocked
+  # third-party beacon should not condemn a chat that answered. But an operator
+  # debugging a target that behaves oddly needs to know requests were stopped, and a
+  # silent block is indistinguishable from a site that simply did not make the call.
+  #
+  # Reads the TRUE count rather than the returned list, which carries bounded samples
+  # plus a synthetic overflow entry per layer.
+  def blocked_requests_note(result)
+    count = (result[:blocked_request_count] || Array(result[:blocked_requests]).size).to_i
+    return "" unless count.positive?
+
+    " Note: #{count} request(s) to disallowed addresses were blocked."
   end
 end

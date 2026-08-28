@@ -95,8 +95,20 @@ jobs:
       - name: Run Python unit tests
         run: python3 -m unittest discover -s script/tests
 
+      # The screening-proxy suite's CONNECT/TLS tests need a real browser. Without
+      # one they SKIP, and a skipped security test is indistinguishable from a
+      # passing one -- 9 of its 27 cases were skipping here unnoticed, including
+      # both HTTPS/SNI cases covering the proxy the browser scans run through.
+      # Chromium only; the other browsers are not used.
+      - name: Install Chromium for the browser-dependent security tests
+        run: npx --yes playwright install --with-deps chromium
+
+      # REQUIRE_BROWSER_TESTS makes a missing browser FAIL rather than skip, so the
+      # install step above cannot silently stop working and take the coverage with it.
       - name: Run JavaScript controller unit tests
         run: npm run test:js
+        env:
+          REQUIRE_BROWSER_TESTS: "1"
 
   rspec:
     runs-on: ubuntu-latest
