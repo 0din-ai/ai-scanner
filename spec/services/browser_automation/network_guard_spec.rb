@@ -149,3 +149,147 @@ RSpec.describe BrowserAutomation::PlaywrightService, "network guard wiring" do
     end
   end
 end
+
+RSpec.describe BrowserAutomation::PlaywrightService, "screening proxy wiring" do
+  let(:service) { described_class.instance }
+
+  def capture(result: { "success" => true })
+    script = nil
+    data = nil
+    allow(Open3).to receive(:capture3) do |env, _cmd, script_path|
+      script = File.read(script_path)
+      data = JSON.parse(File.read(env["PLAYWRIGHT_DATA_PATH"]))
+      [ result.to_json, "", double(success?: true) ]
+    end
+    yield
+    [ script, data ]
+  end
+
+  # Screening the request URL is not enough on its own. The browser resolves the
+  # host again, independently of the lookup the guard just validated, so a name
+  # that answers publicly for us and privately for the browser walks past the
+  # check. And a route handler never sees a redirect hop the browser follows
+  # internally, nor WebSocket traffic -- including a socket opened from a Worker.
+  #
+  # The screening proxy sits below all of that: it resolves each authority once,
+  # validates every answer, and connects to the address it approved, while the
+  # hostname stays in the CONNECT authority so TLS still verifies strictly.
+  {
+    "screenshot" => ->(s) { s.screenshot("https://example.com", "/tmp/x.png") },
+    "with_page" => ->(s) { s.with_page("https://example.com") },
+    "extract_page_structure" => ->(s) { s.extract_page_structure("https://example.com") },
+    "validate_webchat_config" => lambda do |s|
+      s.validate_webchat_config(
+        "https://example.com",
+        { "selectors" => { "input_field" => "#i", "response_container" => "#r" } }
+      )
+    end
+  }.each do |name, call|
+    it "#{name} launches the browser behind the screening proxy" do
+      script, data = capture { call.call(service) }
+
+      expect(data["screening_proxy"]).to be_present, "#{name} sent no proxy configuration"
+      expect(data["screening_proxy"]["blockedCidrs"]).to be_present
+      expect(data["screening_proxy"]["modulePath"]).to end_with("screening_proxy_runner.cjs")
+      expect(script).to include("withScreeningProxy")
+      expect(script).to include("proxy: { server:")
+    end
+  end
+
+  it "keeps report rendering unproxied, as it renders our own pages" do
+    # generate_pdf targets Scanner's own report URL on an address the blocklist
+    # covers. Screening it would stop the app rendering its own output.
+    script, data = capture(result: { "success" => true, "path" => "/tmp/r.pdf" }) do
+      service.generate_pdf("http://localhost:3000/reports/1", "/tmp/r.pdf")
+    end
+
+    expect(data["screening_proxy"]).to be_nil
+    expect(script).not_to include("withScreeningProxy")
+  end
+
+  it "generates scripts that parse" do
+    # These specs stub the subprocess, so no assertion on the data alone can
+    # catch a fault in the generated JavaScript -- an unbalanced callback or a
+    # symbol used before it is defined would still read as a passing test.
+    {
+      "screenshot" => ->(s) { s.screenshot("https://example.com", "/tmp/x.png") },
+      "extract_page_structure" => ->(s) { s.extract_page_structure("https://example.com") },
+      "with_page" => ->(s) { s.with_page("https://example.com") },
+    "validate_webchat_config" => lambda do |s|
+      s.validate_webchat_config(
+        "https://example.com",
+        { "selectors" => { "input_field" => "#i", "response_container" => "#r" } }
+      )
+    end,
+      "generate_pdf" => ->(s) { s.generate_pdf("http://localhost:3000/r", "/tmp/r.pdf") }
+    }.each do |name, call|
+      script = nil
+      allow(Open3).to receive(:capture3) do |_env, _cmd, script_path|
+        script = File.read(script_path)
+        [ { "success" => true, "path" => "/tmp/x" }.to_json, "", double(success?: true) ]
+      end
+      call.call(service)
+
+      Tempfile.create([ "generated", ".cjs" ]) do |file|
+        file.write(script)
+        file.flush
+        stdout, stderr, status = Open3.capture3("node", "--check", file.path)
+        expect(status).to be_success, "#{name} generated invalid JS: #{stderr}#{stdout}"
+      end
+    end
+  end
+
+  it "reports guard and proxy blocks in one shape" do
+    # The guard records {url, reason}; the proxy records plain URL strings and
+    # keeps its own total. Concatenating them raw hands callers a mixed-shape
+    # array and drops the proxy's count of what it truncated.
+    script, = capture { service.screenshot("https://example.com", "/tmp/x.png") }
+
+    # Assert the helper is CALLED, not merely defined. Reverting the call site to
+    # __guard.blocked() leaves the definition in place, so a containment check on
+    # the name alone passes while every proxy-only block is silently discarded --
+    # and those are exactly the blocks the proxy exists to catch.
+    expect(script).to include("blocked_requests: __mergeBlocked(__guard, proxy)")
+    expect(script).not_to match(/blocked_requests: __guard\.blocked\(\)/)
+
+    expect(script).to include("reason: 'blocked by screening proxy'")
+    expect(script).to include("blocked_request_count"), "must carry the proxy's overflow count"
+  end
+
+  it "drops both loopback families when localhost is permitted" do
+    # blocked_cidrs renders IPv6 canonically, so a literal "::1/128" comparison
+    # silently misses it. localhost resolves to both ::1 and 127.0.0.1 and the
+    # proxy refuses if ANY answer is blocked, so a half-match denies localhost
+    # outright -- which dev and test rely on.
+    allow(UrlSafetyValidator).to receive(:allow_localhost?).and_return(true)
+    _script, data = capture { service.screenshot("http://localhost:3000/", "/tmp/x.png") }
+    cidrs = data["screening_proxy"]["blockedCidrs"]
+
+    expect(cidrs.any? { |c| c.start_with?("127.") }).to be(false), "IPv4 loopback still blocked"
+    expect(cidrs.any? { |c| IPAddr.new(c) == IPAddr.new("::1") rescue false }).to be(false), "IPv6 loopback still blocked"
+    expect(cidrs.any? { |c| c.start_with?("169.254.") }).to be(true), "link-local must stay blocked"
+  end
+
+  it "keeps both loopback families blocked when localhost is not permitted" do
+    allow(UrlSafetyValidator).to receive(:allow_localhost?).and_return(false)
+    _script, data = capture { service.screenshot("https://example.com/", "/tmp/x.png") }
+    cidrs = data["screening_proxy"]["blockedCidrs"]
+
+    expect(cidrs.any? { |c| c.start_with?("127.") }).to be(true)
+    expect(cidrs.any? { |c| (IPAddr.new(c) == IPAddr.new("::1") rescue false) }).to be(true)
+  end
+
+  it "keeps TLS verification strict" do
+    script, = capture { service.screenshot("https://example.com", "/tmp/x.png") }
+
+    expect(script).not_to include("ignoreHTTPSErrors")
+  end
+
+  it "does not rewrite the navigated URL to an address" do
+    # Carrying the validated address in the URL would drop SNI and break every
+    # HTTPS host that requires it. The proxy carries it instead.
+    _script, data = capture { service.screenshot("https://example.com/chat", "/tmp/x.png") }
+
+    expect(data["url"]).to eq("https://example.com/chat")
+  end
+end

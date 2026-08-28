@@ -44,6 +44,50 @@ module BrowserAutomation
       }
     end
 
+    # Configuration for the screening proxy each guarded browser launches behind.
+    #
+    # The route guard screens the URLs it is handed, but it cannot reach three
+    # things: the browser resolves each host again, independently of the lookup
+    # just validated, so a name answering publicly for us and privately for the
+    # browser walks past the check; a redirect hop the browser follows internally
+    # never reaches a route handler; and WebSocket traffic is not intercepted at
+    # all, including a socket opened from a Worker.
+    #
+    # The proxy sits below all of it. It resolves each authority once, validates
+    # every answer against the same blocklist, and connects to the address it
+    # approved -- while the hostname stays in the CONNECT authority, so TLS still
+    # verifies strictly against the real host.
+    def proxy_payload(allow_localhost: nil, allowed_addresses: [])
+      allow = allow_localhost.nil? ? UrlSafetyValidator.allow_localhost? : allow_localhost
+      cidrs = UrlSafetyValidator.blocked_cidrs
+      cidrs = cidrs.reject { |cidr| loopback_cidr?(cidr) } if allow
+
+      {
+        "modulePath" => Rails.root.join("app", "services", "browser_automation", "screening_proxy_runner.cjs").to_s,
+        "blockedCidrs" => cidrs,
+        # Scoped to this launch: an address approved for this navigation does not
+        # stay approved for whatever DNS returns later.
+        "allowedAddresses" => Array(allowed_addresses).compact.map(&:to_s)
+      }
+    end
+
+    # The proxy takes no allow-loopback flag, so permitting loopback means
+    # omitting those ranges from the blocklist it screens against.
+    #
+    # Compared semantically, not by string: blocked_cidrs renders IPv6 in full
+    # canonical form, so "::1/128" never matches "0000:...:0001/128" and IPv6
+    # loopback would stay blocked while IPv4 loopback was allowed. localhost
+    # resolves to both, and the proxy refuses if ANY answer is blocked, so the
+    # mismatch denies localhost outright.
+    LOOPBACK_RANGES = [ IPAddr.new("127.0.0.0/8"), IPAddr.new("::1/128") ].freeze
+
+    def loopback_cidr?(cidr)
+      address = IPAddr.new(cidr)
+      LOOPBACK_RANGES.any? { |range| range.include?(address) && range.prefix == address.prefix }
+    rescue IPAddr::Error
+      false
+    end
+
     # Defines __installNetworkGuard(context, guard). Returns a handle whose
     # .blocked() lists what was aborted, for the caller to report back to Rails.
     #

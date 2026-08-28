@@ -15,8 +15,12 @@ from playwright.async_api import async_playwright, Page, Browser, TimeoutError a
 
 from garak.generators.base import Generator
 from garak.generators._network_guard import NetworkGuard
+from garak.generators._screening_proxy import ScreeningProxyProcess
 from garak import _config
 from garak.attempt import Conversation, Message
+
+
+RESOURCE_CLOSE_TIMEOUT_SECONDS = 5
 
 
 class WebChatbotGenerator(Generator):
@@ -76,6 +80,9 @@ class WebChatbotGenerator(Generator):
         # Supplied by Rails from UrlSafetyValidator::BLOCKED_RANGES. Required:
         # _init_browser refuses to launch without it rather than browsing unguarded.
         "network_guard": None,      # {"blocked_cidrs": [...], "allow_loopback": bool}
+        # Starts the shared connection-level proxy before Chromium. Required so
+        # DNS rebinding and WebSockets use the same address policy as HTTP routes.
+        "screening_proxy": None,
     }
 
     generator_family_name = "WebChatbot"
@@ -89,6 +96,7 @@ class WebChatbotGenerator(Generator):
         self._page = None
         self._playwright = None
         self._network_guard = None
+        self._screening_proxy = None
 
         # Call parent to load configuration
         super().__init__(name=name, config_root=config_root)
@@ -158,10 +166,13 @@ class WebChatbotGenerator(Generator):
     async def _init_browser(self):
         """Initialize Playwright browser instance"""
         try:
+            self._screening_proxy = ScreeningProxyProcess(getattr(self, "screening_proxy", None))
+            proxy_url = await self._screening_proxy.start()
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
                 headless=self.browser_options.get("headless", True),
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+                proxy={"server": proxy_url},
             )
 
             self._context = await self._browser.new_context(
@@ -196,6 +207,7 @@ class WebChatbotGenerator(Generator):
 
         except Exception as e:
             logging.error(f"Failed to initialize browser: {e}")
+            await self._async_cleanup()
             raise
 
     def _extract_prompt_text(self, prompt: Union[Conversation, str]) -> str:
@@ -633,7 +645,7 @@ class WebChatbotGenerator(Generator):
     def __del__(self):
         """Clean up browser resources"""
         # Cannot use await in __del__, need to handle cleanup carefully
-        if self._page or self._browser or self._playwright:
+        if self._page or self._browser or self._playwright or self._screening_proxy:
             try:
                 # Try to get the running loop
                 loop = asyncio.get_event_loop()
@@ -653,16 +665,29 @@ class WebChatbotGenerator(Generator):
 
     async def _async_cleanup(self):
         """Async cleanup helper"""
-        try:
-            if self._page:
-                await self._page.close()
-            if self._context:
-                await self._context.close()
-            if self._browser:
-                await self._browser.close()
-            if self._playwright:
-                await self._playwright.stop()
-        except Exception as e:
-            logging.warning(f"Error during WebChatbotGenerator cleanup: {e}")
+        resources = [
+            ("page", self._page, "close"),
+            ("context", self._context, "close"),
+            ("browser", self._browser, "close"),
+            ("playwright", self._playwright, "stop"),
+            ("screening proxy", self._screening_proxy, "close"),
+        ]
+        for name, resource, method in resources:
+            if resource is None:
+                continue
+            try:
+                await asyncio.wait_for(
+                    getattr(resource, method)(),
+                    timeout=RESOURCE_CLOSE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logging.warning(f"Timed out closing WebChatbotGenerator {name}")
+            except Exception as e:
+                logging.warning(f"Error closing WebChatbotGenerator {name}: {e}")
+        self._page = None
+        self._context = None
+        self._browser = None
+        self._playwright = None
+        self._screening_proxy = None
 
 DEFAULT_CLASS = "WebChatbotGenerator"

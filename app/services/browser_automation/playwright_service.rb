@@ -33,17 +33,43 @@ module BrowserAutomation
         output_path: output_path.to_s,
         wait_until: options[:wait_until] || "networkidle",
         type: options[:type] || "png",
-        network_guard: NetworkGuard.payload
+        network_guard: NetworkGuard.payload,
+        screening_proxy: NetworkGuard.proxy_payload
       }
 
       script = <<~JS
         const { chromium } = require('playwright');
         const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
+        const { withScreeningProxy } = require(__data.screening_proxy.modulePath);
+        // The route guard reports {url, reason} objects; the proxy reports plain
+        // URL strings and keeps its own total. Concatenating them raw would hand
+        // callers a mixed-shape array and silently drop the proxy's count of what
+        // it truncated, so normalise to one shape and carry the overflow.
+        const __mergeBlocked = (guard, proxy) => {
+          const report = proxy.getBlockReport();
+          const fromProxy = (report.blocked_requests || []).map((url) => ({
+            url: String(url),
+            reason: 'blocked by screening proxy'
+          }));
+          const merged = guard.blocked().concat(fromProxy);
+          const dropped = (report.blocked_request_count || 0) - fromProxy.length;
+          if (dropped > 0) {
+            merged.push({ url: '(' + dropped + ' more)', reason: 'blocked by screening proxy' });
+          }
+          return merged;
+        };
         #{NetworkGuard::GUARD_JS}
         (async () => {
+          await withScreeningProxy(__data.screening_proxy, async (proxy) => {
           const browser = await chromium.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            proxy: { server: proxy.url() },
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu'
+            ]
           });
 
           try {
@@ -64,13 +90,15 @@ module BrowserAutomation
               type: __data.type
             });
 
-            console.log(JSON.stringify({ success: true, path: __data.output_path, blocked_requests: __guard.blocked() }));
+            console.log(JSON.stringify({ success: true, path: __data.output_path, blocked_requests: __mergeBlocked(__guard, proxy) }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
             process.exitCode = 1;
           } finally {
             await browser.close();
           }
+        #{'        '}
+          });
         })();
       JS
 
@@ -138,7 +166,7 @@ module BrowserAutomation
           } finally {
             await browser.close();
           }
-        })();
+                })();
       JS
 
       result = execute_playwright_script(script, data: data)
@@ -170,17 +198,43 @@ module BrowserAutomation
         send_selector: (send_selector.present? && send_selector != "null") ? send_selector : nil,
         test_message: test_message,
         auth: auth_payload(config[:auth] || config["auth"]),
-        network_guard: NetworkGuard.payload
+        network_guard: NetworkGuard.payload,
+        screening_proxy: NetworkGuard.proxy_payload
       }
 
       script = <<~JS
         const { chromium } = require('playwright');
         const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
+        const { withScreeningProxy } = require(__data.screening_proxy.modulePath);
+        // The route guard reports {url, reason} objects; the proxy reports plain
+        // URL strings and keeps its own total. Concatenating them raw would hand
+        // callers a mixed-shape array and silently drop the proxy's count of what
+        // it truncated, so normalise to one shape and carry the overflow.
+        const __mergeBlocked = (guard, proxy) => {
+          const report = proxy.getBlockReport();
+          const fromProxy = (report.blocked_requests || []).map((url) => ({
+            url: String(url),
+            reason: 'blocked by screening proxy'
+          }));
+          const merged = guard.blocked().concat(fromProxy);
+          const dropped = (report.blocked_request_count || 0) - fromProxy.length;
+          if (dropped > 0) {
+            merged.push({ url: '(' + dropped + ' more)', reason: 'blocked by screening proxy' });
+          }
+          return merged;
+        };
         #{NetworkGuard::GUARD_JS}
         (async () => {
+          await withScreeningProxy(__data.screening_proxy, async (proxy) => {
           const browser = await chromium.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            proxy: { server: proxy.url() },
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu'
+            ]
           });
 
           try {
@@ -257,7 +311,7 @@ module BrowserAutomation
                 success: false,
                 errors: errors,
                 response_detected: false,
-                blocked_requests: __guard.blocked()
+                blocked_requests: __mergeBlocked(__guard, proxy)
               }));
               await browser.close();
               return;
@@ -297,7 +351,7 @@ module BrowserAutomation
                 success: false,
                 errors: errors,
                 response_detected: false,
-                blocked_requests: __guard.blocked()
+                blocked_requests: __mergeBlocked(__guard, proxy)
               }));
               await browser.close();
               return;
@@ -316,7 +370,7 @@ module BrowserAutomation
               test_message_found: testMessagePresent,
               baseline_length: baselineHistory.length,
               new_length: newHistory.length,
-              blocked_requests: __guard.blocked()
+              blocked_requests: __mergeBlocked(__guard, proxy)
             }));
 
           } catch (error) {
@@ -328,6 +382,8 @@ module BrowserAutomation
           } finally {
             await browser.close();
           }
+        #{'        '}
+          });
         })();
       JS
 
@@ -357,17 +413,43 @@ module BrowserAutomation
         url: url,
         user_agent: options[:user_agent] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         auth: auth_payload(options[:auth]),
-        network_guard: NetworkGuard.payload
+        network_guard: NetworkGuard.payload,
+        screening_proxy: NetworkGuard.proxy_payload
       }
 
       script = <<~JS
         const { chromium } = require('playwright');
         const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
+        const { withScreeningProxy } = require(__data.screening_proxy.modulePath);
+        // The route guard reports {url, reason} objects; the proxy reports plain
+        // URL strings and keeps its own total. Concatenating them raw would hand
+        // callers a mixed-shape array and silently drop the proxy's count of what
+        // it truncated, so normalise to one shape and carry the overflow.
+        const __mergeBlocked = (guard, proxy) => {
+          const report = proxy.getBlockReport();
+          const fromProxy = (report.blocked_requests || []).map((url) => ({
+            url: String(url),
+            reason: 'blocked by screening proxy'
+          }));
+          const merged = guard.blocked().concat(fromProxy);
+          const dropped = (report.blocked_request_count || 0) - fromProxy.length;
+          if (dropped > 0) {
+            merged.push({ url: '(' + dropped + ' more)', reason: 'blocked by screening proxy' });
+          }
+          return merged;
+        };
         #{NetworkGuard::GUARD_JS}
         (async () => {
+          await withScreeningProxy(__data.screening_proxy, async (proxy) => {
           const browser = await chromium.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            proxy: { server: proxy.url() },
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu'
+            ]
           });
 
           try {
@@ -544,13 +626,15 @@ module BrowserAutomation
               screenshot: screenshotBase64
             };
 
-            console.log(JSON.stringify({ success: true, data: result, blocked_requests: __guard.blocked() }));
+            console.log(JSON.stringify({ success: true, data: result, blocked_requests: __mergeBlocked(__guard, proxy) }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
             process.exitCode = 1;
           } finally {
             await browser.close();
           }
+        #{'        '}
+          });
         })();
       JS
 
@@ -711,16 +795,43 @@ module BrowserAutomation
       data = {
         url: url,
         wait_until: options[:wait_until] || "networkidle",
-        network_guard: NetworkGuard.payload
+        network_guard: NetworkGuard.payload,
+        screening_proxy: NetworkGuard.proxy_payload
       }
 
       script = <<~JS
         const { chromium } = require('playwright');
         const __data = JSON.parse(require('fs').readFileSync(process.env.PLAYWRIGHT_DATA_PATH, 'utf8'));
+        const { withScreeningProxy } = require(__data.screening_proxy.modulePath);
+        // The route guard reports {url, reason} objects; the proxy reports plain
+        // URL strings and keeps its own total. Concatenating them raw would hand
+        // callers a mixed-shape array and silently drop the proxy's count of what
+        // it truncated, so normalise to one shape and carry the overflow.
+        const __mergeBlocked = (guard, proxy) => {
+          const report = proxy.getBlockReport();
+          const fromProxy = (report.blocked_requests || []).map((url) => ({
+            url: String(url),
+            reason: 'blocked by screening proxy'
+          }));
+          const merged = guard.blocked().concat(fromProxy);
+          const dropped = (report.blocked_request_count || 0) - fromProxy.length;
+          if (dropped > 0) {
+            merged.push({ url: '(' + dropped + ' more)', reason: 'blocked by screening proxy' });
+          }
+          return merged;
+        };
         #{NetworkGuard::GUARD_JS}
         (async () => {
+          await withScreeningProxy(__data.screening_proxy, async (proxy) => {
           const browser = await chromium.launch({
-            headless: #{options[:headless] != false}
+            headless: #{options[:headless] != false},
+            proxy: { server: proxy.url() },
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu'
+            ]
           });
 
           try {
@@ -734,13 +845,15 @@ module BrowserAutomation
               await page.goto(__data.url, { waitUntil: __data.wait_until });
             }
 
-            console.log(JSON.stringify({ success: true, blocked_requests: __guard.blocked() }));
+            console.log(JSON.stringify({ success: true, blocked_requests: __mergeBlocked(__guard, proxy) }));
           } catch (error) {
             console.error(JSON.stringify({ error: error.message }));
             process.exitCode = 1;
           } finally {
             await browser.close();
           }
+
+          });
         })();
       JS
 

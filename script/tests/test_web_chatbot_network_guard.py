@@ -11,6 +11,7 @@ import asyncio
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 PLUGIN_DIR = Path(__file__).resolve().parents[2] / "script" / "garak_plugins"
 
@@ -83,6 +84,17 @@ class TestNetworkGuardScreening(unittest.TestCase):
         self.assert_blocked("http://10.1.2.3/x", allow_loopback=True)
         self.assert_blocked("http://169.254.169.254/x", allow_loopback=True)
 
+    def test_rechecks_a_hostname_instead_of_reusing_an_old_dns_decision(self):
+        guard = NetworkGuard({"blocked_cidrs": BLOCKED_CIDRS})
+        guard._resolve = AsyncMock(side_effect=[[guard._parse_ip("93.184.216.34")],
+                                                [guard._parse_ip("127.0.0.1")]])
+
+        first = asyncio.run(guard.screen("http://resolution-change.test/first"))
+        second = asyncio.run(guard.screen("http://resolution-change.test/second"))
+
+        self.assertIsNone(first)
+        self.assertEqual(second, "blocked internal address")
+
 
 class TestNetworkGuardFailsClosed(unittest.TestCase):
     def test_missing_or_empty_config_refuses_to_construct(self):
@@ -100,6 +112,46 @@ class TestNetworkGuardFailsClosed(unittest.TestCase):
         # Truthy-but-not-True values must not enable it either.
         guard = NetworkGuard({"blocked_cidrs": BLOCKED_CIDRS, "allow_loopback": "yes"})
         self.assertFalse(guard.allow_loopback)
+
+
+class FakeRequest:
+    def __init__(self, url):
+        self.url = url
+
+
+class FakeRoute:
+    def __init__(self, url):
+        self.request = FakeRequest(url)
+        self.continued = False
+        self.aborted = None
+
+    async def continue_(self):
+        self.continued = True
+
+    async def abort(self, reason):
+        self.aborted = reason
+
+
+class TestNetworkGuardRouting(unittest.TestCase):
+    def test_allowed_request_continues_without_fetching_or_fulfilling(self):
+        guard = NetworkGuard({"blocked_cidrs": BLOCKED_CIDRS})
+        route = FakeRoute("http://93.184.216.34/resource")
+
+        asyncio.run(guard.handle(route))
+
+        self.assertTrue(route.continued)
+        self.assertIsNone(route.aborted)
+
+    def test_blocked_report_keeps_a_bounded_sample_and_full_count(self):
+        guard = NetworkGuard({"blocked_cidrs": BLOCKED_CIDRS, "report_limit": 3})
+
+        for index in range(5):
+            route = FakeRoute(f"http://127.0.0.{index + 1}/resource")
+            asyncio.run(guard.handle(route))
+            self.assertEqual(route.aborted, "blockedbyclient")
+
+        self.assertEqual(guard.blocked_count, 5)
+        self.assertEqual(len(guard.blocked), 3)
 
 
 if __name__ == "__main__":

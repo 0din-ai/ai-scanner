@@ -701,8 +701,10 @@ RSpec.describe RunGarakScan, type: :service do
         config = JSON.parse(File.read(file_path))
         expect(config).to have_key('web_chatbot')
         expect(config['web_chatbot']).to have_key('WebChatbotGenerator')
-        expect(config['web_chatbot']['WebChatbotGenerator']).to have_key('url')
-        expect(config['web_chatbot']['WebChatbotGenerator']['url']).to eq('https://example.com/chat')
+        generator = config['web_chatbot']['WebChatbotGenerator']
+        expect(generator).to have_key('url')
+        expect(generator['url']).to eq('https://example.com/chat')
+        expect(generator['screening_proxy']).to eq(BrowserAutomation::NetworkGuard.proxy_payload)
       end
 
       it 'handles web_config as JSON string' do

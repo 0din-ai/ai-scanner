@@ -8,10 +8,9 @@ import asyncio
 import ipaddress
 import logging
 import socket
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 
-MAX_REDIRECTS = 20
 INERT_SCHEMES = ("data", "blob", "about")
 
 
@@ -30,17 +29,16 @@ class NetworkGuard:
     screened. The browser runs in the same container as Rails, so that reaches
     whatever the container can reach.
 
-    Screening the request URL alone is not enough. Chromium follows 3xx responses
-    internally and does not re-invoke route handlers for the redirected hop, so this
-    walks the redirect chain itself and screens every hop.
+    This route handler is defense in depth: it refuses visible HTTP requests early
+    and reports them. The browser's screening proxy owns connection-level DNS
+    validation, redirect hops, and WebSocket traffic.
 
     `blocked_cidrs` is supplied by Rails from UrlSafetyValidator::BLOCKED_RANGES so
     there is one blocklist in the product rather than a Python copy that drifts.
 
-    Known limits: DNS may still flip between this lookup and Chromium's own (TOCTOU),
-    WebSocket handshakes are not intercepted by route(), and Server-Sent Events are
-    host-screened but not redirect-screened because buffering them would hold the
-    stream open forever.
+    The handler deliberately continues allowed requests unchanged. Fetching and
+    fulfilling them here would buffer streaming responses and duplicate transport
+    enforcement already performed by the proxy.
     """
 
     LOOPBACK = (ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128"))
@@ -56,8 +54,12 @@ class NetworkGuard:
         except ValueError as exc:
             raise NetworkGuardError(f"network_guard.blocked_cidrs unparsable: {exc}") from exc
         self.allow_loopback = config.get("allow_loopback") is True
+        report_limit = config.get("report_limit", 50)
+        if not isinstance(report_limit, int) or isinstance(report_limit, bool) or report_limit < 0:
+            raise NetworkGuardError("network_guard.report_limit must be a non-negative integer")
+        self.report_limit = report_limit
         self.blocked = []
-        self._decisions = {}
+        self.blocked_count = 0
 
     @staticmethod
     def _parse_ip(host):
@@ -94,9 +96,6 @@ class NetworkGuard:
         return addresses
 
     async def _host_allowed(self, host):
-        if host in self._decisions:
-            return self._decisions[host]
-
         addresses = await self._resolve(host)
         # No usable address is fail-closed, matching the Ruby validator.
         if not addresses:
@@ -116,7 +115,6 @@ class NetworkGuard:
                 if not verdict[0]:
                     break
 
-        self._decisions[host] = verdict
         return verdict
 
     async def screen(self, url):
@@ -130,7 +128,9 @@ class NetworkGuard:
         return None if allowed else reason
 
     def _deny(self, url, reason):
-        self.blocked.append({"url": url[:200], "reason": reason})
+        self.blocked_count += 1
+        if len(self.blocked) < self.report_limit:
+            self.blocked.append({"url": url[:200], "reason": reason})
         logging.warning("WebChatbotGenerator network guard blocked %s (%s)", url[:200], reason)
 
     async def handle(self, route):
@@ -147,39 +147,4 @@ class NetworkGuard:
             await route.abort("blockedbyclient")
             return
 
-        accept = (request.headers.get("accept") or "").lower()
-        if "text/event-stream" in accept:
-            # Streaming responses must not be buffered through route.fetch(); doing so
-            # holds the connection open and hangs any target that streams tokens.
-            await route.continue_()
-            return
-
-        current = url
-        try:
-            response = await route.fetch(max_redirects=0)
-            for hop in range(MAX_REDIRECTS):
-                if not 300 <= response.status <= 399:
-                    break
-                location = response.headers.get("location")
-                if not location:
-                    break
-
-                nxt = urljoin(current, location)
-                nxt_reason = await self.screen(nxt)
-                if nxt_reason:
-                    self._deny(nxt, f"redirect to {nxt_reason}")
-                    await route.abort("blockedbyclient")
-                    return
-
-                current = nxt
-                response = await route.fetch(url=nxt, max_redirects=0)
-                if hop == MAX_REDIRECTS - 1:
-                    self._deny(nxt, "too many redirects")
-                    await route.abort("blockedbyclient")
-                    return
-        except Exception as exc:  # network failure mid-chain - fail closed
-            logging.debug("WebChatbotGenerator network guard aborting %s: %s", url[:200], exc)
-            await route.abort("failed")
-            return
-
-        await route.fulfill(response=response)
+        await route.continue_()

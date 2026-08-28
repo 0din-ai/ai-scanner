@@ -507,15 +507,15 @@ class RunGarakScan
 
     web_config = target.web_config.is_a?(String) ? JSON.parse(target.web_config) : target.web_config
 
-    # Hand the browser driver the same blocklist UrlSafetyValidator enforces, so the
-    # webchat URL stays screened for the whole scan rather than only at launch: a
-    # redirect from the target, or JS on its page, can otherwise steer the browser to
-    # an internal address that was never checked. WebChatbotGenerator refuses to
-    # launch without this key.
+    # Hand both browser layers the same blocklist UrlSafetyValidator enforces. The
+    # route guard refuses visible HTTP requests early; the screening proxy owns DNS
+    # and the exact transport connection, including redirects and WebSockets.
+    # WebChatbotGenerator refuses to launch if either layer is missing.
     garak_config = {
       "web_chatbot" => {
         "WebChatbotGenerator" => (web_config.is_a?(Hash) ? web_config : {}).merge(
-          "network_guard" => BrowserAutomation::NetworkGuard.payload
+          "network_guard" => BrowserAutomation::NetworkGuard.payload,
+          "screening_proxy" => BrowserAutomation::NetworkGuard.proxy_payload
         )
       }
     }
