@@ -14,6 +14,7 @@ export default class extends Controller {
 
   connect() {
     this.failures = 0
+    this.finished = false
     this.scheduleNext()
   }
 
@@ -72,13 +73,34 @@ export default class extends Controller {
 
       const html = await response.text()
       this.failures = 0
-      this.replaceBody(html)
+      const stillRunning = this.replaceBody(html)
 
-      // A finished run stops the loop, and the freshly rendered body is what says so.
+      // Read from the HTML we just received, not from the DOM after replacing it: the
+      // target reference can still point at the element we swapped out.
+      if (!stillRunning) {
+        // Everything OUTSIDE this card was rendered server-side for a run in flight --
+        // Key Statistics in particular says "Pending" because results are not written
+        // until the journal is ingested. Swapping only the card would leave a finished
+        // report reading Pending beside a card that says otherwise, which is the exact
+        // confusion this feature exists to remove. Reload once so the whole page
+        // re-renders with the real figures.
+        this.finish()
+        return
+      }
+
       this.scheduleNext()
     } catch (error) {
       this.onFailure()
     }
+  }
+
+  // Guarded: replaceBody can fire more than once in flight, and a reload loop would
+  // be worse than a stale card.
+  finish() {
+    if (this.finished) return
+    this.finished = true
+    this.cancel()
+    window.location.reload()
   }
 
   onFailure() {
@@ -92,14 +114,17 @@ export default class extends Controller {
     this.scheduleNext()
   }
 
+  // Returns whether the body it installed still wants polling.
   replaceBody(html) {
-    if (!this.hasBodyTarget) return
+    if (!this.hasBodyTarget) return false
 
     const template = document.createElement("template")
     template.innerHTML = html.trim()
     const next = template.content.firstElementChild
-    if (!next) return
+    if (!next) return this.shouldPoll()
 
     this.bodyTarget.replaceWith(next)
+    this.bodyTarget = next
+    return next.dataset.poll === "true"
   }
 }

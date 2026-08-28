@@ -160,8 +160,15 @@ class RunGarakScan
     # Conditional UPDATE, not read-then-write. Two attempts can both read the old value
     # and let the SMALLER write land last, which is the one direction this must never
     # go: a plan below what the run actually executed marks a complete run partial.
+    # `status: :starting` is part of the predicate, not a Ruby check before it.
+    # Callers reach here having read `report.starting?` from a possibly stale
+    # in-memory record: another process may have claimed, finished or failed the
+    # report since it was loaded, and writing a plan for an attempt we no longer own
+    # can raise it above what the winner actually runs -- which "never lower" then
+    # preserves, marking a complete run partial. Only a report the DATABASE still
+    # shows as claimed for launch gets a plan.
     updated = Report.unscoped
-                    .where(id: report.id)
+                    .where(id: report.id, status: Report.statuses[:starting])
                     .where("planned_probe_count IS NULL OR planned_probe_count < ?", planned)
                     .update_all(planned_probe_count: planned)
     return unless updated.positive?
