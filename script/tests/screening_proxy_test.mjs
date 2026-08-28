@@ -392,6 +392,41 @@ test('strict public HTTPS preserves hostname/SNI while proxy pins the connection
   });
 });
 
+test('repeated strict HTTPS navigations survive CONNECT teardown races', {
+  concurrency: false,
+  timeout: 60000
+}, async (t) => {
+  if (!requireChromium(t)) return;
+  try {
+    await requireOutboundHttps();
+  } catch (error) {
+    t.skip(`outbound HTTPS unavailable: ${error.message}`);
+    return;
+  }
+
+  const statuses = [];
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await withBrowser(proxyOptions(), async ({ browser }) => {
+      const context = await browser.newContext({ ignoreHTTPSErrors: false });
+      await context.route('**/*', async (route) => {
+        const fetched = await route.fetch({ maxRedirects: 0 });
+        await route.fulfill({ response: fetched });
+      });
+      const page = await context.newPage();
+      const response = await page.goto('https://example.com/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000
+      });
+      statuses.push(response.status());
+      await page.screenshot({ type: 'png' });
+      await context.close();
+    });
+  }
+
+  observed.repeatedHttps = { attempts: statuses.length, statuses };
+  assert.deepEqual(statuses, new Array(10).fill(200));
+});
+
 test('plain HTTP allowed target works through the proxy', { concurrency: false }, async (t) => {
   if (!requireChromium(t)) return;
   const beforeRequests = chatRequestUrls.length;
@@ -995,6 +1030,101 @@ test('stdio EOF during startup cannot leave the proxy listener behind', { concur
   assert.equal(exitCode, 0);
   assert.equal(signal, null);
   assert.equal(await socketCanConnect(listenPort), false);
+});
+
+test('a DNS result released after close cannot start a connection', {
+  concurrency: false,
+  timeout: 3000
+}, async () => {
+  let releaseResolution;
+  let markResolutionStarted;
+  let connectAttempts = 0;
+  const resolutionStarted = new Promise((resolve) => { markResolutionStarted = resolve; });
+  const proxy = createScreeningProxy(proxyOptions({
+    resolve: async () => {
+      markResolutionStarted();
+      return new Promise((resolve) => { releaseResolution = resolve; });
+    },
+    connect: () => {
+      connectAttempts += 1;
+      throw new Error('connect must not run after close');
+    }
+  }));
+  await proxy.listen();
+
+  const request = http.get({
+    hostname: '127.0.0.1',
+    port: proxy.address().port,
+    path: 'http://delayed-resolution.test/resource',
+    headers: { host: 'delayed-resolution.test', connection: 'close' },
+    agent: false
+  });
+  request.on('error', () => {});
+  await resolutionStarted;
+  await proxy.close();
+  releaseResolution(['93.184.216.34']);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  observed.delayedResolutionClose = { proxyClosed: proxy.isClosed(), connectAttempts };
+  assert.equal(proxy.isClosed(), true);
+  assert.equal(connectAttempts, 0);
+});
+
+test('close cancels staggered attempts before another socket starts', {
+  concurrency: false,
+  timeout: 3000
+}, async () => {
+  const attempts = [];
+  const pendingSockets = [];
+  let markFirstAttempt;
+  const firstAttemptStarted = new Promise((resolve) => { markFirstAttempt = resolve; });
+
+  class PendingConnectSocket extends EventEmitter {
+    setTimeout() { return this; }
+
+    destroy(error) {
+      if (this.destroyed) return this;
+      this.destroyed = true;
+      queueMicrotask(() => {
+        if (error) this.emit('error', error);
+        this.emit('close');
+      });
+      return this;
+    }
+  }
+
+  const proxy = createScreeningProxy(proxyOptions({
+    connectAttemptDelayMs: 250,
+    resolve: async () => ['198.51.100.10', '198.51.100.11'],
+    connect: (options) => {
+      attempts.push(options.host);
+      if (attempts.length === 1) markFirstAttempt();
+      const socket = new PendingConnectSocket();
+      pendingSockets.push(socket);
+      return socket;
+    }
+  }));
+  await proxy.listen();
+
+  const request = http.get({
+    hostname: '127.0.0.1',
+    port: proxy.address().port,
+    path: 'http://stagger-close.test/resource',
+    headers: { host: 'stagger-close.test', connection: 'close' },
+    agent: false
+  });
+  request.on('error', () => {});
+  await firstAttemptStarted;
+  await proxy.close();
+  await new Promise((resolve) => setTimeout(resolve, 350));
+
+  observed.staggerClose = {
+    proxyClosed: proxy.isClosed(),
+    attempts,
+    liveSockets: pendingSockets.filter((socket) => !socket.destroyed).length
+  };
+  assert.deepEqual(attempts, ['198.51.100.10']);
+  assert.equal(pendingSockets.every((socket) => socket.destroyed), true);
 });
 
 test('withScreeningProxy tears down after a mid-navigation exception', { concurrency: false }, async (t) => {

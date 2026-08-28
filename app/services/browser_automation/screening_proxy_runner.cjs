@@ -401,6 +401,7 @@ function createScreeningProxy(options = {}) {
   const blocked = createBlockCollector({ limit: reportLimit, maxUrlLength });
   const detailSamples = [];
   const sockets = new Set();
+  const pendingConnects = new Set();
   let lastAddress = null;
   let closed = false;
   let closing = false;
@@ -444,7 +445,12 @@ function createScreeningProxy(options = {}) {
     return cidrs.some((cidr) => withinCidr(parsed, cidr));
   }
 
+  function ensureOpen() {
+    if (closing || closed) throw new ScreeningError('proxy-closed', 502);
+  }
+
   async function screen(target) {
+    ensureOpen();
     const isLiteral = Boolean(net.isIP(target.hostname));
     let rawAddresses;
     if (isLiteral) {
@@ -456,6 +462,9 @@ function createScreeningProxy(options = {}) {
         throw new ScreeningError('dns-failure', 502, { cause: error });
       }
     }
+    // DNS is asynchronous and may finish after close() has already torn down
+    // the listener. Never turn a stale answer into a post-shutdown connection.
+    ensureOpen();
     if (!Array.isArray(rawAddresses) || rawAddresses.length === 0) {
       throw new ScreeningError('unresolvable-authority', 502);
     }
@@ -521,12 +530,30 @@ function createScreeningProxy(options = {}) {
   }
 
   async function connectValidated(decision, port) {
+    ensureOpen();
     return new Promise((resolveConnect, rejectConnect) => {
       const attempts = [];
       const timers = [];
       let failures = 0;
       let lastError = null;
       let settled = false;
+      let operation;
+
+      const clearPending = () => {
+        timers.forEach(clearTimeout);
+        if (operation) pendingConnects.delete(operation);
+      };
+
+      const cancel = () => {
+        if (settled) return;
+        settled = true;
+        clearPending();
+        attempts.forEach((attempt) => attempt.socket.destroy());
+        rejectConnect(new ScreeningError('proxy-closed', 502));
+      };
+
+      operation = { cancel };
+      pendingConnects.add(operation);
 
       const fail = (error) => {
         if (settled) return;
@@ -534,6 +561,7 @@ function createScreeningProxy(options = {}) {
         lastError = error;
         if (failures !== decision.addresses.length) return;
         settled = true;
+        clearPending();
         rejectConnect(new ScreeningError('connection-failed', 502, {
           resolvedAddresses: decision.addresses,
           cause: lastError
@@ -546,7 +574,7 @@ function createScreeningProxy(options = {}) {
           return;
         }
         settled = true;
-        timers.forEach(clearTimeout);
+        clearPending();
         attempts.forEach((candidate) => {
           if (candidate !== attempt) candidate.socket.destroy();
         });
@@ -556,6 +584,10 @@ function createScreeningProxy(options = {}) {
       decision.addresses.forEach((address, index) => {
         timers.push(setTimeout(() => {
           if (settled) return;
+          if (closing || closed) {
+            cancel();
+            return;
+          }
           let attempt;
           try {
             attempt = { address, ...connectAddress(address, port) };
@@ -593,6 +625,34 @@ function createScreeningProxy(options = {}) {
         error.statusCode === 403 ? 'Forbidden' : 'Bad Gateway';
       socket.end(`HTTP/1.1 ${error.statusCode} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
     }
+  }
+
+  function pipeTunnel(clientSocket, upstream) {
+    const destroy = (socket) => {
+      if (!socket.destroyed) socket.destroy();
+    };
+
+    // An error belongs to the endpoint that emitted it. Passing that Error into
+    // peer.destroy(error) makes the peer emit a second, potentially unhandled
+    // error after it has already closed. Consume both sides and tear the peer
+    // down without forwarding the Error object.
+    clientSocket.on('error', () => destroy(upstream));
+    upstream.on('error', () => destroy(clientSocket));
+
+    // Preserve TCP half-close semantics: FIN in one direction ends the peer's
+    // writable side while allowing already-buffered data in the other direction
+    // to drain. A full close/error then tears down the remaining endpoint.
+    clientSocket.once('end', () => {
+      if (!upstream.destroyed && !upstream.writableEnded) upstream.end();
+    });
+    upstream.once('end', () => {
+      if (!clientSocket.destroyed && !clientSocket.writableEnded) clientSocket.end();
+    });
+    clientSocket.once('close', () => destroy(upstream));
+    upstream.once('close', () => destroy(clientSocket));
+
+    clientSocket.pipe(upstream, { end: false });
+    upstream.pipe(clientSocket, { end: false });
   }
 
   const server = http.createServer((request, response) => {
@@ -654,13 +714,9 @@ function createScreeningProxy(options = {}) {
         const decision = await screen(target);
         const connection = await connectValidated(decision, target.port);
         const upstream = connection.socket;
+        pipeTunnel(clientSocket, upstream);
         clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
         if (head.length) upstream.write(head);
-        clientSocket.pipe(upstream);
-        upstream.pipe(clientSocket);
-        upstream.once('error', (cause) => {
-          clientSocket.destroy(cause);
-        });
       } catch (cause) {
         rejectSocket(clientSocket, screeningFailure(target, cause));
       }
@@ -676,16 +732,12 @@ function createScreeningProxy(options = {}) {
         const decision = await screen(target);
         const connection = await connectValidated(decision, target.port);
         const upstream = connection.socket;
+        pipeTunnel(clientSocket, upstream);
         upstream.write(
           `${request.method} ${target.path} HTTP/${request.httpVersion}\r\n` +
           `${upgradeHeaders(request, target.authority).join('\r\n')}\r\n\r\n`
         );
         if (head.length) upstream.write(head);
-        clientSocket.pipe(upstream);
-        upstream.pipe(clientSocket);
-        upstream.once('error', (cause) => {
-          clientSocket.destroy(cause);
-        });
       } catch (cause) {
         rejectSocket(clientSocket, screeningFailure(target, cause));
       }
@@ -747,6 +799,7 @@ function createScreeningProxy(options = {}) {
         return;
       }
       closing = true;
+      pendingConnects.forEach((operation) => operation.cancel());
       sockets.forEach((socket) => socket.destroy());
       await new Promise((resolveClose) => {
         if (!server.listening) {
