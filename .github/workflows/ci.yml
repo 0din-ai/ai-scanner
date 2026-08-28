@@ -95,13 +95,20 @@ jobs:
       - name: Run Python unit tests
         run: python3 -m unittest discover -s script/tests
 
-      # The screening-proxy suite's CONNECT/TLS tests need a real browser. Without
-      # one they SKIP, and a skipped security test is indistinguishable from a
-      # passing one -- 9 of its 27 cases were skipping here unnoticed, including
-      # both HTTPS/SNI cases covering the proxy the browser scans run through.
-      # Chromium only; the other browsers are not used.
+      # The screening-proxy suite's CONNECT/TLS tests need BOTH the playwright npm
+      # package (to require) and a real Chromium (to launch). Without either they
+      # SKIP, and a skipped security test is indistinguishable from a passing one --
+      # 9 of its 27 cases were skipping here unnoticed, including both HTTPS/SNI
+      # cases covering the proxy every browser scan runs through.
+      #
+      # This is the one place the job installs anything; the rest of the suite still
+      # runs on the runner's ambient interpreters. Chromium only -- the other
+      # browsers are never launched.
+      - name: Install JavaScript dependencies
+        run: npm ci
+
       - name: Install Chromium for the browser-dependent security tests
-        run: npx --yes playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       # REQUIRE_BROWSER_TESTS makes a missing browser FAIL rather than skip, so the
       # install step above cannot silently stop working and take the coverage with it.
