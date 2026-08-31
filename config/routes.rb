@@ -53,6 +53,7 @@ Rails.application.routes.draw do
         get :probes_tab
         get :evidence
         get :evidence_attempt
+        get :json_export
         get :probe_attempts
         get :progress
         get :attempt_content
