@@ -361,6 +361,64 @@ module Admin
       render layout: false
     end
 
+    # Downloads the whole report -- prompts, responses and per-attempt verdicts --
+    # as JSON.
+    #
+    # Spooled to a tempfile before any header goes out, rather than streamed
+    # straight to the response. Streaming would commit a 200 with the first chunk,
+    # before a single probe_result had been read, so anything failing part-way
+    # through would hand the reader a truncated file that still looked like a
+    # successful download. Buffering costs the wait but makes a failure a 500.
+    #
+    # Scoped explicitly by company as well as through policy_scope: tenancy is not
+    # required app-wide, so a nil ambient tenant makes the policy scope span every
+    # company. This action names the constraint rather than inheriting it.
+    def json_export
+      company = current_company
+      raise ActiveRecord::RecordNotFound if company.nil?
+
+      @report = policy_scope(Report).where(company_id: company.id).find(params[:id])
+      authorize @report, :json_export?
+
+      spool = Tempfile.new([ "report_export", ".json" ], binmode: true)
+      Reports::JsonExportPayload.new(@report).each { |chunk| spool.write(chunk) }
+      spool.flush
+      spool.rewind
+
+      filename = "report_#{@report.uuid}_#{@report.created_at.strftime('%Y-%m-%d')}.json"
+      # The export carries prompts and model responses, so it must not be held by
+      # a shared cache on the way to the reader.
+      response.headers["Cache-Control"] = "no-store"
+      send_file_headers! type: "application/json", disposition: "attachment", filename: filename
+      response.headers["Content-Length"] = spool.size.to_s
+      self.response_body = SpooledFileBody.new(spool)
+    end
+
+    # Streams the spooled file and removes it once the server is done with it,
+    # whether the download completed or the connection dropped. Rack calls close
+    # on the body in both cases; without it a failed download would leave the
+    # tempfile behind until the process exited.
+    class SpooledFileBody
+      CHUNK = 64 * 1024
+
+      def initialize(file)
+        @file = file
+      end
+
+      def each
+        while (chunk = @file.read(CHUNK))
+          yield chunk
+        end
+      end
+
+      def close
+        @file.close
+        @file.unlink
+      rescue IOError, Errno::ENOENT
+        nil
+      end
+    end
+
     def top_probes
       authorize @report
       # Get top 5 most vulnerable probes for this report

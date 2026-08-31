@@ -21,6 +21,10 @@ class ReportPolicy < TenantScopedPolicy
     true
   end
 
+  def json_export?
+    show?
+  end
+
   def evidence?
     true
   end

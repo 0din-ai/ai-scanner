@@ -29,6 +29,17 @@
       color: :gray,
       size: :base
     }
+    if policy(report).json_export?
+      action_buttons << {
+        label: "Export to JSON",
+        path: json_export_report_path(report),
+        data: { turbo: false },
+        icon: "icon-code",
+        variant: :default,
+        color: :gray,
+        size: :base
+      }
+    end
   end
 
   # Stop/Cancel button for running states
