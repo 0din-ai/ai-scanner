@@ -13,20 +13,28 @@ export default class extends Controller {
     "probesChevron", "probesContent",
     "sortLabel", "sortButton",
     "attemptChevron", "attemptContent",
-    "tabOverview", "tabProbes",
-    "tabContentOverview", "tabContentProbes",
-    "probesFrame",
+    "tabOverview", "tabProbes", "tabEvidence",
+    "tabContentOverview", "tabContentProbes", "tabContentEvidence",
+    "probesFrame", "evidenceFrame",
     "logsChevron", "logsContent"
   ]
 
   static values = {
     sortBy: { type: String, default: "asr" },
-    probesTabUrl: String
+    probesTabUrl: String,
+    evidenceTabUrl: String,
+    initialTab: String
   }
 
   async connect() {
     this._attemptsErrorListeners = []
     this.setupProbeCardToggle()
+
+    // Before the charts, which await a dynamic import: a deep-linked reader is here
+    // for one attempt and should not wait on the overview's graphs to see it.
+    if (this.hasInitialTabValue && this.initialTabValue) {
+      this.activateTab(this.initialTabValue)
+    }
 
     if (this.hasAsrHistoryChartTarget || this.hasTopProbesChartTarget) {
       await import("/js/echarts.js")
@@ -56,42 +64,76 @@ export default class extends Controller {
     }
   }
 
+  // Data-driven rather than a branch per tab. With three tabs an if/else chain has
+  // to un-highlight every OTHER tab in each branch, so each new tab edits every
+  // existing one -- which is how a tab ends up highlighted in two places at once.
+  get tabs() {
+    return [
+      { name: 'overview', tab: 'tabOverview', content: 'tabContentOverview' },
+      { name: 'probes', tab: 'tabProbes', content: 'tabContentProbes', frame: 'probesFrame', url: () => this.probesTabUrlValue },
+      { name: 'evidence', tab: 'tabEvidence', content: 'tabContentEvidence', frame: 'evidenceFrame', url: () => this.evidenceTabUrlValue }
+    ]
+  }
+
   switchTab(event) {
-    const tab = event.currentTarget.dataset.tab
+    this.activateTab(event.currentTarget.dataset.tab)
+  }
 
-    if (tab === 'overview') {
-      this.tabOverviewTarget.classList.add('text-primary')
-      this.tabOverviewTarget.classList.remove('text-contentTertiary', 'hover:text-contentSecondary')
-      this.tabProbesTarget.classList.remove('text-primary')
-      this.tabProbesTarget.classList.add('text-contentTertiary', 'hover:text-contentSecondary')
-      this.tabContentOverviewTarget.classList.remove('hidden')
-      this.tabContentProbesTarget.classList.add('hidden')
+  // Separate from the click handler because a deep link to one attempt arrives as a
+  // page load, not a click: the report page opens with the evidence tab already
+  // selected and its frame already carrying the attempt's coordinates.
+  activateTab(selected) {
+    if (!selected) return
 
-      // Resize charts when switching back to overview tab
-      if (this.charts) {
-        setTimeout(() => resizeCharts(this.charts), 50)
+    for (const entry of this.tabs) {
+      if (!this[`has${entry.tab[0].toUpperCase()}${entry.tab.slice(1)}Target`]) continue
+
+      const isSelected = entry.name === selected
+      const tabEl = this[`${entry.tab}Target`]
+      tabEl.classList.toggle('text-primary', isSelected)
+      tabEl.classList.toggle('text-contentTertiary', !isSelected)
+      tabEl.classList.toggle('hover:text-contentSecondary', !isSelected)
+
+      const contentKey = `has${entry.content[0].toUpperCase()}${entry.content.slice(1)}Target`
+      if (this[contentKey]) {
+        this[`${entry.content}Target`].classList.toggle('hidden', !isSelected)
       }
-    } else if (tab === 'probes') {
-      this.tabProbesTarget.classList.add('text-primary')
-      this.tabProbesTarget.classList.remove('text-contentTertiary', 'hover:text-contentSecondary')
-      this.tabOverviewTarget.classList.remove('text-primary')
-      this.tabOverviewTarget.classList.add('text-contentTertiary', 'hover:text-contentSecondary')
-      this.tabContentProbesTarget.classList.remove('hidden')
-      this.tabContentOverviewTarget.classList.add('hidden')
 
-      // Lazy-load probes turbo frame on first tab switch
-      if (this.hasProbesFrameTarget && !this.probesFrameTarget.src) {
-        const probesUrl = this.probesTabUrlValue
-        const onProbesError = (e) => {
-          e.preventDefault()
-          console.error(`[report-redesigned] Failed to load probes tab from ${probesUrl}:`, e)
-          this.probesFrameTarget.innerHTML = '<p class="text-sm text-red-400 p-4 font-sans">Failed to load probes. Please refresh the page.</p>'
-        }
-        this.probesFrameTarget.addEventListener("turbo:frame-missing", onProbesError, { once: true })
-        this.probesFrameTarget.addEventListener("turbo:fetch-request-error", onProbesError, { once: true })
-        this.probesFrameTarget.src = probesUrl
-      }
+      if (isSelected && entry.frame) this.lazyLoadFrame(entry)
     }
+
+    // Charts size themselves to a visible container, so they have to be told once
+    // the overview is actually on screen.
+    if (selected === 'overview' && this.charts) {
+      setTimeout(() => resizeCharts(this.charts), 50)
+    }
+  }
+
+  // Loads a tab's turbo frame the first time it is shown. The error listeners are
+  // registered { once: true } AND tracked, so a frame that never errors does not
+  // leave a listener behind on disconnect.
+  lazyLoadFrame(entry) {
+    const frameKey = `has${entry.frame[0].toUpperCase()}${entry.frame.slice(1)}Target`
+    if (!this[frameKey]) return
+
+    const frame = this[`${entry.frame}Target`]
+    if (frame.src) return
+
+    const url = entry.url()
+    if (!url) return
+
+    const onError = (e) => {
+      e.preventDefault()
+      console.error(`[report-redesigned] Failed to load ${entry.name} tab from ${url}:`, e)
+      frame.innerHTML = `<p class="text-sm text-red-400 p-4 font-sans">Failed to load ${entry.name}. Please refresh the page.</p>`
+    }
+
+    for (const event of ['turbo:frame-missing', 'turbo:fetch-request-error']) {
+      frame.addEventListener(event, onError, { once: true })
+      this._attemptsErrorListeners.push({ target: frame, event, handler: onError })
+    }
+
+    frame.src = url
   }
 
   initStatisticsCharts() {

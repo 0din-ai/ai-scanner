@@ -194,4 +194,28 @@ module ReportsHelper
 
     value.to_s == "true"
   end
+
+  # The outcome of one attempt, in the words the reader sees.
+  #
+  # nil is a THIRD state, not a false: garak returned no detector scores for the
+  # attempt, so neither "succeeded" nor "blocked" is a claim the report can make.
+  def evidence_status_label(succeeded)
+    return "not scored" if succeeded.nil?
+
+    succeeded ? "attack succeeded" : "blocked"
+  end
+
+  def evidence_status_badge(succeeded)
+    classes = if succeeded.nil?
+      "bg-zinc-800 text-contentTertiary"
+    elsif succeeded
+      "bg-red-950 text-red-400"
+    else
+      "bg-green-950 text-green-400"
+    end
+
+    tag.span(evidence_status_label(succeeded).titleize,
+             class: "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold " \
+                    "uppercase tracking-wide whitespace-nowrap #{classes}")
+  end
 end

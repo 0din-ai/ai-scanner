@@ -326,9 +326,12 @@ module Reports
       probe_classname = data["probe_classname"]
       report_data[probe_classname] ||= {}
       report_data[probe_classname]["attempts"] ||= []
-      attack_succeeded = attempt_attack_succeeded(data["detector_results"])
+      detector_results = data["detector_results"]
+      attack_succeeded = attempt_attack_succeeded(detector_results)
+      detector_scores = attempt_detector_scores(detector_results)
       data = data.slice(*ATTEMPT_KEYS)
       data["attack_succeeded"] = attack_succeeded
+      data["detector_scores"] = detector_scores unless detector_scores.nil?
       report_data[probe_classname]["attempts"] << data
 
       score = data.dig("notes", "score_percentage")
@@ -339,6 +342,32 @@ module Reports
       current_score = report_data[probe_classname]["stats"]["max_score"] || 0
       max_score = score > current_score ? score : current_score
       report_data[probe_classname]["stats"]["max_score"] = max_score
+    end
+
+    # The MAXIMUM score each detector gave this attempt, or nil when garak recorded
+    # no detector results for it.
+    #
+    # A maximum across generations, not a per-generation figure: one attempt can hold
+    # several outputs and garak scores each, but only this scalar is stored. So the
+    # drawer can say a detector reached 0.8 on this attempt; it cannot say WHICH
+    # response earned it, and no caller should imply otherwise.
+    #
+    # The raw detector_results blob deliberately stays out of storage -- it repeats a
+    # float per output, and the attempts column already carries every prompt and
+    # response. This is the derived summary the evidence drawer renders, so a reader
+    # can see which detector drove the verdict rather than only the verdict.
+    #
+    # An EMPTY hash is a real answer -- detectors ran and produced no numeric value --
+    # and is stored as one. Only missing or malformed detector_results yields nil,
+    # which the drawer reports as never recorded. Collapsing the two would tell a
+    # reader that a report this very code had just processed predates score capture.
+    def attempt_detector_scores(detector_results)
+      return nil unless detector_results.is_a?(Hash)
+
+      detector_results.each_with_object({}) do |(name, values), acc|
+        numeric = Array(values).flatten.compact.map(&:to_f)
+        acc[name] = numeric.max if numeric.any?
+      end
     end
 
     # True when any detector flagged any output as a successful attack

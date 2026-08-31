@@ -771,6 +771,255 @@ function testReportRedesignedControllerListenerCleanup() {
   }
 }
 
+function loadReportEvidenceController(context = {}) {
+  const transformed = loadControllerSource(
+    "report_evidence_controller.js",
+    "ReportEvidenceController"
+  )
+
+  const base = {
+    Controller: class {},
+    console: { error() {} },
+    document: { addEventListener() {}, removeEventListener() {}, activeElement: null },
+    window: { location: { origin: "http://test.local" } },
+    URL,
+    setTimeout(callback) { callback() },
+    clearTimeout() {},
+    Map,
+    Error,
+    Number,
+    Boolean,
+    String,
+    ...context
+  }
+
+  const ControllerClass = vm.runInNewContext(
+    `${transformed}\nReportEvidenceController`,
+    base
+  )
+
+  return { ControllerClass }
+}
+
+function evidenceControllerWith(fetchImpl) {
+  const { ControllerClass } = loadReportEvidenceController({ fetch: fetchImpl })
+  const controller = new ControllerClass()
+
+  controller.drawerTarget = { classList: classListWith("hidden") }
+  controller.panelTarget = { focus() {} }
+  controller.contentTarget = {
+    innerHTML: "",
+    // No neighbour metadata: these cases are about which body wins, not stepping.
+    querySelector() { return null }
+  }
+  controller.hasPositionTarget = false
+  controller.hasTitleTarget = false
+  controller.hasPrevTarget = false
+  controller.hasNextTarget = false
+  controller.hasRowTarget = false
+  controller.hasFilterValue = false
+  controller.hasQueryValue = false
+  controller.attemptUrlValue = "/reports/1/evidence_attempt"
+  controller.lastFocused = { focus() {} }
+
+  return controller
+}
+
+// Arrowing down a list faster than the network answers leaves several fetches in
+// flight. If a slow earlier one is allowed to write, the drawer ends up showing
+// one attempt's prompt and response under a different attempt's header -- the
+// exact confusion this tab exists to remove, made worse by looking authoritative.
+async function testReportEvidenceIgnoresAStaleResponse() {
+  const pending = []
+  const controller = evidenceControllerWith(() =>
+    new Promise((resolve) => {
+      pending.push(resolve)
+    })
+  )
+
+  const first = controller.load({ probeResultId: "1", attemptIndex: "0" })
+  const second = controller.load({ probeResultId: "1", attemptIndex: "1" })
+
+  // The newest request answers first, then the stale one lands.
+  pending[1]({ ok: true, text: async () => "SECOND ATTEMPT" })
+  await second
+  assert.equal(controller.contentTarget.innerHTML, "SECOND ATTEMPT")
+
+  pending[0]({ ok: true, text: async () => "FIRST ATTEMPT" })
+  await first
+
+  assert.equal(
+    controller.contentTarget.innerHTML,
+    "SECOND ATTEMPT",
+    "a superseded response must not overwrite the drawer"
+  )
+}
+
+// The same ordering rule has to hold for failures. A stale rejection writing its
+// error banner would tell the reader the attempt they are looking at failed to
+// load, while its evidence is sitting on screen underneath.
+async function testReportEvidenceIgnoresAStaleFailure() {
+  const pending = []
+  const controller = evidenceControllerWith(() =>
+    new Promise((resolve, reject) => {
+      pending.push({ resolve, reject })
+    })
+  )
+
+  const first = controller.load({ probeResultId: "1", attemptIndex: "0" })
+  const second = controller.load({ probeResultId: "1", attemptIndex: "1" })
+
+  pending[1].resolve({ ok: true, text: async () => "SECOND ATTEMPT" })
+  await second
+
+  pending[0].reject(new Error("network down"))
+  await first
+
+  assert.equal(
+    controller.contentTarget.innerHTML,
+    "SECOND ATTEMPT",
+    "a superseded failure must not replace live evidence with an error"
+  )
+}
+
+// Every lazily loaded tab frame goes through one shared path, so the evidence tab
+// has to inherit the cleanup the attempts frame already had: listeners registered
+// { once: true } never fire on the happy path, and an untracked one outlives the
+// controller.
+function testReportRedesignedEvidenceFrameLoadsLazilyAndCleansUp() {
+  const { ControllerClass } = loadReportRedesignedController()
+  const addCalls = []
+  const removeCalls = []
+  const evidenceFrame = {
+    src: "",
+    innerHTML: "",
+    addEventListener(type, callback, options) {
+      addCalls.push({ type, callback, options })
+    },
+    removeEventListener(type, callback) {
+      removeCalls.push({ type, callback })
+    }
+  }
+  const controller = new ControllerClass()
+
+  controller.element = { addEventListener() {}, querySelector() { return null } }
+  controller.hasAsrHistoryChartTarget = false
+  controller.hasTopProbesChartTarget = false
+  if (typeof controller.connect === "function") controller.connect()
+
+  const tabEl = () => ({ classList: classListWith() })
+  controller.hasTabOverviewTarget = true
+  controller.tabOverviewTarget = tabEl()
+  controller.hasTabContentOverviewTarget = true
+  controller.tabContentOverviewTarget = { classList: classListWith() }
+  controller.hasTabProbesTarget = false
+  controller.hasTabEvidenceTarget = true
+  controller.tabEvidenceTarget = tabEl()
+  controller.hasTabContentEvidenceTarget = true
+  controller.tabContentEvidenceTarget = { classList: classListWith("hidden") }
+  controller.hasEvidenceFrameTarget = true
+  controller.evidenceFrameTarget = evidenceFrame
+  controller.evidenceTabUrlValue = "/reports/1/evidence"
+
+  controller.switchTab({ currentTarget: { dataset: { tab: "evidence" } } })
+
+  assert.equal(controller.tabContentEvidenceTarget.classList.contains("hidden"), false)
+  assert.equal(evidenceFrame.src, "/reports/1/evidence")
+  assert.deepEqual(
+    addCalls.map((call) => call.type).sort(),
+    ["turbo:fetch-request-error", "turbo:frame-missing"]
+  )
+  assert.ok(addCalls.every((call) => call.options && call.options.once === true))
+
+  // Switching back and forth must not re-fetch a frame that already loaded, nor
+  // stack a second pair of listeners on it.
+  controller.switchTab({ currentTarget: { dataset: { tab: "overview" } } })
+  controller.switchTab({ currentTarget: { dataset: { tab: "evidence" } } })
+
+  assert.equal(addCalls.length, 2, "a loaded frame should not re-register listeners")
+
+  controller.disconnect()
+
+  assert.deepEqual(
+    removeCalls.map((call) => call.type).sort(),
+    ["turbo:fetch-request-error", "turbo:frame-missing"],
+    "disconnect should remove the evidence frame's error listeners"
+  )
+  for (const removeCall of removeCalls) {
+    assert.ok(
+      addCalls.find((a) => a.type === removeCall.type && a.callback === removeCall.callback),
+      `removeEventListener for ${removeCall.type} should match the registered handler`
+    )
+  }
+}
+
+// A deep link to one attempt arrives as a page load, not a click, so the tab it
+// names has to open without one. This is the only path that reaches
+// report-evidence#openFromLocation -- if connect() stops activating the tab, the
+// link silently lands on the overview and the drawer never opens.
+function testReportRedesignedActivatesTheInitialTabOnConnect() {
+  const { ControllerClass } = loadReportRedesignedController()
+  const evidenceFrame = {
+    src: "",
+    innerHTML: "",
+    addEventListener() {},
+    removeEventListener() {}
+  }
+  const controller = new ControllerClass()
+
+  controller.element = { addEventListener() {}, querySelector() { return null } }
+  controller.hasAsrHistoryChartTarget = false
+  controller.hasTopProbesChartTarget = false
+  controller.hasTabOverviewTarget = true
+  controller.tabOverviewTarget = { classList: classListWith("text-primary") }
+  controller.hasTabContentOverviewTarget = true
+  controller.tabContentOverviewTarget = { classList: classListWith() }
+  controller.hasTabProbesTarget = false
+  controller.hasTabEvidenceTarget = true
+  controller.tabEvidenceTarget = { classList: classListWith() }
+  controller.hasTabContentEvidenceTarget = true
+  controller.tabContentEvidenceTarget = { classList: classListWith("hidden") }
+  controller.hasEvidenceFrameTarget = true
+  controller.evidenceFrameTarget = evidenceFrame
+  controller.evidenceTabUrlValue = "/reports/1/evidence?probe_result_id=2&attempt_index=3"
+  controller.hasInitialTabValue = true
+  controller.initialTabValue = "evidence"
+
+  controller.connect()
+
+  assert.equal(controller.tabContentEvidenceTarget.classList.contains("hidden"), false,
+    "connect should open the tab the deep link names")
+  assert.equal(controller.tabContentOverviewTarget.classList.contains("hidden"), true)
+  assert.equal(controller.tabEvidenceTarget.classList.contains("text-primary"), true)
+  assert.equal(evidenceFrame.src, "/reports/1/evidence?probe_result_id=2&attempt_index=3",
+    "the frame should be loaded with the deep link's coordinates")
+}
+
+// Without a deep link nothing may move: the report still opens on the overview.
+function testReportRedesignedLeavesTheDefaultTabAloneWithoutADeepLink() {
+  const { ControllerClass } = loadReportRedesignedController()
+  const controller = new ControllerClass()
+
+  controller.element = { addEventListener() {}, querySelector() { return null } }
+  controller.hasAsrHistoryChartTarget = false
+  controller.hasTopProbesChartTarget = false
+  controller.hasTabOverviewTarget = true
+  controller.tabOverviewTarget = { classList: classListWith("text-primary") }
+  controller.hasTabContentOverviewTarget = true
+  controller.tabContentOverviewTarget = { classList: classListWith() }
+  controller.hasTabEvidenceTarget = true
+  controller.tabEvidenceTarget = { classList: classListWith() }
+  controller.hasTabContentEvidenceTarget = true
+  controller.tabContentEvidenceTarget = { classList: classListWith("hidden") }
+  controller.hasEvidenceFrameTarget = false
+  controller.hasInitialTabValue = false
+
+  controller.connect()
+
+  assert.equal(controller.tabContentEvidenceTarget.classList.contains("hidden"), true)
+  assert.equal(controller.tabContentOverviewTarget.classList.contains("hidden"), false)
+}
+
 function testLogViewerController() {
   const { ControllerClass } = loadLogViewerController()
 
@@ -1746,6 +1995,11 @@ testDebugTabsController()
 testDebugStreamFilterController()
 testReportRedesignedController()
 testReportRedesignedControllerListenerCleanup()
+testReportRedesignedEvidenceFrameLoadsLazilyAndCleansUp()
+testReportRedesignedActivatesTheInitialTabOnConnect()
+testReportRedesignedLeavesTheDefaultTabAloneWithoutADeepLink()
+await testReportEvidenceIgnoresAStaleResponse()
+await testReportEvidenceIgnoresAStaleFailure()
 testLogViewerController()
 testThreatVariantsController()
 testWebchatAuthController()

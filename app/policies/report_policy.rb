@@ -21,6 +21,14 @@ class ReportPolicy < TenantScopedPolicy
     true
   end
 
+  def evidence?
+    true
+  end
+
+  def evidence_attempt?
+    true
+  end
+
   def attempt_content?
     true
   end

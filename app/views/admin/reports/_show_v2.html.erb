@@ -3,7 +3,10 @@
 <% end %>
 <div id="pdf-status-<%= report.id %>" style="display: none;"></div>
 
-<div class="min-h-screen" data-controller="report-redesigned pdf-download" data-pdf-download-report-id-value="<%= report.id %>" data-report-redesigned-probes-tab-url-value="<%= probes_tab_report_path(report) %>">
+<%# A deep link to one attempt lands here, not on the frame endpoint, so the page
+    boots with Stimulus and then hands these coordinates to the evidence frame. %>
+<% evidence_params = params.permit(:probe_result_id, :attempt_index, :filter, :q, :page).to_h.compact_blank %>
+<div class="min-h-screen" data-controller="report-redesigned pdf-download" data-pdf-download-report-id-value="<%= report.id %>" data-report-redesigned-probes-tab-url-value="<%= probes_tab_report_path(report) %>" data-report-redesigned-evidence-tab-url-value="<%= evidence_report_path(report, evidence_params) %>"<%= " data-report-redesigned-initial-tab-value=\"evidence\"".html_safe if params[:tab] == "evidence" %>>
   <%= render partial: 'admin/reports/report_header', locals: { report: report } %>
 
   <%# Tab Navigation %>
@@ -23,6 +26,14 @@
       data-tab="probes"
       data-report-redesigned-target="tabProbes">
       Probes
+    </button>
+    <button
+      type="button"
+      class="px-3 pb-4 text-xl font-sans font-medium transition-colors text-contentTertiary hover:text-contentSecondary cursor-pointer"
+      data-action="click->report-redesigned#switchTab"
+      data-tab="evidence"
+      data-report-redesigned-target="tabEvidence">
+      Evidence
     </button>
   </nav>
 
@@ -63,6 +74,19 @@
       <turbo-frame id="report-probes-tab" data-report-redesigned-target="probesFrame">
         <div class="flex items-center justify-center py-16">
           <span class="text-sm text-contentSecondary font-sans">Loading probes...</span>
+        </div>
+      </turbo-frame>
+    </div>
+  </div>
+
+  <%# Evidence Tab Content -- every attempt in the report, flat and filterable.
+      Lazy, like the probes frame: a report with thousands of attempts must not pay
+      for the list until a reader asks for it. %>
+  <div class="pb-6 hidden" data-report-redesigned-target="tabContentEvidence">
+    <div class="mx-auto">
+      <turbo-frame id="report-evidence-tab" data-report-redesigned-target="evidenceFrame">
+        <div class="flex items-center justify-center py-16">
+          <span class="text-sm text-contentSecondary font-sans">Loading evidence...</span>
         </div>
       </turbo-frame>
     </div>
