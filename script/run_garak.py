@@ -136,6 +136,20 @@ def run_garak_scan(garak_params):
         except ImportError as e:
             print(f"Warning: punctuation normalisation patch unavailable: {e}", file=sys.stderr)
 
+        # Upstream garak's LLM-as-judge detectors fail toward "attack successful"
+        # twice over: judge.Refusal shows the judge a Message repr instead of the
+        # response text, and a judge reply without a literal [[YES]]/[[NO]] is
+        # scored as a hit rather than as unscored. Both manufacture findings,
+        # which is the unsafe direction for a scanner. See
+        # garak/detectors/_judge.py for the measurements and the removal
+        # conditions. Imported defensively so a missing module cannot break the
+        # entrypoint.
+        try:
+            from garak.detectors._judge import patch_judge_detectors
+            patch_judge_detectors()
+        except ImportError as e:
+            print(f"Warning: judge detector patches unavailable: {e}", file=sys.stderr)
+
         sys.argv = ['garak'] + params_list
 
         print(f"Running Garak with parameters: {params_list}")
