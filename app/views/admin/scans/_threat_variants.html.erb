@@ -87,14 +87,10 @@
            } %>
 
         <% threat_variant_industries.each do |industry| %>
-          <% industry_probe_ids = industry.threat_variant_subindustries
-               .flat_map { |sub| sub.threat_variants.pluck(:probe_id) }
-               .uniq %>
           <% industry_key = industry.name.downcase %>
           <% config = industry_configs[industry_key] || { icon: "📁", color: "blue" } %>
 
           <div class="industry-item border border-borderPrimary rounded-lg overflow-hidden hover:border-primary/50 transition-all"
-               data-probe-ids="<%= industry_probe_ids.join(',') %>"
                data-industry-id="<%= industry.id %>"
                data-industry-name="<%= industry.name %>"
                data-threat-variants-target="industryItem">
@@ -122,7 +118,7 @@
                     <div class="flex-1">
                       <h5 class="text-base font-semibold text-contentPrimary"><%= industry.name.humanize %></h5>
                       <p class="text-xs text-contentTertiary">
-                        <%= industry.threat_variant_subindustries.count %> specialized categories
+                        <%= industry.threat_variant_subindustries.size %> specialized categories
                       </p>
                     </div>
                   </div>
@@ -141,14 +137,12 @@
               <div class="p-4 border-t border-borderPrimary">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <% industry.threat_variant_subindustries.each do |subindustry| %>
-                    <% subindustry_probe_ids = subindustry.threat_variants.pluck(:probe_id).uniq %>
                     <div class="subindustry-item flex items-center gap-3 p-3 bg-backgroundSecondary rounded-md hover:bg-backgroundSecondary/80 transition-colors"
-                         data-probe-ids="<%= subindustry_probe_ids.join(',') %>"
                          data-industry-id="<%= industry.id %>"
                          data-industry-name="<%= industry.name %>"
                          data-subindustry-id="<%= subindustry.id %>"
                          data-threat-variants-target="subindustryItem">
-                      <% is_checked = scan.persisted? && scan.threat_variant_subindustries.include?(subindustry) %>
+                      <% is_checked = selected_subindustry_ids.include?(subindustry.id) %>
                       <%= check_box_tag "scan[threat_variant_subindustry_ids][]",
                           subindustry.id,
                           is_checked,

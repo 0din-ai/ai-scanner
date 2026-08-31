@@ -143,7 +143,9 @@
 
   <!-- Threat Variants Section (only when variant infrastructure is available) -->
   <% if @threat_variant_industries.present? %>
-    <%= render "threat_variants", f: f, scan: @scan, threat_variant_industries: @threat_variant_industries %>
+    <%= render "threat_variants", f: f, scan: @scan,
+          threat_variant_industries: @threat_variant_industries,
+          selected_subindustry_ids: @selected_subindustry_ids %>
   <% end %>
 
   <!-- Schedule Configuration -->

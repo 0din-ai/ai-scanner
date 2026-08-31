@@ -254,12 +254,20 @@ module Admin
       @probe_categories = @probe_categories.sort.to_h
       @community_categories = @community_categories.sort.to_h
 
-      # Load threat variant industries with subindustries (engine-only model)
+      # Threat-variant picker data (engine-only models).
+      #
+      # The picker renders industry and subindustry names and one checkbox each.
+      # It never reads a variant, so the eager load of every variant and its
+      # probe built two object graphs that were then discarded.
       @threat_variant_industries = if defined?(ThreatVariantIndustry)
-        ThreatVariantIndustry.includes(threat_variant_subindustries: { threat_variants: :probe }).all
+        ThreatVariantIndustry.includes(:threat_variant_subindustries).all
       else
         []
       end
+
+      # Resolved once rather than per checkbox: the view asked
+      # scan.threat_variant_subindustries.include?(subindustry) for every row.
+      @selected_subindustry_ids = @scan&.persisted? ? @scan.threat_variant_subindustry_ids.to_set : Set.new
     end
   end
 end
