@@ -182,6 +182,126 @@ module Admin
              layout: false
     end
 
+    # One flat, filterable list of every attempt in the report.
+    #
+    # Evidence was previously reachable only by expanding a probe card, then its
+    # prompts frame, then an attempt -- and there was no way at all to ask "which
+    # attacks got through?" across the whole report.
+    def evidence
+      @report = Report.includes(:child_report).find(params[:id])
+      authorize @report
+
+      # This action answers a lazy turbo frame inside the report page, so it renders
+      # without a layout -- which means no importmap and no Stimulus. A deep link
+      # pasted into the address bar therefore arrived as a bare, dead fragment: the
+      # server had resolved the attempt and the page it sits on, and nothing on the
+      # client was running to open the drawer onto it. Send a real navigation to the
+      # report page instead and let it hand these coordinates to the frame.
+      unless turbo_frame_request?
+        redirect_to report_path(@report, params.permit(:probe_result_id, :attempt_index, :filter, :q, :page)
+                                               .to_h.compact_blank.merge(tab: "evidence"))
+        return
+      end
+
+      # An unrecognised filter falls through to no outcome condition, so a junk
+      # value shows everything with All active rather than an empty table.
+      @filter = Reports::EvidenceRows::FILTERS.key?(params[:filter].to_s) ? params[:filter].to_s : nil
+      @query = params[:q].presence
+      @page = [ params[:page].to_i, 1 ].max
+
+      rows = Reports::EvidenceRows.new(@report, filter: @filter, query: @query)
+      @per_page = Reports::EvidenceRows::DEFAULT_PER_PAGE
+      @counts = rows.counts
+      @total = rows.total
+      @last_page = [ (@total.to_f / @per_page).ceil, 1 ].max
+
+      # Both coordinates must be plain integers before they are used. page_for casts
+      # with to_i, so "0junk" would place itself at index 0 and reach the drawer
+      # verbatim, which then asks evidence_attempt for "0junk" and gets a 400 -- a
+      # drawer opened onto an error.
+      @selected_probe_result_id = params[:probe_result_id].to_s[/\A\d+\z/]
+      @selected_attempt_index = params[:attempt_index].to_s[/\A\d+\z/]
+
+      if @selected_probe_result_id && @selected_attempt_index
+        selected_page = rows.page_for(probe_result_id: @selected_probe_result_id,
+                                      attempt_index: @selected_attempt_index,
+                                      per_page: @per_page)
+        if selected_page.nil?
+          # The link names no row in this filtered set -- stale, or written before a
+          # filter was applied. The tab still renders; it just does not open a drawer
+          # onto nothing.
+          @selected_probe_result_id = nil
+          @selected_attempt_index = nil
+        elsif params[:page].blank?
+          # An explicit page always wins, so paging away from a deep-linked row is not
+          # undone on the next request.
+          @page = selected_page
+        end
+      end
+
+      # Clamped AFTER the deep link is resolved, so ?page=9999 lands on the last real
+      # page instead of rendering an empty table with no way back.
+      @page = @page.clamp(1, @last_page)
+      @rows = rows.rows(limit: @per_page, offset: (@page - 1) * @per_page)
+
+      render layout: false
+    end
+
+    # The full evidence for one attempt: prompt, every response, verdict, score and
+    # the detector scores behind it, in a single request.
+    # The drawer fetches this with plain fetch(), which sends no Turbo-Frame header.
+    # That is fine here and must stay fine: do not add the non-frame redirect guard
+    # that evidence has, or every drawer request would bounce to the report page.
+    def evidence_attempt
+      @report = Report.includes(:child_report).find(params[:id])
+      authorize @report
+
+      raw_index = params[:attempt_index]
+      unless raw_index&.match?(/\A\d+\z/)
+        head :bad_request
+        return
+      end
+
+      probe_result = evidence_probe_result
+      # The RAW stored array, indexed as EvidenceRows addresses it: the list keys each
+      # row on its original ordinality, so gaps left by malformed rows are preserved
+      # and this index still points at the row the reader clicked.
+      attempt = probe_result && Array(probe_result.attempts)[raw_index.to_i]
+
+      if attempt.nil?
+        head :not_found
+        return
+      end
+
+      @attempt = attempt
+      # The same extraction the evidence search mirrors, so a phrase that matched in
+      # the list is the phrase shown here.
+      @prompt = TokenEstimator.extract_prompt_text(attempt["prompt"]) || ""
+      # EVERY generation, not just the first. attack_succeeded and detector_scores are
+      # maxima across garak's per-generation scores, so showing only the first put a
+      # refusal under a "succeeded" badge while the generation that actually succeeded
+      # was not on the page.
+      @responses = attempt_outputs(attempt["outputs"])
+                     .map { |output| TokenEstimator.extract_output_text(output).to_s }
+      @detector_scores = attempt["detector_scores"]
+      # The badge claims the attempt is a threat variant of the probe, which is what
+      # threat_variant_id records. Deriving it from "came from the child report"
+      # instead got it wrong from both directions: opened on a variant report every
+      # row lost its badge, and a child row that resolved no variant still carried
+      # one when read from the parent.
+      @variant = probe_result.threat_variant_id.present?
+      @probe_name = probe_result.probe&.name
+
+      # The list is paged, so the rows either side of this one may not be rendered.
+      # The filter and search come along because the reader is stepping through the
+      # list they are looking at, not the whole report.
+      @neighbours = Reports::EvidenceRows
+                    .new(@report, filter: params[:filter].presence, query: params[:q].presence)
+                    .neighbours(probe_result_id: probe_result.id, attempt_index: raw_index.to_i)
+
+      render layout: false
+    end
+
     # Probe attempt rows loaded on demand from each probe card.
     def probe_attempts
       @report = Report.includes(:child_report).find(params[:id])
@@ -270,6 +390,30 @@ module Admin
     end
 
     private
+
+    # probe_result_id is user input, so it is resolved only among THIS report's own
+    # probe results and those of its variant child. Finding it by bare id would read
+    # any tenant's prompts and responses.
+    # garak writes outputs as a list, but a malformed row can hold a bare value.
+    # Kernel#Array is the wrong wrapper for it: a hash becomes its key/value pairs,
+    # so a { "text" => ... } output rendered as an empty response panel while the
+    # evidence search -- which reads the same field in SQL -- still matched its
+    # text. A reader following a search hit has to find it on the page.
+    def attempt_outputs(outputs)
+      case outputs
+      when nil then []
+      when Array then outputs
+      else [ outputs ]
+      end
+    end
+
+    def evidence_probe_result
+      ids = [ @report.id ]
+      ids << @report.child_report.id if @report.has_variant_data? && @report.child_report.present?
+
+      ProbeResult.find_by(id: params[:probe_result_id], report_id: ids)
+    end
+
 
     # Fail-closed tenant scoping for batch operations: explicitly filter by the current
     # company so a nil acts_as_tenant context can't span tenants.

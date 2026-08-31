@@ -51,6 +51,8 @@ Rails.application.routes.draw do
         get :asr_history
         get :top_probes
         get :probes_tab
+        get :evidence
+        get :evidence_attempt
         get :probe_attempts
         get :progress
         get :attempt_content

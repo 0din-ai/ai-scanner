@@ -1,0 +1,124 @@
+<%
+  succeeded = @attempt["attack_succeeded"]
+  score = @attempt.dig("notes", "score_percentage")
+%>
+
+<%#- Evidence is escaped, never sanitized: sanitize() would delete a <script>
+    the probe actually sent, hiding part of the payload from the person
+    assessing it. Escaping shows the text exactly as sent, and keeps a quote
+    from breaking out of data-content into the drawer's innerHTML. -%>
+<%#- The drawer's stepping data. The list is paged, so the attempt before or
+    after this one is often not a rendered row; these name it outright. Absent
+    when the attempt is not in the filtered set at all, which is a deep link to
+    a row the active filter hides -- there is nowhere to step. -%>
+<div class="flex flex-col gap-4 font-sans"
+     data-evidence-probe-name="<%= @probe_name %>"
+     <%= tag.attributes(
+           "data-evidence-position": @neighbours[:position],
+           "data-evidence-total": @neighbours[:total]
+         ) if @neighbours %>
+     <%= tag.attributes(
+           "data-evidence-previous-probe-result-id": @neighbours[:previous][:probe_result_id],
+           "data-evidence-previous-attempt-index": @neighbours[:previous][:attempt_index]
+         ) if @neighbours && @neighbours[:previous] %>
+     <%= tag.attributes(
+           "data-evidence-next-probe-result-id": @neighbours[:next][:probe_result_id],
+           "data-evidence-next-attempt-index": @neighbours[:next][:attempt_index]
+         ) if @neighbours && @neighbours[:next] %>>
+  <%# Verdict, score and detector all sit with the prompt and response rather
+      than on a header the reader has to scroll back to. %>
+  <div class="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-800/40 px-3 py-2">
+    <%= evidence_status_badge(succeeded) %>
+    <% if score.present? %>
+      <span class="rounded-md bg-blue-500/20 px-2 py-0.5 text-xs font-semibold text-blue-300 tabular-nums">
+        Score <%= number_to_percentage(score.to_f, precision: 0) %>
+      </span>
+    <% end %>
+    <% if @variant %>
+      <span class="rounded-md bg-purple-950 px-2 py-0.5 text-xs text-purple-400">Variant</span>
+    <% end %>
+    <span class="text-xs text-contentTertiary">attempt <%= @attempt["uuid"] %></span>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center gap-2">
+      <h4 class="text-xs uppercase tracking-wider text-contentTertiary font-semibold">Prompt</h4>
+      <button type="button"
+              class="text-contentTertiary hover:text-white transition-colors"
+              data-action="click->report-evidence#copy"
+              data-content="<%= @prompt %>"
+              aria-label="Copy prompt">
+        <span class="icon icon-sm icon-copy"></span>
+      </button>
+    </div>
+    <div class="rounded-lg bg-zinc-800/50 p-3 max-h-64 overflow-y-auto">
+      <pre class="m-0 whitespace-pre-wrap font-mono text-sm text-zinc-300"><%= @prompt %></pre>
+    </div>
+  </div>
+
+  <%# Every generation garak produced for this prompt. The verdict above is the
+      max across all of them, so any one of them can be the one that succeeded;
+      showing only the first made the evidence contradict the badge beside it. %>
+  <% if @responses.empty? %>
+    <div class="flex flex-col gap-2">
+      <h4 class="text-xs uppercase tracking-wider text-contentTertiary font-semibold">Target response</h4>
+      <div class="rounded-lg bg-zinc-800/50 p-3">
+        <span class="text-sm italic text-contentTertiary">[No response generated]</span>
+      </div>
+    </div>
+  <% end %>
+
+  <% @responses.each_with_index do |response, index| %>
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <h4 class="text-xs uppercase tracking-wider text-contentTertiary font-semibold">Target response</h4>
+        <% if @responses.size > 1 %>
+          <span class="text-xs text-contentTertiary tabular-nums"><%= index + 1 %> of <%= @responses.size %></span>
+        <% end %>
+        <button type="button"
+                class="text-contentTertiary hover:text-white transition-colors"
+                data-action="click->report-evidence#copy"
+                data-content="<%= response %>"
+                aria-label="Copy response<%= " #{index + 1}" if @responses.size > 1 %>">
+          <span class="icon icon-sm icon-copy"></span>
+        </button>
+      </div>
+      <div class="rounded-lg bg-zinc-800/50 p-3 max-h-64 overflow-y-auto">
+        <% if response.present? %>
+          <pre class="m-0 whitespace-pre-wrap font-mono text-sm text-zinc-300"><%= response %></pre>
+        <% else %>
+          <span class="text-sm italic text-contentTertiary">[No response generated]</span>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="flex flex-col gap-2">
+    <h4 class="text-xs uppercase tracking-wider text-contentTertiary font-semibold">Scoring evidence</h4>
+    <% if @detector_scores.present? %>
+      <% @detector_scores.each do |detector_name, detector_score| %>
+        <div class="flex items-center justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-800/40 px-3 py-2">
+          <span class="font-mono text-xs text-contentSecondary"><%= detector_name %></span>
+          <span class="rounded-md bg-blue-500/20 px-2 py-0.5 text-xs font-semibold text-blue-300 tabular-nums">
+            <%= format("%.2f", detector_score.to_f) %>
+          </span>
+        </div>
+      <% end %>
+    <% elsif @detector_scores %>
+      <%# An empty hash means this attempt WAS scored and no detector produced a
+          value -- a different fact from never having been recorded, and saying
+          the wrong one misdescribes the run to an assessor. %>
+      <p class="rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-contentTertiary">
+        No detector produced a score for this attempt.
+      </p>
+    <% else %>
+      <%# Scans run before per-attempt detector scores existed cannot show them.
+          Saying so beats an empty section that reads as "no detector fired". %>
+      <p class="rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-contentTertiary">
+        Detector evidence wasn't recorded for this attempt. Scans run before this
+        was captured kept only the final verdict, so the per-detector scores
+        can't be shown here.
+      </p>
+    <% end %>
+  </div>
+</div>

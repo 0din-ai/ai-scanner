@@ -1,0 +1,129 @@
+<%#
+  The Evidence tab: every attempt in the report as one filterable list.
+
+  Rows carry only a truncated prompt; the full prompt, response and detector
+  scores load into the drawer when a row is opened, so a report with thousands
+  of attempts costs one page of rows rather than every attempt's text.
+%>
+<%= turbo_frame_tag "report-evidence-tab" do %>
+  <div data-controller="report-evidence"
+       data-report-evidence-attempt-url-value="<%= evidence_attempt_report_path(@report) %>"
+       data-report-evidence-selected-probe-result-value="<%= @selected_probe_result_id %>"
+       data-report-evidence-selected-index-value="<%= @selected_attempt_index %>"
+       data-report-evidence-filter-value="<%= @filter %>"
+       data-report-evidence-query-value="<%= @query %>">
+
+    <div class="flex flex-wrap items-center gap-3 py-4">
+      <div class="flex flex-wrap gap-2" role="group" aria-label="Filter attempts by outcome">
+        <% [ [ "all", "All", @counts[:all] ],
+             [ "succeeded", "Attack succeeded", @counts[:succeeded] ],
+             [ "blocked", "Blocked", @counts[:blocked] ] ].each do |value, label, count| %>
+          <% active = (@filter || "all") == value %>
+          <%= link_to evidence_report_path(@report, filter: value, q: @query),
+                      data: { turbo_frame: "report-evidence-tab" },
+                      aria: { pressed: active.to_s },
+                      class: "no-underline inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-sans transition-colors #{active ? 'bg-white text-black font-semibold' : 'border border-zinc-700 text-contentSecondary hover:text-white hover:border-zinc-500'}" do %>
+            <%= label %>
+            <span class="tabular-nums opacity-75"><%= number_with_delimiter(count) %></span>
+          <% end %>
+        <% end %>
+      </div>
+
+      <%= form_with url: evidence_report_path(@report), method: :get,
+                    data: { turbo_frame: "report-evidence-tab" },
+                    class: "ml-auto" do |f| %>
+        <%= f.hidden_field :filter, value: @filter %>
+        <%= f.search_field :q, value: @query,
+                           placeholder: "Search prompts and responses",
+                           aria: { label: "Search prompts and responses" },
+                           class: "input-base w-72 text-sm" %>
+      <% end %>
+    </div>
+
+    <% if @rows.empty? %>
+      <p class="py-16 text-center text-sm text-contentSecondary font-sans">
+        No attempts match this filter.
+      </p>
+    <% else %>
+      <div class="overflow-x-auto rounded-lg border border-zinc-700">
+        <table class="w-full font-sans">
+          <thead>
+            <tr class="bg-zinc-800/50 text-left">
+              <th scope="col" class="px-4 py-2 text-xs uppercase tracking-wider text-contentTertiary font-semibold">Outcome</th>
+              <th scope="col" class="px-4 py-2 text-xs uppercase tracking-wider text-contentTertiary font-semibold">Score</th>
+              <th scope="col" class="px-4 py-2 text-xs uppercase tracking-wider text-contentTertiary font-semibold">Probe</th>
+              <th scope="col" class="px-4 py-2 text-xs uppercase tracking-wider text-contentTertiary font-semibold">Prompt</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% @rows.each do |row| %>
+              <%= render partial: "admin/reports/evidence_row", locals: { row: row } %>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <% pages = (@total.to_f / @per_page).ceil %>
+      <% if pages > 1 %>
+        <nav class="flex items-center justify-between py-4 text-sm font-sans" aria-label="Evidence pages">
+          <span class="text-contentTertiary tabular-nums">
+            Page <%= @page %> of <%= pages %> · <%= number_with_delimiter(@total) %> attempts
+          </span>
+          <div class="flex gap-2">
+            <% if @page > 1 %>
+              <%= link_to "Previous", evidence_report_path(@report, filter: @filter, q: @query, page: @page - 1),
+                          data: { turbo_frame: "report-evidence-tab" },
+                          class: "no-underline rounded-md border border-zinc-700 px-3 py-1 text-contentSecondary hover:text-white" %>
+            <% end %>
+            <% if @page < pages %>
+              <%= link_to "Next", evidence_report_path(@report, filter: @filter, q: @query, page: @page + 1),
+                          data: { turbo_frame: "report-evidence-tab" },
+                          class: "no-underline rounded-md border border-zinc-700 px-3 py-1 text-contentSecondary hover:text-white" %>
+            <% end %>
+          </div>
+        </nav>
+      <% end %>
+    <% end %>
+
+    <%# Drawer: populated from evidence_attempt when a row is opened. %>
+    <div class="fixed inset-0 z-40 hidden"
+         data-report-evidence-target="drawer"
+         role="dialog"
+         aria-modal="true"
+         aria-label="Attempt evidence">
+      <div class="absolute inset-0 bg-black/50"
+           data-action="click->report-evidence#close"></div>
+      <aside class="absolute inset-y-0 right-0 w-full max-w-xl bg-backgroundPrimary border-l border-zinc-700 flex flex-col"
+             tabindex="-1"
+             data-report-evidence-target="panel">
+        <div class="flex items-center gap-3 border-b border-zinc-700 px-4 py-3">
+          <span class="text-base text-white font-sans" data-report-evidence-target="title">Attempt</span>
+          <div class="ml-auto flex items-center gap-2">
+            <span class="text-xs text-contentTertiary tabular-nums" data-report-evidence-target="position"></span>
+            <button type="button"
+                    class="btn-base px-2 py-1"
+                    aria-label="Previous attempt"
+                    data-report-evidence-target="prev"
+                    data-action="click->report-evidence#previous">
+              <span class="icon icon-sm icon-chevron-up"></span>
+            </button>
+            <button type="button"
+                    class="btn-base px-2 py-1"
+                    aria-label="Next attempt"
+                    data-report-evidence-target="next"
+                    data-action="click->report-evidence#next">
+              <span class="icon icon-sm icon-chevron-down"></span>
+            </button>
+            <button type="button"
+                    class="btn-base px-2 py-1"
+                    aria-label="Close evidence"
+                    data-action="click->report-evidence#close">
+              <span class="icon icon-sm icon-close"></span>
+            </button>
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4" data-report-evidence-target="content"></div>
+      </aside>
+    </div>
+  </div>
+<% end %>
