@@ -21,7 +21,7 @@ Scanner ships with real, 0DIN-disclosed jailbreaks as ready-to-run probes - not 
 | Correction | `CorrectionCM` | [View ↗](https://0din.ai/threatfeed/439777fa-377a-43cb-83c6-c1a012e384b1/public?utm_source=0din.ai&utm_medium=open_source_scanner&utm_campaign=opensourcescanner&utm_content=correction) |
 | Hex Recipe Book | `HexRecipeBookCM` | [View ↗](https://0din.ai/threatfeed/06b58763-8a7b-4d82-afb6-ebe738b378a4/public?utm_source=0din.ai&utm_medium=open_source_scanner&utm_campaign=opensourcescanner&utm_content=hex_recipe_book) |
 
-See the full [Featured Vulnerabilities guide](https://0din-ai.github.io/ai-scanner/getting-started/featured-vulnerabilities) for what each tactic does and how to run them against your own targets.
+See the full [Featured Vulnerabilities guide](https://0din-ai.github.io/docs/getting-started/featured-vulnerabilities) for what each tactic does and how to run them against your own targets.
 
 ## Features
 
