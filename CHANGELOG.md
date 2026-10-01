@@ -20,3 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Reports::Process resolves variant probe names from garak scan output
   - OdinProbeSource syncs variant data from 0din_probes.json
   - 0din_variants.py garak plugin with SingleShotVariant and MultiShotVariant classes
+
+### Fixed
+
+- Explicit OpenRouter account/user policy blocks, including errors surfaced in HTTP-200 completions, now stop the route and fail validation or scans as `provider_policy_block` without fabricating model refusals; serial OpenRouter attempts prevent prefetched workers from repeating blocked calls. Retry evidence is scoped to the active attempt, validation log-directory errors settle as failed, and safe APM metadata is emitted.
+- OpenRouter completions without optional token-usage metadata retain the model answer instead of becoming synthetic refusals.

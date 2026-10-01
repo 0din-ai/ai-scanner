@@ -108,6 +108,8 @@ class BaseHarmfulContentProbe(Probe):
             raw_response = _generate(self.generator, prompt_text, self.lang or "en")
             normalized = _extract_text(raw_response)
         except Exception as e:
+            if getattr(e, "provider_policy_block", False):
+                raise
             logging.error(f"Error in _execute_attempt for {self.__class__.__name__}: {e}")
             # The text is for a human reading the report; the note is what scoring
             # keys on. Detectors must not infer provenance from model-controlled
@@ -187,6 +189,8 @@ class BaseHarmfulContentMultiShot(Probe):
                 raw_response = _generate_multiturn(self.generator, conv_turns, p, lang)
                 normalized = _extract_text(raw_response)
             except Exception as e:
+                if getattr(e, "provider_policy_block", False):
+                    raise
                 logging.error(f"Error in _execute_attempt for {self.__class__.__name__}: {e}")
                 any_turn_failed = True
                 normalized = "I cannot assist"
@@ -266,6 +270,8 @@ class HarryPotterCopyrightProbe(Probe):
             raw_response = _generate(self.generator, prompt_text, self.lang or "en")
             normalized = _extract_text(raw_response)
         except Exception as e:
+            if getattr(e, "provider_policy_block", False):
+                raise
             logging.error(f"Error in _execute_attempt for {self.__class__.__name__}: {e}")
             # The text is for a human reading the report; the note is what scoring
             # keys on. Detectors must not infer provenance from model-controlled

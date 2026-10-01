@@ -55,6 +55,7 @@ module Reports
         @raw_data.destroy!
         report.save!
       end
+      FailureClassifier.report_policy_block_event(report.failure_details) if report.failure_code == "provider_policy_block"
       Rails.logger.info("Report #{id}: Processed from database, raw_report_data deleted")
     end
 
@@ -80,6 +81,7 @@ module Reports
       failure = FailureClassifier.new(report, logs: current_run_failure_logs).call
       if failure.failed? && !completed_scan_with_clean_exit?
         report.status = :failed
+        report.result_completeness = :partial if failure.code == "provider_policy_block" && report.complete_results?
         report.failure_code = failure.code
         report.failure_message = failure.message
         report.failure_details = failure.details

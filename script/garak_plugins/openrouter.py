@@ -29,6 +29,63 @@ from garak.generators.openai import OpenAICompatible
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
+# Only account/user identity blocks belong to this terminal category. A bare 403,
+# generic policy_violation, or a model refusing content is not an identity block.
+IDENTITY_BLOCK_CODES = frozenset({"user_blocked", "account_blocked", "identity_policy_block"})
+AUTH_ERROR_CODES = frozenset({"invalid_api_key", "invalid_credentials", "authentication_error", "unauthorized"})
+IDENTITY_BLOCK_MESSAGE = re.compile(
+    r"(?:this |the |your )?(?:user|account) (?:has been |is )?blocked (?:for|due to) (?:a )?(?:previous )?policy violation",
+    re.I,
+)
+SAFE_ID = re.compile(
+    r"(?:(?:req[-_]|gen[-_]|chatcmpl[-_])[A-Za-z0-9_-]{1,120}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\Z",
+    re.I,
+)
+UNSAFE_ID = re.compile(r"sk[-_]|api[-_]?key|token|secret|password|bearer", re.I)
+
+
+class OpenRouterPolicyBlock(BadGeneratorException):
+    """Terminal identity policy block, with no upstream text in the exception."""
+    provider_policy_block = True
+
+    def __init__(self, code, request_id=None):
+        self.code = code
+        self.request_id = request_id
+        suffix = f" request_id={request_id}" if request_id else ""
+        super().__init__(f"provider_policy_block code={code} type=identity{suffix}")
+
+    def __reduce__(self):
+        # garak runs parallelisable probes in worker processes. Preserve the
+        # structured fields instead of unpickling the rendered message as code.
+        return (type(self), (self.code, self.request_id))
+
+
+def _field(obj, key):
+    return obj.get(key) if isinstance(obj, Mapping) else _safe_getattr(obj, key)
+
+
+def _identity_block(error, response=None):
+    if error is None:
+        return None
+    code = _field(error, "code")
+    message = _field(error, "message")
+    normalized = code.lower() if isinstance(code, str) else ""
+    if normalized in AUTH_ERROR_CODES:
+        return None
+    if normalized in IDENTITY_BLOCK_CODES:
+        block_code = normalized
+    elif isinstance(message, str) and IDENTITY_BLOCK_MESSAGE.search(message):
+        block_code = "identity_policy_block"
+    else:
+        return None
+
+    headers = _field(response, "headers")
+    request_id = headers.get("x-request-id") if isinstance(headers, Mapping) else None
+    request_id = request_id or _field(response, "id") or _field(error, "request_id")
+    request_id = request_id if isinstance(request_id, str) and SAFE_ID.fullmatch(request_id) and not UNSAFE_ID.search(request_id) else None
+    return OpenRouterPolicyBlock(block_code, request_id)
+
+
 # Default context lengths for common models
 # These are just examples - any model from OpenRouter will work
 context_lengths = {
@@ -120,6 +177,9 @@ class OpenRouterGenerator(OpenAICompatible):
     ENV_VAR = "OPENROUTER_API_KEY"
     active = True
     supports_multiple_generations = True
+    # garak queues parallel attempts ahead of the first result and drains the pool
+    # on failure; serial attempts stop this route at the first identity block.
+    parallel_capable = False
     generator_family_name = "OpenRouter"
     DEFAULT_PARAMS = {
         **OpenAICompatible.DEFAULT_PARAMS,
@@ -187,10 +247,11 @@ class OpenRouterGenerator(OpenAICompatible):
                 logging.debug(f"  Content: {msg.get('content', '')}")
 
         logging.debug("\n=== Model Output ===")
-        if hasattr(response, 'usage'):
-            logging.debug(f"Prompt Tokens: {response.usage.prompt_tokens}")
-            logging.debug(f"Completion Tokens: {response.usage.completion_tokens}")
-            logging.debug(f"Total Tokens: {response.usage.total_tokens}")
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            logging.debug(f"Prompt Tokens: {usage.prompt_tokens}")
+            logging.debug(f"Completion Tokens: {usage.completion_tokens}")
+            logging.debug(f"Total Tokens: {usage.total_tokens}")
 
         logging.debug("\nGenerated Text:")
         # OpenAI response object always has choices
@@ -252,10 +313,10 @@ class OpenRouterGenerator(OpenAICompatible):
                 max_tokens=self.max_tokens if hasattr(self, 'max_tokens') else None
             )
 
-            # Log the completion details
-            self._log_completion_details(prompt, raw_response)
-
+            # Check before logging: a streaming HTTP 200 can carry an error
+            # rather than a completed model response.
             response_messages = self._messages_from_response(raw_response)
+            self._log_completion_details(prompt, raw_response)
             self._raise_if_all_generations_empty(response_messages)
             if len(response_messages) == generations_this_call:
                 return response_messages
@@ -287,8 +348,8 @@ class OpenRouterGenerator(OpenAICompatible):
                     n=1 if "n" not in self.suppressed_params else None,
                     max_tokens=self.max_tokens if hasattr(self, 'max_tokens') else None
                 )
-                self._log_completion_details(original_prompt, raw_response)
                 response_messages = self._messages_from_response(raw_response)
+                self._log_completion_details(original_prompt, raw_response)
                 self._raise_if_all_generations_empty(response_messages)
                 responses.append(response_messages[0] if response_messages else None)
             except BadGeneratorException:
@@ -300,6 +361,10 @@ class OpenRouterGenerator(OpenAICompatible):
         return responses
 
     def _messages_from_response(self, raw_response):
+        error = _field(raw_response, "error") or _field(_field(raw_response, "model_extra"), "error")
+        block = _identity_block(error, raw_response)
+        if block:
+            raise block
         return [
             Message(text=choice.message.content) if choice.message.content else None
             for choice in raw_response.choices
@@ -318,6 +383,11 @@ class OpenRouterGenerator(OpenAICompatible):
             raise exc
 
         if isinstance(exc, openai.APIStatusError):
+            body = _field(exc, "body")
+            error = _field(body, "error") or body
+            block = _identity_block(error, _field(exc, "response")) if exc.status_code != 401 else None
+            if block:
+                raise block from None
             raise BadGeneratorException(
                 _terminal_api_status_message(exc, self.generator_family_name, self.name)
             ) from exc

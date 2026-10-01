@@ -14,6 +14,45 @@ module Reports
 
     OPENROUTER = "OpenRouter"
     EMPTY_RESULT = Result.new(code: nil, message: nil, details: {}).freeze
+    POLICY_BLOCK_MESSAGE = "OpenRouter cannot serve this target because the provider blocked the account or user for a policy violation. Contact the provider before revalidating or rerunning the scan.".freeze
+    POLICY_BLOCK_PATTERN = /^\s*(?:[\w.]+\.)?OpenRouterPolicyBlock: provider_policy_block code=(user_blocked|account_blocked|identity_policy_block) type=identity(?: request_id=((?:(?:req[-_]|gen[-_]|chatcmpl[-_])[A-Za-z0-9_-]{1,120}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})))?\s*$/i.freeze
+    MODEL_SLUG_PATTERN = /\A[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*\z/i
+    UNSAFE_ID_PATTERN = /sk[-_]|api[-_]?key|token|secret|password|bearer/i
+
+    def self.policy_block_details(logs, model:)
+      text = logs.to_s
+      attempt_starts = text.to_enum(:scan, GARAK_ATTEMPT_START_PATTERN).map { Regexp.last_match.end(0) }
+      if attempt_starts.any?
+        current_run = text[attempt_starts.last..]
+        return if cleanly_completed?(current_run)
+      else
+        # Older/custom logs may lack a start line. With accumulated retries, only
+        # inspect text after the latest completion marker; prior attempts are ambiguous.
+        return if cleanly_completed?(text)
+
+        exits = text.to_enum(:scan, GARAK_COMPLETION_PATTERN).map { Regexp.last_match.end(0) }
+        current_run = text[(exits.last || 0)..]
+      end
+      match = current_run.scan(POLICY_BLOCK_PATTERN).last
+      return unless match
+
+      details = {
+        "provider" => OPENROUTER,
+        "key_alias" => "OPENROUTER_API_KEY",
+        "block_code" => match.first,
+        "block_type" => "identity",
+        "fallback_completed" => false
+      }
+      details["model"] = model if model.is_a?(String) && model.length <= 128 && MODEL_SLUG_PATTERN.match?(model)
+      details["request_id"] = match.last if match.last.present? && !UNSAFE_ID_PATTERN.match?(match.last)
+      details
+    end
+
+    def self.report_policy_block_event(details)
+      MonitoringService.report_event("provider_policy_block", details.merge("service" => "scanner", "timestamp" => Time.current.iso8601))
+    rescue StandardError
+      Rails.logger.warn("Policy block APM event could not be recorded")
+    end
 
     STATUS_CODE_PATTERN = /
       status_code\s*[=:]\s*(\d{3}) |
@@ -27,10 +66,10 @@ module Reports
       /error\s*[=:]\s*["']?([^"'
 }]+)/i
     ].freeze
-    # garak logs one "Garak scan completed ... Exit code: N" line per attempt, and the
-    # run log is appended across same-day retries (deterministic per-report path opened
-    # in append mode), so only the LAST line reflects the current run. Judge a clean
-    # completion from that last exit code, not any matching line in the accumulated log.
+    # Each scanner invocation logs this line before running probes. Retry logs append,
+    # so isolate provider failure evidence from the latest invocation, even if it exits
+    # before writing its completion marker.
+    GARAK_ATTEMPT_START_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d+)? - [\w.]+ - INFO - Starting garak scan - Report: [^,\s]+, Scan:/i
     GARAK_COMPLETION_PATTERN = /Garak scan completed.*?Exit code:\s*(\d+)/i
 
     def self.cleanly_completed?(logs)
@@ -72,6 +111,11 @@ module Reports
 
     def call
       return EMPTY_RESULT if evidence_text.blank? && exit_code.blank?
+
+      if report.target&.model_type == "OpenRouterGenerator" && !(exit_code.present? && exit_code.to_i.zero?)
+        details = self.class.policy_block_details(evidence_text, model: report.target.model)
+        return Result.new(code: "provider_policy_block", message: POLICY_BLOCK_MESSAGE, details: details) if details
+      end
 
       provider_result = classify_provider_failure
       return provider_result if provider_result.failed?

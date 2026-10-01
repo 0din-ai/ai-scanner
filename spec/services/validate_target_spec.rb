@@ -138,6 +138,45 @@ RSpec.describe ValidateTarget, type: :service do
         expect(target.validation_text).to eq("Validation failed: #{error_message}")
       end
     end
+    it 'shows a safe unavailable reason and emits a constrained event on a plugin block' do
+      target.update!(model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o')
+      path = service.send(:validation_log_path)
+      allow(File).to receive(:file?).and_call_original
+      allow(File).to receive(:file?).with(path).and_return(true)
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with(path).and_return(<<~LOG)
+        2026-10-01 10:00:00,000 - __main__ - INFO - Starting garak scan - Report: validation_123_abc123, Scan: validation, Target: test
+        garak.generators.openrouter.OpenRouterPolicyBlock: provider_policy_block code=identity_policy_block type=identity request_id=gen_123
+        Garak scan completed - Exit code: 1
+      LOG
+      allow(mock_run_command).to receive(:call).and_raise('Command failed: secret-token prompt-output')
+      event = nil
+      allow(MonitoringService).to receive(:report_event) { |name, context| event = [ name, context ] }
+
+      service.call
+
+      expect(target.reload.status).to eq('bad')
+      expect(target.validation_text).to eq(Reports::FailureClassifier::POLICY_BLOCK_MESSAGE)
+      expect(event.first).to eq('provider_policy_block')
+      expect(event.last).to include('service' => 'scanner', 'model' => 'openai/gpt-4o',
+        'request_id' => 'gen_123', 'fallback_completed' => false)
+      expect(event.last.values.join(' ')).not_to include('secret-token', 'prompt-output')
+      expect(event.last.keys).to match_array(%w[service provider model key_alias block_code block_type request_id fallback_completed timestamp])
+    end
+
+    it 'marks OpenRouter validation failed if its log directory cannot be created' do
+      target.update!(model_type: 'OpenRouterGenerator')
+      allow(Dir).to receive(:exist?).and_call_original
+      allow(Dir).to receive(:exist?).with(described_class::LOGS_PATH).and_return(false)
+      expect(FileUtils).to receive(:mkdir_p).with(described_class::LOGS_PATH).once.and_raise(Errno::EACCES)
+      expect(File).to receive(:file?).with(service.send(:validation_log_file_path)).and_return(false)
+      expect(mock_run_command).not_to receive(:call)
+
+      service.call
+
+      expect(target.reload.status).to eq('bad')
+      expect(target.validation_text).to start_with('Validation failed:')
+    end
   end
 
   describe 'private methods' do

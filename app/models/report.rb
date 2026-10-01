@@ -184,6 +184,7 @@ class Report < ApplicationRecord
   # legacy_stale_processing is no longer written, but historical rows carry it.
   INCOMPLETE_ASSERTING_FAILURE_CODES = %w[
     scan_incomplete_results
+    provider_policy_block
     legacy_stale_processing
   ].freeze
 
@@ -375,6 +376,8 @@ class Report < ApplicationRecord
     return failure_message if failure_message.present?
 
     case failure_code
+    when "provider_policy_block"
+      Reports::FailureClassifier::POLICY_BLOCK_MESSAGE
     when "provider_model_unavailable"
       "The provider rejected the configured model as unavailable. Update the target model, " \
         "revalidate the target, then rerun the scan."
@@ -403,6 +406,8 @@ class Report < ApplicationRecord
 
   def failure_title
     case failure_code
+    when "provider_policy_block"
+      "Provider policy block"
     when "provider_model_unavailable"
       "Provider model unavailable"
     when "provider_payment_required"
@@ -426,6 +431,8 @@ class Report < ApplicationRecord
 
   def failure_action
     case failure_code
+    when "provider_policy_block"
+      "Contact the provider before revalidating or rerunning the scan."
     when "provider_model_unavailable"
       "Update the target model, revalidate the target, then rerun the scan."
     when "provider_payment_required"

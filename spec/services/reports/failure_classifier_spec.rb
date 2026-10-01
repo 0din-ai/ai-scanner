@@ -33,6 +33,49 @@ RSpec.describe Reports::FailureClassifier do
 
     expect(described_class.new(report, logs: logs).call.code).to eq('provider_payment_required')
   end
+  it 'classifies only a typed current-run identity block and drops unsafe metadata' do
+    logs = <<~LOG
+      2026-10-01 10:00:00,000 - __main__ - INFO - Starting garak scan - Report: current-run, Scan: test, Target: test
+      HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+      garak.generators.openrouter.OpenRouterPolicyBlock: provider_policy_block code=identity_policy_block type=identity request_id=gen_123
+      Garak scan completed - Exit code: 1
+    LOG
+    result = described_class.new(report, logs: logs).call
+
+    expect(result.code).to eq('provider_policy_block')
+    expect(result.message).to include('cannot serve this target')
+    expect(result.details).to eq(
+      'provider' => 'OpenRouter', 'key_alias' => 'OPENROUTER_API_KEY',
+      'block_code' => 'identity_policy_block', 'block_type' => 'identity',
+      'fallback_completed' => false, 'model' => 'openai/gpt-4o', 'request_id' => 'gen_123'
+    )
+    expect(described_class.new(report, logs: logs.sub('Exit code: 1', 'Exit code: 0')).call).not_to be_failed
+  end
+  it 'does not emit a credential disguised as a request ID' do
+    logs = 'OpenRouterPolicyBlock: provider_policy_block code=user_blocked type=identity request_id=req_sk-or-v1-secretvalue'
+    result = described_class.new(report, logs: logs, exit_code: 1).call
+    expect(result.code).to eq('provider_policy_block')
+    expect(result.details).not_to have_key('request_id')
+  end
+  it 'does not infer an identity block from an unknown 403 or generic content policy rejection' do
+    logs = 'OpenRouter terminal API status error: status_code=403 message="policy violation: content rejected"'
+    expect(described_class.new(report, logs: logs).call.code).to eq('provider_rejected_request')
+    expect(described_class.policy_block_details('OpenRouterPolicyBlock: provider_policy_block code=content_policy type=identity', model: target.model)).to be_nil
+  end
+
+  it "does not reuse a block from prior retries when the current attempt has no completion marker" do
+    logs = <<~LOG
+      2026-10-01 10:00:00,000 - __main__ - INFO - Starting garak scan - Report: first-run, Scan: test, Target: test
+      Previous attempt failed without provider status evidence
+      Garak scan completed - Exit code: 1
+      2026-10-01 10:01:00,000 - __main__ - INFO - Starting garak scan - Report: second-run, Scan: test, Target: test
+      OpenRouterPolicyBlock: provider_policy_block code=user_blocked type=identity
+      Garak scan completed - Exit code: 1
+      2026-10-01 10:02:00,000 - __main__ - INFO - Starting garak scan - Report: current-run, Scan: test, Target: test
+      OpenRouter terminal API status error: status_code=401 message="invalid api key"
+    LOG
+    expect(described_class.new(report, logs: logs).call.code).to eq("provider_auth_failed")
+  end
 
   it 'classifies explicit provider 5xx errors as temporary provider outages' do
     logs = 'OpenRouter terminal API status error: status_code=503 message="upstream unavailable"'

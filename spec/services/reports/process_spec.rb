@@ -433,6 +433,39 @@ RSpec.describe Reports::Process, type: :service do
         )
       end
     end
+    context 'when the OpenRouter plugin terminates on an identity block' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let!(:raw_data) do
+        create(:raw_report_data, report: report, jsonl_data: jsonl_content, logs_data: <<~LOG)
+          2026-10-01 10:00:00,000 - __main__ - INFO - Starting garak scan - Report: current-run, Scan: test, Target: test
+          HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+          garak.generators.openrouter.OpenRouterPolicyBlock: provider_policy_block code=user_blocked type=identity request_id=req_123
+          Garak scan completed - Exit code: 1
+        LOG
+      end
+
+      it 'fails despite completed-looking JSONL, preserves partial evidence, and emits only safe APM fields' do
+        target.update!(model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o')
+        event = nil
+        allow(MonitoringService).to receive(:report_event) { |name, context| event = [ name, context ] }
+        expect_any_instance_of(OutputServers::Dispatcher).not_to receive(:call)
+
+        service.call
+
+        report.reload
+        expect(report).to be_failed
+        expect(report.failure_code).to eq('provider_policy_block')
+        expect(report).to be_partial_results
+        expect(report.failure_title).to eq('Provider policy block')
+        expect(report.user_failure_message).to include('Contact the provider')
+        expect(event.first).to eq('provider_policy_block')
+        expect(event.last).to include('service' => 'scanner', 'provider' => 'OpenRouter',
+          'model' => 'openai/gpt-4o', 'key_alias' => 'OPENROUTER_API_KEY',
+          'block_code' => 'user_blocked', 'block_type' => 'identity',
+          'request_id' => 'req_123', 'fallback_completed' => false)
+        expect(event.last.keys).to match_array(%w[service provider model key_alias block_code block_type request_id fallback_completed timestamp])
+      end
+    end
 
     context 'when completed results carry a trailing post-scan digest error' do
       let!(:probe) { create(:probe, name: 'TestProbe') }

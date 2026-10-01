@@ -259,6 +259,22 @@ RSpec.describe RunGarakScan, type: :service do
 
       service.call
     end
+    it 'does not launch or retry a previously policy-blocked validated route' do
+      blocked_target = create(:target, status: :bad, model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o',
+        validation_text: Reports::FailureClassifier::POLICY_BLOCK_MESSAGE)
+      blocked_report = create(:report, target: blocked_target, scan: scan)
+      service = described_class.new(blocked_report)
+      allow(service).to receive(:call).and_call_original
+      expect(RunCommand).not_to receive(:new)
+
+      service.call
+
+      blocked_report.reload
+      expect(blocked_report).to be_failed
+      expect(blocked_report.failure_code).to eq('provider_policy_block')
+      expect(blocked_report.retry_count).to eq(0)
+      expect(blocked_report.user_failure_message).to eq(Reports::FailureClassifier::POLICY_BLOCK_MESSAGE)
+    end
 
     it 'fails the report if target has bad status without validation text' do
       bad_target = create(:target, status: :bad, validation_text: nil)

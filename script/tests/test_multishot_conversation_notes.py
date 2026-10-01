@@ -171,6 +171,18 @@ class TestMultiShotGenerationFailureNote(unittest.TestCase):
 
         self.assertTrue(result.notes.get(self.module.GENERATION_FAILED_NOTE))
 
+    def test_policy_block_aborts_multishot_without_fabricating_a_refusal(self):
+        openrouter = _load_local_plugin("local_openrouter_probe_block", "openrouter.py")
+        block = openrouter.OpenRouterPolicyBlock("user_blocked", "req_123")
+
+        class BlockGenerator:
+            def generate(self, _conversation, _count):
+                raise block
+
+        self.probe.generator = BlockGenerator()
+        with self.assertRaises(openrouter.OpenRouterPolicyBlock):
+            self.probe._execute_attempt(self.attempt)
+        self.assertFalse(self.attempt.outputs)
 
 if __name__ == "__main__":
     unittest.main()

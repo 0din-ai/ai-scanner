@@ -32,11 +32,20 @@ class ValidateTarget
         end
       end
     rescue StandardError => e
+      validation_log = validation_log_file_path
+      policy_block = if target.model_type == "OpenRouterGenerator" && File.file?(validation_log)
+        Reports::FailureClassifier.policy_block_details(File.read(validation_log), model: target.model)
+      end
       dur_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round
-      Logging.with(event: "validation.error", target_id: target.id, validation_uuid: validation_uuid, exception_class: e.class.name, exception_message: e.message.to_s, duration_ms: dur_ms) do
+      Logging.with(event: "validation.error", target_id: target.id, validation_uuid: validation_uuid, exception_class: e.class.name, exception_message: (policy_block ? Reports::FailureClassifier::POLICY_BLOCK_MESSAGE : e.message.to_s), duration_ms: dur_ms) do
         Rails.logger.error("validation.error")
       end
-      target.update(status: :bad, validation_text: "Validation failed: #{e.message}")
+      if policy_block
+        target.update(status: :bad, validation_text: Reports::FailureClassifier::POLICY_BLOCK_MESSAGE)
+        Reports::FailureClassifier.report_policy_block_event(policy_block)
+      else
+        target.update(status: :bad, validation_text: "Validation failed: #{e.message}")
+      end
     end
   end
 
@@ -55,6 +64,10 @@ class ValidateTarget
 
   def validation_log_path
     FileUtils.mkdir_p(LOGS_PATH) unless Dir.exist?(LOGS_PATH)
+    validation_log_file_path
+  end
+
+  def validation_log_file_path
     LOGS_PATH.join("#{validation_uuid}.log").to_s
   end
 

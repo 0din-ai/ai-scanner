@@ -33,6 +33,8 @@ Environment variables allow you to securely configure API keys and system settin
 - **OPENROUTER_API_KEY**: Your OpenRouter API key for accessing multiple AI models
   - Format: API key from OpenRouter dashboard
   - Get your key at: https://openrouter.ai/keys
+  - If validation reports an OpenRouter account/user policy block, Scanner marks the target unavailable and fails scans as `provider_policy_block` instead of retrying that route or scoring a refusal. Contact OpenRouter before revalidating or rerunning. This is distinct from an invalid key, a model refusal, and a generic rejected request. OpenRouter probe attempts run serially even when the global parallel-attempt setting is higher, so already queued workers cannot continue calling a blocked route; other providers retain their configured parallelism.
+  - The `provider_policy_block` APM event contains only provider, model slug, key alias, block code/type, timestamp, safe request/generation ID when available, and whether a fallback completed; it excludes API key values, prompts, outputs, tenant identifiers, and provider response bodies.
 
 ### Azure OpenAI
 - **AZURE_API_KEY**: Your Azure OpenAI service key

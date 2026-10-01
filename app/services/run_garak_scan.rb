@@ -360,6 +360,16 @@ class RunGarakScan
       error_message = "Target '#{target.name}' is still being validated. Please wait for validation to complete before running scans."
       Rails.logger.warn("Cannot run scan for report #{report.id} - target #{target.id} (#{target.name}) is in 'validating' status")
     when "bad"
+      if target.model_type == "OpenRouterGenerator" && target.validation_text == Reports::FailureClassifier::POLICY_BLOCK_MESSAGE
+        report.update(
+          status: :failed, execution_token: nil,
+          logs: Reports::FailureClassifier::POLICY_BLOCK_MESSAGE,
+          failure_code: "provider_policy_block",
+          failure_message: Reports::FailureClassifier::POLICY_BLOCK_MESSAGE,
+          failure_details: { "provider" => "OpenRouter", "block_type" => "identity", "fallback_completed" => false }
+        )
+        return
+      end
       error_message = "Target '#{target.name}' validation failed."
       error_message += " #{target.validation_text}" if target.validation_text.present?
       Rails.logger.error("Cannot run scan for report #{report.id} - target #{target.id} (#{target.name}) has 'bad' status. Validation text: #{target.validation_text}")
