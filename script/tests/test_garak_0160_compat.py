@@ -192,6 +192,14 @@ class TestOpenRouterUserRequests(unittest.TestCase):
 
         self.assertEqual([body["user"] for body in self.requests], ["scanner:service:dev"] * 2)
 
+    def test_no_actor_service_identity_is_separate_in_stage_and_prod(self):
+        with patch.dict(os.environ, {}, clear=True):
+            for deployment in ("stage", "prod"):
+                os.environ["SCANNER_ENVIRONMENT"] = deployment
+                self.call("anthropic/claude-3-opus")
+
+        self.assertEqual([body["user"] for body in self.requests], ["scanner:service:stage", "scanner:service:prod"])
+
     def test_all_routes_receive_tenant_user_at_top_level(self):
         models = ("meta/muse-spark-1.2", "meta/muse-spark-1.3", "openai/gpt-6.1-sol", "openai/gpt-6.1-sol:variant")
         with patch.dict(os.environ, {"OPENROUTER_USER": "scanner:tenant:42", "SCANNER_ENVIRONMENT": "stage"}, clear=True):
