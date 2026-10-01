@@ -33,6 +33,10 @@ Environment variables allow you to securely configure API keys and system settin
 - **OPENROUTER_API_KEY**: Your OpenRouter API key for accessing multiple AI models
   - Format: API key from OpenRouter dashboard
   - Get your key at: https://openrouter.ai/keys
+- **SCANNER_ENVIRONMENT**: Operator-controlled pod/process setting (not an admin-panel environment-variable row). Set to dev, stage, or prod. Stage and prod both use Rails production mode, so each deployment must set its own value; a missing production value stops OpenRouter requests. Local development defaults to dev and tests to test.
+  - Scanner reports pass the deployment label and an internal OPENROUTER_USER of scanner:tenant:<company id> to garak. Tenant environment-variable rows cannot override either value; the request user becomes scanner:tenant:<company id>:<deployment>.
+  - Direct generator callers set SCANNER_ENVIRONMENT and OPENROUTER_USER=scanner:threat-feed for continual threat-feed probes; callers without an actor use scanner:service:<deployment>.
+  - All OpenRouter model routes receive this top-level user identity, including meta/muse-spark-1.2, meta/muse-spark-1.3, and openai/gpt-6.1-sol.
 
 ### Azure OpenAI
 - **AZURE_API_KEY**: Your Azure OpenAI service key

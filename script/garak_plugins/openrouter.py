@@ -18,6 +18,7 @@ Requires garak 0.14+ (uses Conversation/Message API).
 """
 
 import logging
+import os
 import re
 from collections.abc import Mapping, Sequence
 from typing import List, Union, Optional
@@ -152,7 +153,6 @@ class OpenRouterGenerator(OpenAICompatible):
 
     def _get_api_key(self):
         """Get API key from environment variable"""
-        import os
         key = os.getenv(self.ENV_VAR)
         if not key:
             raise ValueError(f"Please set the {self.ENV_VAR} environment variable with your OpenRouter API key")
@@ -218,6 +218,14 @@ class OpenRouterGenerator(OpenAICompatible):
 
         logging.debug("==================")
 
+    def _request_user(self):
+        deployment = os.getenv("SCANNER_ENVIRONMENT")
+        if deployment is None:
+            deployment = {"development": "dev", "test": "test"}.get(os.getenv("RAILS_ENV"))
+        if deployment not in ("dev", "stage", "prod", "test"):
+            raise ValueError("SCANNER_ENVIRONMENT must be set to dev, stage, or prod for OpenRouter requests")
+        return f'{os.getenv("OPENROUTER_USER") or "scanner:service"}:{deployment}'
+
     def _call_model(
         self, prompt: Union[Conversation, str, List[dict]], generations_this_call: int = 1
     ) -> List[Optional[Message]]:
@@ -230,6 +238,7 @@ class OpenRouterGenerator(OpenAICompatible):
         Returns:
             List of Message objects (or None for failed generations)
         """
+        user = self._request_user()
         try:
             # Ensure client is initialized
             if self.client is None or self.generator is None:
@@ -249,7 +258,8 @@ class OpenRouterGenerator(OpenAICompatible):
                 model=self.name,
                 messages=messages,
                 n=generations_this_call if "n" not in self.suppressed_params else None,
-                max_tokens=self.max_tokens if hasattr(self, 'max_tokens') else None
+                max_tokens=self.max_tokens if hasattr(self, 'max_tokens') else None,
+                user=user
             )
 
             # Log the completion details
@@ -268,7 +278,7 @@ class OpenRouterGenerator(OpenAICompatible):
                 len(response_messages),
                 generations_this_call,
             )
-            return self._call_model_sequential(messages, generations_this_call, prompt)
+            return self._call_model_sequential(messages, generations_this_call, prompt, user)
 
         except BadGeneratorException:
             raise
@@ -277,7 +287,7 @@ class OpenRouterGenerator(OpenAICompatible):
             logging.error(f"Error in model call: {str(e)}")
             return [None] * generations_this_call
 
-    def _call_model_sequential(self, messages, generations_this_call, original_prompt):
+    def _call_model_sequential(self, messages, generations_this_call, original_prompt, user):
         responses = []
         for _ in range(generations_this_call):
             try:
@@ -285,7 +295,8 @@ class OpenRouterGenerator(OpenAICompatible):
                     model=self.name,
                     messages=messages,
                     n=1 if "n" not in self.suppressed_params else None,
-                    max_tokens=self.max_tokens if hasattr(self, 'max_tokens') else None
+                    max_tokens=self.max_tokens if hasattr(self, 'max_tokens') else None,
+                    user=user
                 )
                 self._log_completion_details(original_prompt, raw_response)
                 response_messages = self._messages_from_response(raw_response)

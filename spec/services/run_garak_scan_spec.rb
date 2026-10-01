@@ -447,6 +447,70 @@ RSpec.describe RunGarakScan, type: :service do
     end
 
     describe '#build_env' do
+      it 'uses stable tenant IDs across OpenRouter reports and overrides tenant env identities' do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("SCANNER_ENVIRONMENT").and_return(nil)
+        openrouter_target = create(:target, :good, model_type: 'OpenRouterGenerator', model: 'anthropic/claude-3-opus')
+        reports = Array.new(2) { create(:report, company: openrouter_target.company, target: openrouter_target) }
+        identities = reports.map do |openrouter_report|
+          service = described_class.new(openrouter_report)
+          allow(service).to receive(:merged_env_vars).and_return('OPENROUTER_USER' => 'spoofed', 'SCANNER_ENVIRONMENT' => 'spoofed')
+          env = service.send(:build_env)
+          env.values_at('OPENROUTER_USER', 'SCANNER_ENVIRONMENT')
+        end
+
+        expect(identities).to eq([ [ "scanner:tenant:#{openrouter_target.company.id}", 'test' ] ] * 2)
+
+        other_target = create(:target, :good, model_type: 'OpenRouterGenerator', model: 'anthropic/claude-3-opus')
+        other_report = create(:report, company: other_target.company, target: other_target)
+        other_identity = described_class.new(other_report).send(:build_env).fetch('OPENROUTER_USER')
+        expect(other_identity).to eq("scanner:tenant:#{other_target.company.id}")
+        expect(other_identity).not_to eq(identities.first.first)
+      end
+
+      it 'uses the operator deployment label rather than a tenant-supplied value' do
+        allow(ENV).to receive(:[]).and_call_original
+        openrouter_target = create(:target, :good, model_type: 'OpenRouterGenerator', model: 'anthropic/claude-3-opus')
+        openrouter_report = create(:report, company: openrouter_target.company, target: openrouter_target)
+        service = described_class.new(openrouter_report)
+        allow(service).to receive(:merged_env_vars).and_return('SCANNER_ENVIRONMENT' => 'spoofed')
+
+        environments = %w[stage prod].map do |deployment|
+          allow(ENV).to receive(:[]).with('SCANNER_ENVIRONMENT').and_return(deployment)
+          service.send(:build_env).values_at('SCANNER_ENVIRONMENT', 'OPENROUTER_USER')
+        end
+
+        expect(environments).to eq([ [ 'stage', "scanner:tenant:#{openrouter_report.company.id}" ],
+                                     [ 'prod', "scanner:tenant:#{openrouter_report.company.id}" ] ])
+      end
+
+      it 'refuses a production OpenRouter launch with no deployment label' do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with('SCANNER_ENVIRONMENT').and_return(nil)
+        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('production'))
+        openrouter_target = create(:target, :good, model_type: 'OpenRouterGenerator', model: 'anthropic/claude-3-opus')
+        openrouter_report = create(:report, company: openrouter_target.company, target: openrouter_target)
+
+        expect { described_class.new(openrouter_report).send(:build_env) }.to raise_error(ArgumentError, /SCANNER_ENVIRONMENT/)
+      end
+
+      it 'uses dev for local development scans when no deployment label is configured' do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with('SCANNER_ENVIRONMENT').and_return(nil)
+        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('development'))
+        openrouter_target = create(:target, :good, model_type: 'OpenRouterGenerator', model: 'anthropic/claude-3-opus')
+        openrouter_report = create(:report, company: openrouter_target.company, target: openrouter_target)
+
+        expect(described_class.new(openrouter_report).send(:build_env).fetch('SCANNER_ENVIRONMENT')).to eq('dev')
+      end
+
+      it 'does not inject an OpenRouter identity for other generators' do
+        service = described_class.new(report)
+        allow(service).to receive(:merged_env_vars).and_return({})
+
+        expect(service.send(:build_env)).not_to have_key('OPENROUTER_USER')
+      end
+
       it 'passes the execution token to the scan process' do
         # The Python side refuses to run without it, and every DB write it makes
         # is fenced on it.

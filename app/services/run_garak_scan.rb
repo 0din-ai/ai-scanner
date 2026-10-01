@@ -312,6 +312,19 @@ class RunGarakScan
       env["TARGET_ID"] = target.id.to_s
       env["TARGET_NAME"] = target.name
 
+      if target.model_type == "OpenRouterGenerator"
+        deployment = ENV["SCANNER_ENVIRONMENT"]
+        deployment ||= "dev" if Rails.env.development?
+        deployment ||= "test" if Rails.env.test?
+        unless %w[dev stage prod test].include?(deployment)
+          raise ArgumentError, "SCANNER_ENVIRONMENT must be set to dev, stage, or prod for OpenRouter scans"
+        end
+
+        # Never accept an identity or deployment label from tenant-controlled rows.
+        env["SCANNER_ENVIRONMENT"] = deployment
+        env["OPENROUTER_USER"] = "scanner:tenant:#{report.company.id}"
+      end
+
       env
     end
   end
