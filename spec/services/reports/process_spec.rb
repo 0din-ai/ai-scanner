@@ -433,7 +433,33 @@ RSpec.describe Reports::Process, type: :service do
         )
       end
     end
+    context "when Otari blocks a completed-looking scan" do
+      let!(:probe) { create(:probe, name: "TestProbe") }
+      let!(:raw_data) do
+        create(
+          :raw_report_data,
+          report: report,
+          jsonl_data: jsonl_content,
+          logs_data: "garak.generators.otari.OtariPolicyBlock: provider_policy_block status_code=403 code=user_blocked request_id=req-test-1 error=blocked\n2023-06-01 10:30:00,123 - __main__ - INFO - Garak scan completed - Report: test, Exit code: 0\n"
+        )
+      end
 
+      before do
+        target.update!(model_type: "OtariGenerator", model: "openai:configured-model")
+      end
+
+      it "fails the scan and marks its full-looking results partial despite a clean exit" do
+        expect_any_instance_of(OutputServers::Dispatcher).not_to receive(:call)
+
+        service.call
+
+        report.reload
+        expect(report.status).to eq("failed")
+        expect(report.failure_code).to eq("provider_policy_block")
+        expect(report.result_completeness).to eq("partial")
+        expect(report.failure_details).to include("gateway" => "otari", "status_code" => 403)
+      end
+    end
     context 'when completed results carry a trailing post-scan digest error' do
       let!(:probe) { create(:probe, name: 'TestProbe') }
       let!(:raw_data) do
@@ -674,6 +700,27 @@ RSpec.describe Reports::Process, type: :service do
         expect(by_uuid['a-none']['attack_succeeded']).to be_nil
         expect(by_uuid['a-boundary']['attack_succeeded']).to be(true)
         expect(by_uuid['a-hit']).not_to have_key('detector_results')
+      end
+      it "persists Otari gateway and serving-provider notes on the attempt output" do
+        raw_data.update!(jsonl_data: [
+          { entry_type: "init", start_time: "2023-06-01T10:00:00Z" }.to_json,
+          { entry_type: "attempt", probe_classname: "0din.TestProbe", uuid: "otari-attempt", prompt: "p",
+            outputs: [ { text: "o", notes: { gateway: "otari", serving_provider: "openrouter", requested_provider: "openai", requested_model: "openai:configured-model", fallback_used: true } } ],
+            notes: {} }.to_json,
+          { entry_type: "eval", detector: "detector.test_detector", probe: "0din.TestProbe", passed: 0, total_evaluated: 1 }.to_json,
+          { entry_type: "completion", end_time: "2023-06-01T11:00:00Z" }.to_json
+        ].join("\n"))
+
+        service.call
+
+        output_notes = ProbeResult.last.attempts.first.dig("outputs", 0, "notes")
+        expect(output_notes).to include(
+          "gateway" => "otari",
+          "serving_provider" => "openrouter",
+          "requested_provider" => "openai",
+          "requested_model" => "openai:configured-model",
+          "fallback_used" => true
+        )
       end
 
       it "uses the report's own threshold so a 0.3 score below garak default still counts as a success" do

@@ -34,6 +34,11 @@ Environment variables allow you to securely configure API keys and system settin
   - Format: API key from OpenRouter dashboard
   - Get your key at: https://openrouter.ai/keys
 
+### Otari
+- **OTARI_API_KEY**: API key for the Otari gateway. Configure globally or for an individual target; target-specific values override global values.
+- **OTARI_API_ENDPOINT**: OpenAI-compatible Otari API base URL. Configure this process-level setting in the container environment; do not store it as a target model identifier.
+- Set an Otari target model to Otari’s `provider:model` slug. The slug is passed through unchanged; do not use it to infer which provider served a request because Otari may fall back to another provider.
+
 ### Azure OpenAI
 - **AZURE_API_KEY**: Your Azure OpenAI service key
 - **AZURE_ENDPOINT**: Your Azure OpenAI endpoint URL

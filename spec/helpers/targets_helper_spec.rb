@@ -230,6 +230,12 @@ RSpec.describe TargetsHelper, type: :helper do
         target = build(:target, model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o')
         expect(helper.infer_provider_from_target(target)).to eq('openrouter')
       end
+      it "labels Otari targets and leaves model ids to the operator" do
+        target = build(:target, model_type: "OtariGenerator", model: "openai:configured-model")
+
+        expect(helper.infer_provider_from_target(target)).to eq("otari")
+        expect(helper.provider_templates.fetch(:otari)).to include(model_type: "OtariGenerator", model: "")
+      end
 
       it 'returns "ollama" for OllamaGenerator' do
         target = build(:target, model_type: 'OllamaGenerator', model: 'llama3.3:70b')

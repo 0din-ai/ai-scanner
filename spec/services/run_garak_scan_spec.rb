@@ -497,6 +497,19 @@ RSpec.describe RunGarakScan, type: :service do
           expect(env["DATABASE_URL"]).to be_present
         end
       end
+      it "uses the process endpoint and never forwards database endpoint overrides" do
+        service = described_class.new(report)
+        ActsAsTenant.with_tenant(report.company) do
+          create(:environment_variable, target: nil, env_name: "OTARI_API_ENDPOINT", env_value: "https://global-db.invalid/v1")
+          create(:environment_variable, target: target, env_name: "OTARI_API_ENDPOINT", env_value: "https://target-db.invalid/v1")
+        end
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OTARI_API_ENDPOINT").and_return("https://process.invalid/v1")
+
+        ActsAsTenant.with_tenant(report.company) do
+          expect(service.send(:build_env)["OTARI_API_ENDPOINT"]).to eq("https://process.invalid/v1")
+        end
+      end
     end
 
     it 'decrypts json_config within tenant context for generator options' do

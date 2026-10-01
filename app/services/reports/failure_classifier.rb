@@ -13,6 +13,9 @@ module Reports
     end
 
     OPENROUTER = "OpenRouter"
+    OTARI = "Otari"
+    POLICY_BLOCK_PATTERN = /OtariPolicyBlock: provider_policy_block status_code=(\d+) code=([A-Za-z0-9_-]+) request_id=([^ ]*) error=(.*)/i.freeze
+    POLICY_BLOCK_MESSAGE = "Otari marked this target unavailable because of a provider policy block. Contact the provider before revalidating or rerunning the scan.".freeze
     EMPTY_RESULT = Result.new(code: nil, message: nil, details: {}).freeze
 
     STATUS_CODE_PATTERN = /
@@ -39,7 +42,7 @@ module Reports
     end
 
     HTTP_PROVIDER_STATUS_PATTERN = /HTTP\/\d(?:\.\d)?\s+(401|402|403|404|422|429|5\d{2})/i
-    HTTP_PROVIDER_HINT_PATTERN = /openrouter|provider|deprecated|no endpoints|credits?|rate limit/i
+    HTTP_PROVIDER_HINT_PATTERN = /openrouter|otari|provider|deprecated|no endpoints|credits?|rate limit/i
     AUTH_HINT_PATTERN = /unauthori[sz]ed|invalid api key|authentication|credentials/i
     REJECTED_REQUEST_HINT_PATTERN = /rejected request|request rejected|invalid request/i
     TARGET_VALIDATION_HINT_PATTERN = /target validation failed|no responses received|0\/\d+\s+attempts passed/i
@@ -72,6 +75,8 @@ module Reports
 
     def call
       return EMPTY_RESULT if evidence_text.blank? && exit_code.blank?
+      policy_block = classify_policy_block
+      return policy_block if policy_block.failed?
 
       provider_result = classify_provider_failure
       return provider_result if provider_result.failed?
@@ -88,6 +93,23 @@ module Reports
     private
 
     attr_reader :report, :logs, :exit_code, :exception_message
+    def classify_policy_block
+      match = evidence_text.match(POLICY_BLOCK_PATTERN)
+      return EMPTY_RESULT unless match
+
+      Result.new(
+        code: "provider_policy_block",
+        message: POLICY_BLOCK_MESSAGE,
+        details: sanitize_value({
+          "provider" => OTARI,
+          "gateway" => "otari",
+          "status_code" => match[1].to_i,
+          "block_code" => match[2],
+          "request_id" => match[3].presence,
+          "provider_error" => match[4].presence
+        }.compact)
+      )
+    end
 
     def classify_provider_failure
       return EMPTY_RESULT unless provider_error_evidence?
@@ -151,6 +173,7 @@ module Reports
     def compact_details
       raw_details = {
         "provider" => provider,
+        "gateway" => ("otari" if provider == OTARI),
         "model" => model,
         "status_code" => status_code,
         "provider_message" => provider_message,
@@ -265,7 +288,9 @@ module Reports
     end
 
     def provider
-      @provider ||= if evidence_text.match?(/openrouter/i) || report.target&.model_type.to_s.match?(/openrouter/i)
+      @provider ||= if report.target&.model_type == "OtariGenerator"
+        OTARI
+      elsif evidence_text.match?(/openrouter/i) || report.target&.model_type.to_s.match?(/openrouter/i)
         OPENROUTER
       end
     end

@@ -289,6 +289,8 @@ class RunGarakScan
     with_report_tenant do
       merged = merged_env_vars
       env = merged.dup
+      env.delete("OTARI_API_ENDPOINT")
+      env["OTARI_API_ENDPOINT"] = ENV["OTARI_API_ENDPOINT"] if ENV["OTARI_API_ENDPOINT"]
 
       env["HOME"] = "/home/rails"
       env["VARIANT_SCAN"] = "true" if report.is_variant_report?

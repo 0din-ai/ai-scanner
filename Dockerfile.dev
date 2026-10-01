@@ -88,6 +88,7 @@ COPY . .
 RUN GARAK_SITE=$(/opt/venv/bin/python -c "import site; print([p for p in site.getsitepackages() if 'site-packages' in p][0])") && \
     mkdir -p "$GARAK_SITE/garak/generators" "$GARAK_SITE/garak/probes" "$GARAK_SITE/garak/detectors" && \
     cp script/garak_plugins/openrouter.py "$GARAK_SITE/garak/generators/openrouter.py" && \
+    cp script/garak_plugins/otari.py "$GARAK_SITE/garak/generators/otari.py" && \
     cp script/garak_plugins/web_chatbot.py "$GARAK_SITE/garak/generators/web_chatbot.py" && \
     cp script/garak_plugins/_network_guard.py "$GARAK_SITE/garak/generators/_network_guard.py" && \
     cp script/garak_plugins/_screening_proxy.py "$GARAK_SITE/garak/generators/_screening_proxy.py" && \

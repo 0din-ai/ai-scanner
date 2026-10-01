@@ -49,6 +49,8 @@ class ValidateTarget
 
   def build_env
     env = merged_env_vars_hash.dup
+    env.delete("OTARI_API_ENDPOINT")
+    env["OTARI_API_ENDPOINT"] = ENV["OTARI_API_ENDPOINT"] if ENV["OTARI_API_ENDPOINT"]
     env["HOME"] = "/home/rails"
     env
   end

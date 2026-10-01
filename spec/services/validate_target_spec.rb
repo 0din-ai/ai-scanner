@@ -196,6 +196,30 @@ RSpec.describe ValidateTarget, type: :service do
         env = service.send(:build_env)
         expect(env["SPECIAL_CHARS"]).to eq("val'ue $(whoami)")
       end
+      it "passes Otari keys with target-specific precedence and preserves the provider:model value" do
+        target.update!(model_type: "OtariGenerator", model: "openai:configured-model")
+        create(:environment_variable, target: nil, env_name: "OTARI_API_KEY", env_value: "global-test-key")
+        create(:environment_variable, target: target, env_name: "OTARI_API_KEY", env_value: "target-test-key")
+
+        expect(service.send(:build_env)["OTARI_API_KEY"]).to eq("target-test-key")
+        expect(service.send(:target_name_arg)).to eq([ "--target_name", "openai:configured-model" ])
+      end
+      it "uses the process endpoint and never forwards database endpoint overrides" do
+        create(:environment_variable, target: nil, env_name: "OTARI_API_ENDPOINT", env_value: "https://global-db.invalid/v1")
+        create(:environment_variable, target: target, env_name: "OTARI_API_ENDPOINT", env_value: "https://target-db.invalid/v1")
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OTARI_API_ENDPOINT").and_return("https://process.invalid/v1")
+
+        expect(service.send(:build_env)["OTARI_API_ENDPOINT"]).to eq("https://process.invalid/v1")
+      end
+
+      it "does not forward a database endpoint when the process endpoint is unset" do
+        create(:environment_variable, target: target, env_name: "OTARI_API_ENDPOINT", env_value: "https://target-db.invalid/v1")
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OTARI_API_ENDPOINT").and_return(nil)
+
+        expect(service.send(:build_env)).not_to have_key("OTARI_API_ENDPOINT")
+      end
     end
 
     describe '#params' do

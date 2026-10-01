@@ -58,6 +58,9 @@
   "openrouter": [
     "OpenRouterGenerator"
   ],
+  "otari": [
+    "OtariGenerator"
+  ],
   "rasa": [
     "RasaRestGenerator"
   ],

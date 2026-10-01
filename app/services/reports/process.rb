@@ -78,11 +78,12 @@ module Reports
 
     def apply_failure_metadata
       failure = FailureClassifier.new(report, logs: current_run_failure_logs).call
-      if failure.failed? && !completed_scan_with_clean_exit?
+      if failure.failed? && (!completed_scan_with_clean_exit? || failure.code == "provider_policy_block")
         report.status = :failed
         report.failure_code = failure.code
         report.failure_message = failure.message
         report.failure_details = failure.details
+        report.result_completeness = :partial if failure.code == "provider_policy_block" && report.result_completeness == "complete"
       elsif report.failed?
         report.failure_code = "scan_incomplete_results"
         report.failure_message = "The scan exited before producing a complete set of results."

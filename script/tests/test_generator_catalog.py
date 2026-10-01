@@ -25,7 +25,7 @@ CATALOG = ROOT / "config" / "probes" / "generators.json"
 
 # Installed into garak's package by the Dockerfiles rather than shipped by garak,
 # so walking garak's own modules cannot see them.
-VENDORED_MODULES = {"openrouter", "web_chatbot"}
+VENDORED_MODULES = {"openrouter", "otari", "web_chatbot"}
 
 
 def _garak_available():

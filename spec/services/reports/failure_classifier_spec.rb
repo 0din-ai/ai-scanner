@@ -83,6 +83,24 @@ RSpec.describe Reports::FailureClassifier do
     expect(result.details.to_s).not_to include('abc123')
     expect(result.details.to_s).not_to include('plainsecret')
   end
+  context "with Otari" do
+    let(:target) { create(:target, model_type: "OtariGenerator", model: "openai:configured-model") }
+
+    it "classifies a typed Otari policy block as terminal unavailable metadata" do
+      policy_block_log = "garak.generators.otari.OtariPolicyBlock: provider_policy_block status_code=403 code=user_blocked request_id=req-test-1 error=\"policy violation\""
+      classified = described_class.new(report, logs: policy_block_log).call
+
+      expect(classified.code).to eq("provider_policy_block")
+      expect(classified.message).to include("unavailable")
+      expect(classified.details).to include(
+        "provider" => "Otari",
+        "gateway" => "otari",
+        "status_code" => 403,
+        "block_code" => "user_blocked",
+        "request_id" => "req-test-1"
+      )
+    end
+  end
 
   it 'classifies target validation failures' do
     logs = 'Target validation failed: no responses received from target'

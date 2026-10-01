@@ -25,12 +25,12 @@ module TargetsHelper
     "OpenAIGenerator" => "OpenAI",
     "OpenAIReasoningGenerator" => "OpenAI Reasoning",
     "OpenRouterGenerator" => "OpenRouter",
+    "OtariGenerator" => "Otari",
     "RasaRestGenerator" => "Rasa REST",
     "ReplicateGenerator" => "Replicate",
     "RestGenerator" => "REST API (Generic)",
     "WatsonXGenerator" => "IBM watsonx"
   }.freeze
-
   # Real generators we do not offer in the wizard: both load a model into this
   # process rather than calling a hosted endpoint.
   #
@@ -61,6 +61,7 @@ module TargetsHelper
     "ollama" => "Ollama",
     "openai" => "OpenAI",
     "openrouter" => "OpenRouter",
+    "otari" => "Otari",
     "rasa" => "Rasa",
     "replicate" => "Replicate",
     "rest" => "REST API",
@@ -81,6 +82,20 @@ module TargetsHelper
       badge: "Popular",
       badge_color: "bg-zinc-700/50 text-contentTertiary border-borderPrimary",
       env_var: "OPENROUTER_API_KEY"
+    },
+    otari: {
+      label: "Otari",
+      name: "Otari (OpenAI models)",
+      model_type: "OtariGenerator",
+      model: "",
+      description: "Configure OTARI_API_ENDPOINT in the container, add OTARI_API_KEY, then enter the provider:model slug",
+      json_config: "",
+      icon: "icon-openai",
+      icon_bg: "bg-blue-500/20",
+      icon_color: "text-blue-400",
+      badge: "Otari Gateway",
+      badge_color: "bg-zinc-700/50 text-contentTertiary border-borderPrimary",
+      env_var: "OTARI_API_KEY"
     },
     openai: {
       label: "OpenAI",
