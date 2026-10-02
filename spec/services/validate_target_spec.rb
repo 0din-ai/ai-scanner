@@ -129,6 +129,7 @@ RSpec.describe ValidateTarget, type: :service do
 
         expect(target.reload.status).to eq('bad')
         expect(target.validation_text).to include('SECRET_KEY_BASE')
+        expect(target.validation_failure_code).to eq('target_config_rejected')
       end
     end
 

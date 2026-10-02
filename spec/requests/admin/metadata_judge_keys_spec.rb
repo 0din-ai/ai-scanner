@@ -16,6 +16,15 @@ RSpec.describe "Metadata: judge keys", type: :request do
     ActsAsTenant.current_tenant = company
   end
 
+  it "renders the new and edit forms" do
+    row = Metadatum.create!(key: "qa_form_row", value: "x")
+
+    get new_metadatum_path
+    expect(response).to have_http_status(:ok)
+    get edit_metadatum_path(row)
+    expect(response).to have_http_status(:ok)
+  end
+
   it "refuses a super admin creating a judge_* key" do
     expect {
       post metadata_path, params: { metadatum: { key: "judge_enabled", value: "true" } }

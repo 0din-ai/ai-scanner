@@ -26,7 +26,8 @@ class ValidateTarget
         if target.json_config.present? &&
            (violations = GarakEnvKeyGuard.violations(substitute_env_vars(target.json_config, merged_env_vars_hash),
                                                      merged_env_vars_hash)).any?
-          target.update(status: :bad, validation_text: GarakEnvKeyGuard.rejection_message(violations))
+          target.update(status: :bad, validation_text: GarakEnvKeyGuard.rejection_message(violations),
+                        validation_failure_code: GarakEnvKeyGuard::FAILURE_CODE)
           Logging.with(target_id: target.id, validation_uuid: validation_uuid) do
             Rails.logger.warn("validation.env_key_rejected")
           end

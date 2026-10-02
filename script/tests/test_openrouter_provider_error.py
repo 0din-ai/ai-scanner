@@ -372,7 +372,100 @@ class TestOpenRouterProviderError(unittest.TestCase):
                 generator._call_model("hi", generations_this_call=1)
         payload = json.loads(_stderr_records(stderr.getvalue())[0].split(" ", 1)[1])
         decoded = bytes.fromhex(payload["message_hex"]).decode("utf-8")
-        self.assertNotIn("dXNlcjpwYXNz", decoded)
+        self.assertEqual(module._redact(raw), "Authorization: Basic [REDACTED]")
+        self.assertEqual(decoded, "Authorization: Basic [REDACTED]")
+        self.assertEqual(decoded.count("[REDACTED]"), 1)
+
+    def test_bearer_authorization_redacts_once(self):
+        module = _load_plugin("openrouter_provider_bearer_once", "openrouter.py")
+        raw = "Authorization: Bearer abcdefghijkl"
+
+        def create(**_kwargs):
+            return _response(error={"message": raw, "code": 401})
+
+        generator = _generator(module, create)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(module.ProviderError):
+                generator._call_model("hi", generations_this_call=1)
+        decoded = bytes.fromhex(
+            json.loads(_stderr_records(stderr.getvalue())[0].split(" ", 1)[1])["message_hex"]
+        ).decode("utf-8")
+        self.assertEqual(decoded, "Authorization: Bearer [REDACTED]")
+        self.assertNotIn("abcdefghijkl", decoded)
+
+    def test_quoted_api_key_redacts_once(self):
+        module = _load_plugin("openrouter_provider_api_key_once", "openrouter.py")
+        raw = 'api_key="x"'
+
+        def create(**_kwargs):
+            return _response(error={"message": raw, "code": 401})
+
+        generator = _generator(module, create)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(module.ProviderError):
+                generator._call_model("hi", generations_this_call=1)
+        decoded = bytes.fromhex(
+            json.loads(_stderr_records(stderr.getvalue())[0].split(" ", 1)[1])["message_hex"]
+        ).decode("utf-8")
+        self.assertNotIn('"x"', decoded)
+        self.assertEqual(decoded.count("[REDACTED]"), 1)
+        self.assertIn("[REDACTED]", decoded)
+
+    def test_bracketed_and_hyphenated_secrets_stay_redacted(self):
+        module = _load_plugin("openrouter_provider_bracket_secrets", "openrouter.py")
+        samples = (
+            "password=[hunter2]",
+            "password=abc[def]ghi",
+            "password=basic-secret",
+            "token=Bearer-short",
+            "X-Api-Token: ntlm-secret",
+        )
+        secrets = ("[hunter2]", "abc[def]ghi", "[def]", "basic-secret", "Bearer-short", "ntlm-secret")
+        for raw in samples:
+            self.assertNotIn("[REDACTED]]", module._redact(raw), raw)
+            for secret in secrets:
+                if secret in raw:
+                    self.assertNotIn(secret, module._redact(raw), raw)
+
+        def create(**_kwargs):
+            return _response(error={"message": " | ".join(samples), "code": 401})
+
+        generator = _generator(module, create)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(module.ProviderError):
+                generator._call_model("hi", generations_this_call=1)
+        decoded = bytes.fromhex(
+            json.loads(_stderr_records(stderr.getvalue())[0].split(" ", 1)[1])["message_hex"]
+        ).decode("utf-8")
+        self.assertNotIn("[REDACTED]]", decoded)
+        for secret in secrets:
+            self.assertNotIn(secret, decoded)
+
+    def test_a_marker_prefix_does_not_preserve_a_following_secret(self):
+        module = _load_plugin("openrouter_provider_marker_prefix", "openrouter.py")
+        samples = (
+            'password="[REDACTED]hunter2"',
+            "token=[REDACTED]abc123",
+        )
+
+        def create(**_kwargs):
+            return _response(error={"message": " | ".join(samples), "code": 401})
+
+        generator = _generator(module, create)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(module.ProviderError):
+                generator._call_model("hi", generations_this_call=1)
+        decoded = bytes.fromhex(
+            json.loads(_stderr_records(stderr.getvalue())[0].split(" ", 1)[1])["message_hex"]
+        ).decode("utf-8")
+        self.assertNotIn("hunter2", decoded)
+        self.assertNotIn("abc123", decoded)
+        self.assertNotIn("hunter2", module._redact(samples[0]))
+        self.assertNotIn("abc123", module._redact(samples[1]))
 
     def test_message_hex_redacts_credentials_before_encoding(self):
         module = _load_plugin("openrouter_provider_redact_hex", "openrouter.py")

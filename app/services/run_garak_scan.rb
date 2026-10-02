@@ -382,6 +382,10 @@ class RunGarakScan
     end
   end
 
+  # Codes ValidateTarget stores that a scan of the already-bad target reports as its own.
+  CARRIED_VALIDATION_CODES = (Reports::ProviderErrorRecord::CATEGORY_FAILURE_CODES.values +
+                              [ GarakEnvKeyGuard::FAILURE_CODE ]).freeze
+
   def handle_rejected_env_keys(names)
     message = GarakEnvKeyGuard.rejection_message(names)
     Rails.logger.error("[RunGarakScan] aborting report #{report.id}: target #{target.id} config references disallowed env vars")
@@ -389,7 +393,7 @@ class RunGarakScan
       status: :failed,
       execution_token: nil,
       logs: "Scan failed: #{message}",
-      failure_code: "target_config_rejected",
+      failure_code: GarakEnvKeyGuard::FAILURE_CODE,
       failure_message: message,
       failure_details: { "target_id" => target.id }
     )
@@ -431,7 +435,7 @@ class RunGarakScan
     # credentials...): carry that code so the report says why, instead of the
     # generic validation failure. Keyed on the stored code, never on the text.
     provider_code = target.validation_failure_code if target.status == "bad"
-    provider_code = nil unless Reports::ProviderErrorRecord::CATEGORY_FAILURE_CODES.value?(provider_code)
+    provider_code = nil unless CARRIED_VALIDATION_CODES.include?(provider_code)
 
     sanitized_error_message = Reports::FailureClassifier.sanitize_text(error_message)
     report.update(
