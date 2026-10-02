@@ -301,6 +301,62 @@ class TestOpenRouterProviderError(unittest.TestCase):
         generator = _generator(module, create)
         self.assertEqual(generator._call_model("hi", generations_this_call=3), [None, None, None])
 
+    def test_cookie_continuation_line_is_redacted(self):
+        module = _load_plugin("openrouter_provider_cookie_fold", "openrouter.py")
+        message = "Cookie: session=abc;\n session2=folded-value\nmodel is fine"
+
+        def create(**_kwargs):
+            return _response(error={"message": message, "code": 403})
+
+        generator = _generator(module, create)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(module.ProviderError):
+                generator._call_model("hi", generations_this_call=1)
+        decoded = bytes.fromhex(
+            json.loads(_stderr_records(stderr.getvalue())[0].split(" ", 1)[1])["message_hex"]
+        ).decode("utf-8")
+        self.assertNotIn("folded-value", decoded)
+        self.assertNotIn("session=abc", decoded)
+        self.assertIn("model is fine", decoded)
+
+    def test_unpaired_surrogate_still_emits_the_record(self):
+        module = _load_plugin("openrouter_provider_surrogate", "openrouter.py")
+
+        def create(**_kwargs):
+            return _response(error={"message": "prefix \ud800 suffix", "code": 403})
+
+        generator = _generator(module, create)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(module.ProviderError):
+                generator._call_model("hi", generations_this_call=1)
+        decoded = bytes.fromhex(
+            json.loads(_stderr_records(stderr.getvalue())[0].split(" ", 1)[1])["message_hex"]
+        ).decode("utf-8")
+        self.assertIn("prefix", decoded)
+        self.assertIn("suffix", decoded)
+        self.assertNotIn("\ud800", decoded)
+
+    def test_basic_prose_is_not_redacted_and_stays_model_unavailable(self):
+        module = _load_plugin("openrouter_provider_basic_prose", "openrouter.py")
+        message = "The basic model is unavailable"
+
+        def create(**_kwargs):
+            return _response(error={"message": message}, id="gen-1")
+
+        generator = _generator(module, create)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(module.ProviderError) as ctx:
+                generator._call_model("hi", generations_this_call=1)
+        decoded = bytes.fromhex(
+            json.loads(_stderr_records(stderr.getvalue())[0].split(" ", 1)[1])["message_hex"]
+        ).decode("utf-8")
+        self.assertEqual(ctx.exception.category, "model_unavailable")
+        self.assertEqual(decoded, message)
+        self.assertEqual(module._redact(message), message)
+
     def test_basic_authorization_redacts_the_credential_not_only_the_scheme(self):
         module = _load_plugin("openrouter_provider_basic_auth", "openrouter.py")
         raw = "Authorization: Basic dXNlcjpwYXNz"

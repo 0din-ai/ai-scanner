@@ -50,12 +50,26 @@ SENSITIVE_KEY_RE = re.compile(r"(?:api[_-]?key|token|secret|password|authorizati
 # Scheme-aware rules first. The generic authorization rule matches only the
 # next token, so "Authorization: Basic <credential>" would redact "Basic"
 # and leave the secret if it ran earlier.
+# Bearer needs a token-shaped value. "bearer of" is prose; an 8+ char token is not.
 _BEARER_PATTERN = (
-    re.compile(r"(Bearer\s+)[A-Za-z0-9._~+\-/=]+", re.I),
+    re.compile(r"(Bearer\s+)[A-Za-z0-9._~+\-/=]{8,}", re.I),
     r"\1[REDACTED]",
 )
+# Only after an authorization header. A bare "basic model" is prose.
 _AUTH_SCHEME_PATTERN = (
-    re.compile(r"((?:Basic|Digest|NTLM|Negotiate)\s+)[A-Za-z0-9._~+\-/=]+", re.I),
+    re.compile(
+        r"((?:proxy-authorization|www-authenticate|authorization)[\"']?\s*[:=]\s*[\"']?"
+        r"(?:Basic|Digest|NTLM|Negotiate)\s+)[A-Za-z0-9._~+\-/=]+",
+        re.I,
+    ),
+    r"\1[REDACTED]",
+)
+# Folded cookie lines (a following line that starts with whitespace) are one header.
+_COOKIE_PATTERN = (
+    re.compile(
+        r"((?:set-)?cookie[\"']?\s*[=:]\s*)[^\n]*(?:\n[ \t]+[^\n]*)*",
+        re.I,
+    ),
     r"\1[REDACTED]",
 )
 SECRET_VALUE_PATTERNS = (
@@ -82,7 +96,7 @@ _OUTPUT_REDACTION_PATTERNS = (
         r"(x-[\w-]*(?:key|token|auth|secret|cookie)[\w-]*\s*[=:]\s*)[\"']?[^\"'\s,}]+",
         re.I,
     ), r"\1[REDACTED]"),
-    (re.compile(r"((?:set-)?cookie[\"']?\s*[=:]\s*).*", re.I), r"\1[REDACTED]"),
+    _COOKIE_PATTERN,
 )
 
 
@@ -673,7 +687,10 @@ class OpenRouterGenerator(OpenAICompatible):
         logged = _logged_message(redacted)
         if logged is None:
             return None
-        return logged.encode("utf-8").hex()
+        try:
+            return logged.encode("utf-8", "backslashreplace").hex()
+        except Exception:
+            return None
 
     def _write_record(self, *, category, http_status, provider_status, provider_code,
                       provider_error_type, request_id, message):
@@ -692,9 +709,13 @@ class OpenRouterGenerator(OpenAICompatible):
             # JSON escapes and the rest of a line that contains "Cookie:".
             "message_hex": self._message_hex(message),
         }
-        payload = json.dumps(record, separators=(",", ":"), ensure_ascii=True, sort_keys=True)
-        logging.error("PROVIDER_ERROR %s", payload)
-        print("PROVIDER_ERROR " + payload, file=sys.stderr, flush=True)
+        try:
+            payload = json.dumps(record, separators=(",", ":"), ensure_ascii=True, sort_keys=True)
+            logging.error("PROVIDER_ERROR %s", payload)
+            print("PROVIDER_ERROR " + payload, file=sys.stderr, flush=True)
+        except Exception:
+            # A bad character must not swallow the provider exception or skip retry.
+            pass
 
     def _emit_native_exhaustion(self, source):
         import openai
