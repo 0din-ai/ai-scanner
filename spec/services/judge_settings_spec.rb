@@ -10,6 +10,15 @@ RSpec.describe JudgeSettings do
       "judge_band_below" => "0.1", "judge_band_above" => "0.3" }
   end
 
+
+  it "names both fields by their labels when provider errors exceed the call budget" do
+    base = described_class::DEFAULTS.merge("judge_enabled" => "true", "judge_model_name" => "m",
+                                           "judge_max_calls_per_scan" => "5", "judge_max_provider_errors" => "5")
+    expect { described_class.validate!(base) }
+      .to raise_error(described_class::ValidationError,
+                      "Provider errors before stopping must be lower than Max judge calls per scan")
+  end
+
   describe ".validate!" do
     it "types a valid unit and returns every key in declared order" do
       typed = described_class.validate!(enabled)
