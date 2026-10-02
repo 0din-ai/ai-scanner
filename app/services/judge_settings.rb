@@ -89,7 +89,7 @@ module JudgeSettings
       # The circuit has to be able to open before the call budget runs out. A one-call
       # budget is exempt: there is no "before" for the circuit to trip in.
       if typed["judge_max_calls_per_scan"] > 1 && typed["judge_max_provider_errors"] >= typed["judge_max_calls_per_scan"]
-        fail_on("judge_max_provider_errors", "must be lower than judge_max_calls_per_scan")
+        fail_on("judge_max_provider_errors", "must be lower than #{LABELS.fetch("judge_max_calls_per_scan")}")
       end
 
       fail_on("judge_model_name", "is required when the judge is enabled") if typed["judge_enabled"] && typed["judge_model_name"].blank?
