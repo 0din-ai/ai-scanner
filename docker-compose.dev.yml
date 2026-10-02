@@ -36,6 +36,7 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_USER: ${POSTGRES_USER:-scanner}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_dev_password_12345}
+      JUDGE_API_KEY: ${JUDGE_API_KEY:-}
     working_dir: /rails
     restart: always
     stdin_open: true

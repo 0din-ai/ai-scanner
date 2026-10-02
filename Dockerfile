@@ -180,6 +180,7 @@ COPY --from=build /rails/script/garak_plugins/probes/0din_variants.py /opt/venv/
 COPY --from=build /rails/script/garak_plugins/detectors/0din.py /opt/venv/lib/python3.13/site-packages/garak/detectors/0din.py
 COPY --from=build /rails/script/garak_plugins/detectors/_punctuation.py /opt/venv/lib/python3.13/site-packages/garak/detectors/_punctuation.py
 COPY --from=build /rails/script/garak_plugins/detectors/_judge.py /opt/venv/lib/python3.13/site-packages/garak/detectors/_judge.py
+COPY --from=build /rails/script/garak_plugins/detectors/_boundary_judge.py /opt/venv/lib/python3.13/site-packages/garak/detectors/_boundary_judge.py
 COPY --from=build /rails/script/garak_plugins/detectors/_sentinels.py /opt/venv/lib/python3.13/site-packages/garak/detectors/_sentinels.py
 COPY --from=build /rails/script/garak_plugins/detectors/_procedure_shape.py /opt/venv/lib/python3.13/site-packages/garak/detectors/_procedure_shape.py
 COPY --from=build /rails/script/garak_plugins/detectors/_substance_evidence.py /opt/venv/lib/python3.13/site-packages/garak/detectors/_substance_evidence.py

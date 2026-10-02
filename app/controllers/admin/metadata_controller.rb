@@ -6,7 +6,8 @@ module Admin
 
     def index
       authorize Metadatum
-      @q = Metadatum.ransack(params[:q])
+      # policy_scope: judge_* rows are visible to super admins only.
+      @q = policy_scope(Metadatum).ransack(params[:q])
       @pagy, @metadata = pagy(@q.result.order(created_at: :desc))
     end
 
@@ -34,8 +35,11 @@ module Admin
     end
 
     def update
+      # Assigned BEFORE authorizing, so the policy sees the submitted key as well as the
+      # stored one: renaming an ordinary row to judge_* must be refused too.
+      @metadatum.assign_attributes(metadatum_params)
       authorize @metadatum
-      if @metadatum.update(metadatum_params)
+      if @metadatum.save
         redirect_to metadatum_path(@metadatum), notice: "Metadata was successfully updated."
       else
         render :edit, status: :unprocessable_entity

@@ -1,6 +1,7 @@
 <%
   succeeded = @attempt["attack_succeeded"]
   score = @attempt.dig("notes", "score_percentage")
+  judge_entries = attempt_judge_entries(@attempt)
 %>
 
 <%#- Evidence is escaped, never sanitized: sanitize() would delete a <script>
@@ -90,6 +91,10 @@
           <span class="text-sm italic text-contentTertiary">[No response generated]</span>
         <% end %>
       </div>
+      <% judge_entry = judge_entries[index] %>
+      <% if judge_entry.is_a?(Hash) %>
+        <%= render partial: "admin/reports/judge_evidence", locals: { entry: judge_entry } %>
+      <% end %>
     </div>
   <% end %>
 

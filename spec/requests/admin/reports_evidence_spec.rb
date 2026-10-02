@@ -171,6 +171,23 @@ RSpec.describe "Report evidence", type: :request do
       expect(response.body).to include("second answer")
     end
 
+    it "shows the LLM judge's verdict under the response it decided" do
+      judged = probe_result_with([
+        { "uuid" => "j", "prompt" => "q", "outputs" => [ "out of band", "boundary answer" ],
+          "attack_succeeded" => false,
+          "notes" => { "llm_judge" => [ nil, { "surface_score" => 0.6, "final_score" => 0.0,
+                                              "label" => "REFUSED", "reason" => "Declines.",
+                                              "judge_error" => nil, "judge_skipped" => nil } ] } }
+      ], probe_name: "Judged probe")
+
+      get evidence_attempt_report_path(report, probe_result_id: judged.id, attempt_index: 0)
+
+      body = response.body
+      expect(body.scan("data-judge-evidence").size).to eq(1)
+      expect(body.index("boundary answer")).to be < body.index("data-judge-evidence")
+      expect(body).to include("REFUSED", "Declines.")
+    end
+
     it "shows the text of a malformed hash output that search can match" do
       # The list and the drawer read the same field through different engines. SQL
       # treats a bare hash as one output; Kernel#Array turns it into key/value

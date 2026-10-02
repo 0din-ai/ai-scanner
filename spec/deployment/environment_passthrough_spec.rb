@@ -26,6 +26,7 @@ RSpec.describe "deployment environment passthrough" do
     RETENTION_DAYS
     MAX_INTERRUPT_RETRIES
     DEBUG_LOG_TAIL_BYTES
+    JUDGE_API_KEY
   ].freeze
 
   # Advertised and read, but deliberately NOT forwarded. Each entry is a decision, not an

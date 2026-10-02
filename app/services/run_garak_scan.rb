@@ -258,6 +258,7 @@ class RunGarakScan
     ActsAsTenant.with_tenant(report.company) do
       argv = build_argv
       env = build_env
+      record_judge_launch_status!
       log_path = scan_log_path
       log_scan_debug_info(argv)
       # on_spawn fires once a child actually exists. popen3 can raise before that -- a
@@ -315,6 +316,16 @@ class RunGarakScan
       # name blocklist, so a conditional assignment would let a tenant row named
       # SCAN_EXECUTION_TOKEN survive and defeat the scanner's fail-closed guard.
       env["SCAN_EXECUTION_TOKEN"] = report.execution_token.to_s
+
+      # Unconditional, after the tenant merge, for the same reason: a tenant row named
+      # JUDGE_CONFIG or JUDGE_API_KEY must never reach garak. The config is the report's
+      # pinned snapshot, never live settings; the key comes from the deployment
+      # environment only and is blanked when this report is not judged, so the
+      # credential is not handed to a run that has no use for it. Never put in the garak
+      # YAML, which is written to disk.
+      env["JUDGE_CONFIG"] = report.judge_enabled? ? report.judge_config.to_json : ""
+      env[JudgeSettings::KEY_ENV] = report.judge_enabled? ? ENV[JudgeSettings::KEY_ENV].to_s : ""
+
       env["SCAN_ID"] = report.scan.id.to_s
       env["SCAN_NAME"] = report.scan.name
       env["TARGET_ID"] = target.id.to_s
@@ -322,6 +333,17 @@ class RunGarakScan
 
       env
     end
+  end
+
+  # Whether the worker that launches garak has the key the pinned judge needs. Recorded
+  # so a report that ran unjudged says so instead of looking judged-and-clean. Nothing
+  # is recorded for a report created with the judge off. update_column: no callbacks or
+  # validations on a report mid-launch.
+  def record_judge_launch_status!
+    return unless report.judge_enabled?
+
+    status = ENV[JudgeSettings::KEY_ENV].present? ? "ready" : "key_missing"
+    report.update_column(:judge_stats, (report.judge_stats || {}).merge("launch_status" => status))
   end
 
   def scan_log_path

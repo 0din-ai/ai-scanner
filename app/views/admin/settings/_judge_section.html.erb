@@ -1,0 +1,66 @@
+<%# locals: judge (typed JudgeSettings.current), key_present %>
+<div class="setting-item mt-8 pt-6 border-t border-borderPrimary" data-judge-settings>
+  <h3 class="text-base font-sans font-semibold text-contentPrimary mb-1">LLM Judge</h3>
+  <p class="text-sm text-contentSecondary mb-4">
+    Re-decides detector scores that fall within a band around the evaluation threshold, using an LLM.
+    Scores outside the band, and any output the judge cannot decide, keep the detector's score.
+    Applies to scans created after saving.
+  </p>
+
+  <div class="space-y-4">
+    <label class="flex items-center gap-2 text-sm text-contentSecondary">
+      <%= hidden_field_tag :judge_enabled, "false", id: nil %>
+      <%= check_box_tag :judge_enabled, "true", judge["judge_enabled"], class: "rounded" %>
+      Enable LLM judge
+    </label>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <%= label_tag :judge_provider, "Provider", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+        <%= select_tag :judge_provider,
+              options_for_select([ [ "OpenRouter", "openrouter" ], [ "OpenAI", "openai" ], [ "NVIDIA NIM", "nim" ] ], judge["judge_provider"]),
+              class: "input-base w-full" %>
+      </div>
+      <div>
+        <%= label_tag :judge_model_name, "Model", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+        <%= text_field_tag :judge_model_name, judge["judge_model_name"], placeholder: "e.g. openai/gpt-4.1-mini", class: "input-base w-full font-mono" %>
+      </div>
+      <div>
+        <%= label_tag :judge_band_below, "Band below threshold", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+        <%= number_field_tag :judge_band_below, judge["judge_band_below"], min: 0, max: 1, step: 0.01, class: "input-base w-32 font-mono" %>
+      </div>
+      <div>
+        <%= label_tag :judge_band_above, "Band above threshold", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+        <%= number_field_tag :judge_band_above, judge["judge_band_above"], min: 0, max: 1, step: 0.01, class: "input-base w-32 font-mono" %>
+      </div>
+      <div>
+        <%= label_tag :judge_max_calls_per_scan, "Max judge calls per scan", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+        <%= number_field_tag :judge_max_calls_per_scan, judge["judge_max_calls_per_scan"], min: 1, max: 100_000, class: "input-base w-32 font-mono" %>
+      </div>
+      <div>
+        <%= label_tag :judge_max_provider_errors, "Provider errors before stopping", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+        <%= number_field_tag :judge_max_provider_errors, judge["judge_max_provider_errors"], min: 1, max: 1000, class: "input-base w-32 font-mono" %>
+      </div>
+      <div>
+        <%= label_tag :judge_timeout_seconds, "Timeout (seconds)", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+        <%= number_field_tag :judge_timeout_seconds, judge["judge_timeout_seconds"], min: 5, max: 120, class: "input-base w-32 font-mono" %>
+      </div>
+      <div>
+        <%= label_tag :judge_concurrency, "Concurrent judge calls", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+        <%= number_field_tag :judge_concurrency, judge["judge_concurrency"], min: 1, max: 16, class: "input-base w-32 font-mono" %>
+      </div>
+    </div>
+
+    <%# The key is deliberately not a form field: it is read from the deployment
+        environment and never stored in, or rendered from, the database. %>
+    <div class="p-3 bg-zinc-800/30 border border-zinc-500/30 rounded-md text-sm text-contentSecondary" data-judge-key-status>
+      <span class="icon icon-sm icon-info mr-1 text-contentPrimary"></span>
+      API key (<code class="bg-backgroundSecondary px-1 rounded"><%= JudgeSettings::KEY_ENV %></code>):
+      <% if key_present %>
+        <span class="text-lime-400 font-semibold">set in the environment</span>
+      <% else %>
+        <span class="text-yellow-400 font-semibold">not set</span> &mdash; set it in the deployment environment (.env) and restart; until then, judged scans keep their detector scores.
+      <% end %>
+    </div>
+  </div>
+</div>

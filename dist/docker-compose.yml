@@ -45,6 +45,7 @@ services:
       - RETENTION_DAYS
       - MAX_INTERRUPT_RETRIES
       - DEBUG_LOG_TAIL_BYTES
+      - JUDGE_API_KEY
       # Values this file sets or defaults, rather than passes through.
       - "PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers"
       - "SECRET_KEY_BASE=${SECRET_KEY_BASE:?Set SECRET_KEY_BASE in .env}"

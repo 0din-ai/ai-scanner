@@ -3,13 +3,13 @@ class SettingsService
     "parallel_scans_limit" => 5,
     "parallel_attempts" => 16,
     "custom_header_html" => ""
-  }.freeze
+  }.merge(JudgeSettings::DEFAULTS).freeze
 
   VALIDATIONS = {
     "parallel_scans_limit" => ->(value) { value.to_s =~ /\A\d+\z/ && value.to_i.between?(1, 20) },
     "parallel_attempts" => ->(value) { value.to_s =~ /\A\d+\z/ && value.to_i.between?(1, 100) },
     "custom_header_html" => ->(value) { value.is_a?(String) }
-  }.freeze
+  }.merge(JudgeSettings::KEYS.to_h { |k| [ k, ->(value) { value.is_a?(String) } ] }).freeze
 
   class << self
     def parallel_scans_limit
@@ -49,6 +49,20 @@ class SettingsService
       else
         raise ArgumentError, "Custom header HTML must be a string"
       end
+    end
+
+    # The ONE writer for the judge keys. Validates them as a unit first, so a rejected
+    # combination leaves no partial rows behind, then writes every key in a single
+    # transaction. Returns the typed values.
+    def set_judge_settings!(attrs)
+      typed = JudgeSettings.validate!(attrs)
+      Metadatum.transaction do
+        JudgeSettings::KEYS.each { |k| set(k, typed[k].to_s) }
+      end
+      # `set` cleared each key's cache inside the transaction; a reader that missed in
+      # between could have re-cached the pre-commit row, so clear again once durable.
+      JudgeSettings::KEYS.each { |k| clear_cache(k) }
+      typed
     end
 
     def get(key)

@@ -1,0 +1,21 @@
+<%# locals: entry -- one notes.llm_judge element for one response (caller skips nil) %>
+<div class="rounded-lg border border-zinc-800 bg-zinc-800/40 px-3 py-2 text-xs" data-judge-evidence>
+  <div class="flex items-center justify-between gap-4">
+    <span class="font-mono text-contentSecondary">LLM judge</span>
+    <% if judge_entry_applied?(entry) %>
+      <span class="rounded-md bg-blue-500/20 px-2 py-0.5 font-semibold text-blue-300"><%= entry["label"] %></span>
+    <% else %>
+      <span class="rounded-md bg-zinc-700 px-2 py-0.5 font-semibold text-contentTertiary">kept detector score</span>
+    <% end %>
+  </div>
+  <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-contentTertiary tabular-nums">
+    <span>detector <%= format("%.2f", entry["surface_score"].to_f) %> → final <%= format("%.2f", entry["final_score"].to_f) %></span>
+    <% if entry["confidence"].is_a?(Numeric) %><span>confidence <%= format("%.2f", entry["confidence"].to_f) %></span><% end %>
+    <% if entry["cache"] == "hit" %><span>cache hit</span><% end %>
+    <% if entry["judge_error"].present? %><span>error: <%= entry["judge_error"] %></span><% end %>
+    <% if entry["judge_skipped"].present? %><span>skipped: <%= entry["judge_skipped"] %></span><% end %>
+  </div>
+  <% if entry["reason"].present? %>
+    <p class="mt-1 text-contentSecondary"><%= entry["reason"] %></p>
+  <% end %>
+</div>

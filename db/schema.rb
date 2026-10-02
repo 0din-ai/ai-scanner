@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_01_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_02_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -294,6 +294,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_120000) do
     t.jsonb "failure_details", default: {}, null: false
     t.text "failure_message"
     t.datetime "heartbeat_at"
+    t.jsonb "judge_config", default: {}, null: false
+    t.jsonb "judge_stats", default: {}, null: false
     t.datetime "last_retry_at"
     t.string "name", null: false
     t.integer "parent_report_id"

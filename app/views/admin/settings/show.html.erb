@@ -152,6 +152,8 @@
               </div>
             </div>
           </div>
+
+          <%= render partial: "admin/settings/judge_section", locals: { judge: @judge, key_present: @judge_key_present } %>
         <% end %>
       </div>
 
