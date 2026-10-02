@@ -7,7 +7,6 @@ module Admin
       @page_title = "Settings"
       @parallel_scans_limit = SettingsService.parallel_scans_limit
       @parallel_attempts = SettingsService.parallel_attempts
-      @auto_update_probes_enabled = SettingsService.auto_update_probes_enabled?
       @portal_token = SettingsService.portal_token if SettingsService.respond_to?(:portal_token)
       @custom_header_html = SettingsService.custom_header_html if policy(:settings).manage_super_admin_settings?
       @running_scans_count = (Rails.cache.read("running_scans_stats") || {})[:total] || Report.active.count
@@ -37,10 +36,6 @@ module Admin
         SettingsService.set_parallel_attempts(attempts)
       end
 
-      if filtered.key?(:auto_update_probes_enabled)
-        SettingsService.set_auto_update_probes_enabled(filtered[:auto_update_probes_enabled] == "1")
-      end
-
       if filtered[:portal_token].present? && SettingsService.respond_to?(:set_portal_token)
         SettingsService.set_portal_token(filtered[:portal_token])
       end
@@ -61,7 +56,7 @@ module Admin
     private
 
     def settings_params
-      permitted = [ :parallel_scans_limit, :parallel_attempts, :auto_update_probes_enabled ]
+      permitted = [ :parallel_scans_limit, :parallel_attempts ]
       if policy(:settings).manage_super_admin_settings?
         permitted << :portal_token if SettingsService.respond_to?(:set_portal_token)
         permitted << :custom_header_html

@@ -2,14 +2,12 @@ class SettingsService
   DEFAULTS = {
     "parallel_scans_limit" => 5,
     "parallel_attempts" => 16,
-    "auto_update_probes_enabled" => "false",
     "custom_header_html" => ""
   }.freeze
 
   VALIDATIONS = {
     "parallel_scans_limit" => ->(value) { value.to_s =~ /\A\d+\z/ && value.to_i.between?(1, 20) },
     "parallel_attempts" => ->(value) { value.to_s =~ /\A\d+\z/ && value.to_i.between?(1, 100) },
-    "auto_update_probes_enabled" => ->(value) { [ "true", "false" ].include?(value.to_s) },
     "custom_header_html" => ->(value) { value.is_a?(String) }
   }.freeze
 
@@ -37,19 +35,6 @@ class SettingsService
         set("parallel_attempts", value.to_s)
       else
         raise ArgumentError, "Parallel attempts must be between 1 and 100"
-      end
-    end
-
-    def auto_update_probes_enabled?
-      get("auto_update_probes_enabled") == "true"
-    end
-
-    def set_auto_update_probes_enabled(value)
-      bool_value = ActiveModel::Type::Boolean.new.cast(value)
-      if VALIDATIONS["auto_update_probes_enabled"].call(bool_value.to_s)
-        set("auto_update_probes_enabled", bool_value.to_s)
-      else
-        raise ArgumentError, "Auto update probes enabled must be true or false"
       end
     end
 

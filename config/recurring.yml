@@ -36,10 +36,6 @@ common_jobs: &common_jobs
     class: CleanupOldPdfsJob
     queue: low_priority
     schedule: every day at 2:00am
-  download_latest_probe_pack_job:
-    class: DownloadLatestProbePackJob
-    queue: low_priority
-    schedule: every 24 hours
   portal_export_job:
     class: PortalExportJob
     queue: low_priority

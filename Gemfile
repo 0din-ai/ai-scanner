@@ -1,6 +1,12 @@
 source "https://rubygems.org"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
+# json 3 turned JSON.parse's options into keywords, but Rails 8.1's
+# ActiveSupport::JSON.decode still passes them positionally. The schema dumper
+# then fails on every jsonb column with a default, db:migrate in the test env
+# quietly drops those tables from db/schema.rb, and every RSpec run fails at
+# boot. Lift this once Rails ships json-3 support.
+gem "json", "< 3"
 gem "rails", "~> 8.0"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
