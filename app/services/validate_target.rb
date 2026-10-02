@@ -11,7 +11,7 @@ class ValidateTarget
 
   def call
     require "logging"
-    target.update(status: :validating)
+    target.update(status: :validating, validation_failure_code: nil)
 
     @validation_start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     t0 = @validation_start_time
@@ -36,7 +36,16 @@ class ValidateTarget
       Logging.with(event: "validation.error", target_id: target.id, validation_uuid: validation_uuid, exception_class: e.class.name, exception_message: e.message.to_s, duration_ms: dur_ms) do
         Rails.logger.error("validation.error")
       end
-      target.update(status: :bad, validation_text: "Validation failed: #{e.message}")
+      # A terminal ProviderError exits garak non-zero, so RunCommand raises and lands
+      # here; the generator's record names the cause the exit status cannot.
+      if (record = provider_error_record)&.explains_failure?
+        apply_provider_error(record)
+      else
+        target.update(status: :bad, validation_text: "Validation failed: #{e.message}")
+      end
+      # A non-zero exit never reaches process_validation_result, the only other
+      # cleanup; the config file holds substituted credentials.
+      cleanup_validation_files unless target.webchat?
     end
   end
 
@@ -138,11 +147,26 @@ class ValidateTarget
   def process_validation_result
     jsonl_file_path = VALIDATION_REPORTS_PATH.join("#{validation_uuid}.report.jsonl")
 
+    # Read before cleanup_validation_files deletes the log: it is the only place the
+    # provider's error exists. A terminal provider error fails validation even when
+    # the run left output text and an eval row behind, so it is checked first. A
+    # transient one (retried by garak) only explains a failure, further down.
+    if (record = provider_error_record)&.terminal?
+      apply_provider_error(record)
+      cleanup_validation_files
+      return { decision: "invalid", response_count: 0, evaluation_result: nil }
+    end
+
     unless File.exist?(jsonl_file_path)
-      target.update(status: :bad, validation_text: "Validation report file not found")
-      Logging.with(target_id: target.id, validation_uuid: validation_uuid) do
-        Rails.logger.warn("validation.report_missing")
+      if record&.explains_failure?
+        apply_provider_error(record)
+      else
+        target.update(status: :bad, validation_text: "Validation report file not found")
+        Logging.with(target_id: target.id, validation_uuid: validation_uuid) do
+          Rails.logger.warn("validation.report_missing")
+        end
       end
+      cleanup_validation_files
       return { decision: "invalid", response_count: 0, evaluation_result: nil }
     end
 
@@ -200,6 +224,9 @@ class ValidateTarget
         Rails.logger.info("validation.result.valid")
       end
       decision = "valid"
+    elsif record&.explains_failure?
+      apply_provider_error(record)
+      decision = "invalid"
     else
       validation_text = if has_responses
         "Target validation failed: No valid evaluation results received."
@@ -243,6 +270,31 @@ class ValidateTarget
     return nil if duration_seconds <= 0
 
     (total_output_tokens / duration_seconds).round(2)
+  end
+
+  def provider_error_record
+    return @provider_error_record if defined?(@provider_error_record)
+
+    log_file = LOGS_PATH.join("#{validation_uuid}.log")
+    @provider_error_record = (Reports::ProviderErrorRecord.last_in(File.read(log_file)) if File.file?(log_file))
+  rescue StandardError => e
+    Rails.logger.warn("validation.provider_error_unreadable #{e.class}")
+    @provider_error_record = nil
+  end
+
+  def apply_provider_error(record)
+    target.update(
+      status: :bad,
+      validation_text: record.user_message,
+      validation_failure_code: record.failure_code,
+      tokens_per_second: nil,
+      tokens_per_second_sample_count: 0
+    )
+    Logging.with(target_id: target.id, validation_uuid: validation_uuid, failure_code: record.failure_code,
+                 provider_category: record.category, provider_status: record.provider_status,
+                 request_id: record.request_id) do
+      Rails.logger.warn("validation.result.provider_error")
+    end
   end
 
   def cleanup_validation_files

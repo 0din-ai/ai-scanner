@@ -134,6 +134,106 @@ RSpec.describe Reports::FailureClassifier do
     expect(result.details['exit_code']).to eq(1)
   end
 
+  describe "structured PROVIDER_ERROR records" do
+    let(:target) { create(:target, model_type: "OpenRouterGenerator", model: "openai/gpt-4o") }
+
+    context "with the identity block a blocked OpenRouter route logs" do
+      let(:logs) { Rails.root.join("spec/fixtures/provider_errors/openrouter_identity_block.log").read }
+
+      it "classifies a provider policy block from the record, not from prose" do
+        expect(result.code).to eq("provider_policy_block")
+        expect(result.message).to include("blocked this account for a previous policy violation")
+        expect(result.details).to include("provider" => "OpenRouter", "status_code" => 200, "provider_status" => 403,
+          "provider_category" => "identity_policy_block")
+      end
+
+      it "never reports the provider's error_type=refusal as a model result" do
+        expect(result.code).not_to match(/refus|target_validation/)
+      end
+    end
+
+    context "when the only record is a transient envelope the run never recovered from" do
+      let(:logs) do
+        <<~LOG
+          2026-10-01 10:00:00,000 - __main__ - INFO - Starting garak scan - Report: r1, Scan: 1
+          PROVIDER_ERROR {"category":"upstream_unavailable","http_status":200,"message":"Provider returned error","model":"openai/gpt-4o","provider":"OpenRouter","provider_code":null,"provider_error_type":null,"provider_status":502,"request_id":null,"v":1}
+          2026-10-01 10:05:00,000 - __main__ - INFO - Garak scan completed - Report: r1, Exit code: 1
+        LOG
+      end
+
+      it "names the outage instead of leaving the run unexplained" do
+        expect(result.code).to eq("provider_service_unavailable")
+        expect(result.details).to include("provider_status" => 502)
+      end
+    end
+
+    context "when a transient envelope was retried and something else failed afterwards" do
+      let(:logs) do
+        <<~LOG
+          2026-10-01 10:00:00,000 - __main__ - INFO - Starting garak scan - Report: r1, Scan: 1
+          PROVIDER_ERROR {"category":"upstream_unavailable","http_status":200,"message":null,"model":"openai/gpt-4o","provider":"OpenRouter","provider_code":null,"provider_error_type":null,"provider_status":502,"request_id":null,"v":1}
+          2026-10-01 10:00:01,000 - backoff - INFO - Backing off _call_model(...) for 0.8s (openai.InternalServerError: OpenRouter retryable provider envelope)
+          Error running Garak scan: 'NoneType' object is not iterable
+          Traceback (most recent call last):
+          KeyError: 'description'
+          2026-10-01 10:05:00,000 - __main__ - INFO - Garak scan completed - Report: r1, Exit code: 1
+        LOG
+      end
+
+      it "reports the later runtime failure, not the recovered outage" do
+        expect(result.code).to eq("garak_runtime_error")
+      end
+    end
+
+    context "when garak gave up retrying the transient envelope" do
+      let(:logs) do
+        <<~LOG
+          PROVIDER_ERROR {"category":"rate_limited","http_status":200,"message":null,"model":"openai/gpt-4o","provider":"OpenRouter","provider_code":null,"provider_error_type":null,"provider_status":429,"request_id":null,"v":1}
+          Traceback (most recent call last):
+          openai.RateLimitError: OpenRouter retryable provider envelope
+          2026-10-01 10:05:00,000 - __main__ - INFO - Garak scan completed - Report: r1, Exit code: 1
+        LOG
+      end
+
+      it "names the rate limit" do
+        expect(result.code).to eq("provider_rate_limited")
+      end
+    end
+
+    context "when retries saw an upstream 502 and finally gave up on a 429" do
+      let(:logs) do
+        <<~LOG
+          2026-10-01 10:00:00,000 - __main__ - INFO - Starting garak scan - Report: r1, Scan: 1
+          2026-10-01 10:00:01,000 - httpx - INFO - HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 502 Bad Gateway"
+          PROVIDER_ERROR {"category":"rate_limited","http_status":429,"message_hex":null,"model":"openai/gpt-4o","provider":"OpenRouter","provider_code":null,"provider_error_type":null,"provider_status":null,"request_id":null,"v":1}
+          Traceback (most recent call last):
+          garak.generators.openrouter.ProviderRetryExhausted: PROVIDER_RETRY_EXHAUSTED category=rate_limited model=openai/gpt-4o
+          2026-10-01 10:05:00,000 - __main__ - INFO - Garak scan completed - Report: r1, Exit code: 1
+        LOG
+      end
+
+      it "reports the rate limit the retry loop gave up on, not the first HTTP status" do
+        expect(result.code).to eq("provider_rate_limited")
+        expect(result.details).to include("provider_category" => "rate_limited")
+      end
+    end
+
+    context "when the record is from an earlier retry and the current run completed" do
+      let(:logs) do
+        <<~LOG
+          2026-10-01 10:00:00,000 - __main__ - INFO - Starting garak scan - Report: r1, Scan: 1
+          2026-10-01 10:00:01,000 - root - ERROR - PROVIDER_ERROR {"category":"auth_failed","http_status":401,"message":null,"model":null,"provider":"OpenRouter","provider_code":null,"provider_error_type":null,"provider_status":401,"request_id":null,"v":1}
+          2026-10-01 11:00:00,000 - __main__ - INFO - Starting garak scan - Report: r1, Scan: 1
+          2026-10-01 11:30:00,000 - __main__ - INFO - Garak scan completed - Report: r1, Exit code: 0
+        LOG
+      end
+
+      it "ignores the stale record" do
+        expect(result).not_to be_failed
+      end
+    end
+  end
+
   describe ".sanitize_text" do
     it "redacts a Cookie header value" do
       expect(described_class.sanitize_text("Cookie: session=abc123; theme=dark")).not_to include("session=abc123")

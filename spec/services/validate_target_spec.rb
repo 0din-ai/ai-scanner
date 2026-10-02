@@ -87,10 +87,10 @@ RSpec.describe ValidateTarget, type: :service do
       end
     end
 
-    it 'updates target status to validating at start' do
+    it 'updates target status to validating at start and clears the previous provider failure code' do
       # Allow other updates but expect validating specifically
       allow(target).to receive(:update)
-      expect(target).to receive(:update).with(status: :validating).once
+      expect(target).to receive(:update).with(status: :validating, validation_failure_code: nil).once
 
       service.call
     end

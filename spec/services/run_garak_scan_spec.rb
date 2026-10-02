@@ -284,6 +284,36 @@ RSpec.describe RunGarakScan, type: :service do
       service.call
     end
 
+    it 'carries the provider failure code validation recorded instead of the generic one' do
+      blocked_target = create(:target, :bad, validation_failure_code: "provider_policy_block",
+        validation_text: "OpenRouter refused openai/gpt-4o: the upstream provider blocked this account.")
+      blocked_report = build(:report, target: blocked_target, scan: scan)
+      blocked_report.save(validate: false)
+      service = described_class.new(blocked_report)
+      allow(service).to receive(:call).and_call_original
+      allow(Rails.logger).to receive(:error)
+
+      service.call
+
+      blocked_report.reload
+      expect(blocked_report.status).to eq("failed")
+      expect(blocked_report.failure_code).to eq("provider_policy_block")
+      expect(blocked_report.failure_title).to eq("Provider policy block")
+    end
+
+    it 'ignores a stored validation code that is not a provider failure code' do
+      odd_target = create(:target, :bad, validation_failure_code: "made_up")
+      odd_report = build(:report, target: odd_target, scan: scan)
+      odd_report.save(validate: false)
+      service = described_class.new(odd_report)
+      allow(service).to receive(:call).and_call_original
+      allow(Rails.logger).to receive(:error)
+
+      service.call
+
+      expect(odd_report.reload.failure_code).to eq("target_validation_failed")
+    end
+
     it 'proceeds normally for targets with good status' do
       good_target = create(:target, :good)
       good_report = create(:report, target: good_target, scan: scan)

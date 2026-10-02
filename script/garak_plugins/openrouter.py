@@ -17,8 +17,11 @@ For available models, see: https://openrouter.ai/docs#models
 Requires garak 0.14+ (uses Conversation/Message API).
 """
 
+import json
 import logging
 import re
+import sys
+import time
 from collections.abc import Mapping, Sequence
 from typing import List, Union, Optional
 
@@ -44,10 +47,42 @@ context_lengths = {
 }
 
 SENSITIVE_KEY_RE = re.compile(r"(?:api[_-]?key|token|secret|password|authorization)", re.I)
+# Scheme-aware rules first. The generic authorization rule matches only the
+# next token, so "Authorization: Basic <credential>" would redact "Basic"
+# and leave the secret if it ran earlier.
+_BEARER_PATTERN = (
+    re.compile(r"(Bearer\s+)[A-Za-z0-9._~+\-/=]+", re.I),
+    r"\1[REDACTED]",
+)
+_AUTH_SCHEME_PATTERN = (
+    re.compile(r"((?:Basic|Digest|NTLM|Negotiate)\s+)[A-Za-z0-9._~+\-/=]+", re.I),
+    r"\1[REDACTED]",
+)
 SECRET_VALUE_PATTERNS = (
-    (re.compile(r"(Bearer\s+)[A-Za-z0-9._~+\-/=]+", re.I), r"\1[REDACTED]"),
+    _BEARER_PATTERN,
+    _AUTH_SCHEME_PATTERN,
     (re.compile(r"((?:api[_-]?key|token|secret|password|authorization)[\"']?\s*[:=]\s*)[\"']?[^\"'\s,}]+", re.I), r"\1[REDACTED]"),
     (re.compile(r"\bsk-(?:or-v1-)?[A-Za-z0-9_-]{8,}\b", re.I), "[REDACTED]"),
+)
+# Rails redacts these in RunCommand and FailureClassifier. message_hex is
+# applied before those sanitizers run, so the encoded text has to already
+# be clean. Cookie is last: its .* consumes the rest of the line.
+_OUTPUT_REDACTION_PATTERNS = (
+    _BEARER_PATTERN,
+    _AUTH_SCHEME_PATTERN,
+    (re.compile(
+        r"((?:api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|"
+        r"credential|bearer|authorization|cookie|set[_-]?cookie|database[_-]?url|"
+        r"redis[_-]?url|secret[_-]?key[_-]?base)[\"']?\s*[=:]\s*[\"']?"
+        r"(?:(?:bearer|basic|splunk|negotiate|digest|token|bot)\s+)?)"
+        r"[^\s\"',}\]&;]+",
+        re.I,
+    ), r"\1[REDACTED]"),
+    (re.compile(
+        r"(x-[\w-]*(?:key|token|auth|secret|cookie)[\w-]*\s*[=:]\s*)[\"']?[^\"'\s,}]+",
+        re.I,
+    ), r"\1[REDACTED]"),
+    (re.compile(r"((?:set-)?cookie[\"']?\s*[=:]\s*).*", re.I), r"\1[REDACTED]"),
 )
 
 
@@ -92,26 +127,249 @@ def _safe_status_detail(value, max_chars=2000):
     return rendered
 
 
-def _terminal_api_status_message(exc, provider, model):
-    response = _safe_getattr(exc, "response")
-    status_code = _safe_getattr(exc, "status_code")
-    if status_code is None:
-        status_code = _safe_getattr(response, "status_code")
+def _field(obj, key):
+    if obj is None:
+        return None
+    if isinstance(obj, Mapping):
+        return obj.get(key)
+    return _safe_getattr(obj, key)
 
-    reason = _safe_getattr(response, "reason_phrase") or _safe_getattr(response, "reason")
-    message = _safe_getattr(exc, "message") or str(exc)
-    body = _safe_getattr(exc, "body")
-    if body is None and response is not None:
-        body = _safe_getattr(response, "text")
 
-    return (
-        f"{provider} terminal API status error: "
-        f"model={_safe_status_detail(model)} "
-        f"status_code={_safe_status_detail(status_code)} "
-        f"reason={_safe_status_detail(reason)} "
-        f"message={_safe_status_detail(message)} "
-        f"body={_safe_status_detail(body)}"
-    )
+def _as_int(value):
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _as_text(value):
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+_AUTH_ERROR_CODES = frozenset({
+    "invalid_api_key",
+    "invalid_credentials",
+    "authentication_error",
+    "unauthorized",
+})
+_IDENTITY_BLOCK_CODES = frozenset({
+    "user_blocked",
+    "account_blocked",
+    "identity_policy_block",
+})
+_IDENTITY_BLOCK_MESSAGE = re.compile(
+    r"(?:this |the |your )?(?:user|account) (?:has been |is )?blocked "
+    r"(?:for|due to) (?:a )?(?:previous )?policy violation",
+    re.I,
+)
+_MODEL_UNAVAILABLE_MESSAGE = re.compile(
+    r"deprecated|model\b.*unavailable|unavailable.*\bmodel|no endpoints|"
+    r"model\b.*not found|not found.*\bmodel",
+    re.I,
+)
+_SAFE_REQUEST_ID = re.compile(
+    r"(?:(?:req[-_]|gen[-_]|chatcmpl[-_])[A-Za-z0-9_-]{1,120}|"
+    r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\Z",
+    re.I,
+)
+_UNSAFE_REQUEST_ID = re.compile(
+    r"sk[-_]|api[-_]?key|token|secret|password|bearer",
+    re.I,
+)
+_MESSAGE_MAX_CHARS = 300
+
+
+class ProviderError(Exception):
+    """Terminal provider envelope.
+
+    garak's cli.main swallows GarakException and the runner then reports exit 0.
+    This is a plain Exception so the process exits 1. str(self) is category and
+    model only; the redacted upstream text is the PROVIDER_ERROR line.
+    """
+
+    terminal_provider_error = True
+
+    def __init__(
+        self,
+        category,
+        http_status=None,
+        provider_status=None,
+        provider_code=None,
+        provider_error_type=None,
+        request_id=None,
+        model=None,
+    ):
+        self.category = category
+        self.http_status = http_status
+        self.provider_status = provider_status
+        self.provider_code = provider_code
+        self.provider_error_type = provider_error_type
+        self.request_id = request_id
+        self.model = model
+        super().__init__(str(self))
+
+    def __str__(self):
+        text = f"PROVIDER_ERROR category={self.category}"
+        if self.model:
+            text += f" model={self.model}"
+        return text
+
+    def __reduce__(self):
+        return (
+            type(self),
+            (
+                self.category,
+                self.http_status,
+                self.provider_status,
+                self.provider_code,
+                self.provider_error_type,
+                self.request_id,
+                self.model,
+            ),
+        )
+
+
+def _provider_status(error):
+    return _as_int(_field(error, "code"))
+
+
+def _provider_code(error):
+    metadata = _field(error, "metadata")
+    nested = _as_text(_field(metadata, "provider_code"))
+    if nested:
+        return nested
+    code = _field(error, "code")
+    if isinstance(code, str) and code.strip():
+        return code
+    return _as_text(_field(error, "provider_code"))
+
+
+def _provider_error_type(error):
+    return _as_text(_field(_field(error, "metadata"), "error_type"))
+
+
+def _redacted_message(message):
+    """Full secret-redacted message. Classification reads this; the record slices it."""
+    text = _as_text(message)
+    if text is None:
+        return None
+    redacted = _redact(text)
+    return redacted if isinstance(redacted, str) else None
+
+
+def _logged_message(message):
+    if message is None or len(message) <= _MESSAGE_MAX_CHARS:
+        return message
+    return message[:_MESSAGE_MAX_CHARS]
+
+
+def _header_request_id(response):
+    headers = _field(response, "headers")
+    if isinstance(headers, Mapping):
+        for key, value in headers.items():
+            if isinstance(key, str) and key.lower() == "x-request-id":
+                return value
+    return None
+
+
+def _allow_request_id(value):
+    if not isinstance(value, str):
+        return None
+    if not _SAFE_REQUEST_ID.fullmatch(value) or _UNSAFE_REQUEST_ID.search(value):
+        return None
+    return value
+
+
+def _safe_request_id(error, response):
+    raw = _header_request_id(response) or _field(response, "id") or _field(error, "request_id")
+    return _allow_request_id(raw)
+
+
+def _classify_error_payload(*, http_status, provider_status, provider_code, message):
+    code = provider_code.lower() if isinstance(provider_code, str) else ""
+    text = message or ""
+    statuses = {
+        status
+        for status in (_as_int(http_status), _as_int(provider_status))
+        if status is not None
+    }
+    if 401 in statuses or code in _AUTH_ERROR_CODES:
+        return "auth_failed"
+    if 402 in statuses:
+        return "billing"
+    if 429 in statuses:
+        return "rate_limited"
+    if any(500 <= status <= 599 for status in statuses):
+        return "upstream_unavailable"
+    if 404 in statuses or (text and _MODEL_UNAVAILABLE_MESSAGE.search(text)):
+        return "model_unavailable"
+    if code in _IDENTITY_BLOCK_CODES or (text and _IDENTITY_BLOCK_MESSAGE.search(text)):
+        return "identity_policy_block"
+    if any(400 <= status <= 499 for status in statuses):
+        return "rejected_request"
+    return "provider_error"
+
+
+def _normalize_error(error):
+    if isinstance(error, str) and error.strip():
+        return {"message": error}
+    return error
+
+
+class _TransientFailure(Exception):
+    """Internal signal for one retryable envelope. Never leaves _create_with_retry."""
+
+    def __init__(self, category, provider_status, response):
+        self.category = category
+        self.provider_status = provider_status
+        self.response = response
+        super().__init__(category)
+
+
+class ProviderRetryExhausted(Exception):
+    """Retries for a transient provider failure are used up.
+
+    Not a GarakException, and not terminal_provider_error: probe handlers keep
+    the per-attempt generation-failed marker. Pickle-safe so a worker pool can
+    return it. openai exceptions are not: their constructor requires response.
+    """
+
+    def __init__(self, category, provider_status=None, model=None):
+        self.category = category
+        self.provider_status = provider_status
+        self.model = model
+        super().__init__(str(self))
+
+    def __str__(self):
+        text = f"PROVIDER_RETRY_EXHAUSTED category={self.category}"
+        if self.model:
+            text += f" model={self.model}"
+        return text
+
+    def __reduce__(self):
+        return (type(self), (self.category, self.provider_status, self.model))
+
+
+def _retry_after_seconds(source):
+    if isinstance(source, _TransientFailure):
+        headers = _field(source.response, "headers")
+    else:
+        headers = _field(_safe_getattr(source, "response"), "headers")
+    if not isinstance(headers, Mapping):
+        return None
+    raw = None
+    for key, value in headers.items():
+        if isinstance(key, str) and key.lower() == "retry-after":
+            raw = value
+            break
+    try:
+        seconds = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if seconds < 0:
+        return None
+    return min(seconds, 30.0)
 
 
 class OpenRouterGenerator(OpenAICompatible):
@@ -120,6 +378,7 @@ class OpenRouterGenerator(OpenAICompatible):
     ENV_VAR = "OPENROUTER_API_KEY"
     active = True
     supports_multiple_generations = True
+    _MAX_TRANSIENT_ATTEMPTS = 5
     generator_family_name = "OpenRouter"
     DEFAULT_PARAMS = {
         **OpenAICompatible.DEFAULT_PARAMS,
@@ -187,10 +446,11 @@ class OpenRouterGenerator(OpenAICompatible):
                 logging.debug(f"  Content: {msg.get('content', '')}")
 
         logging.debug("\n=== Model Output ===")
-        if hasattr(response, 'usage'):
-            logging.debug(f"Prompt Tokens: {response.usage.prompt_tokens}")
-            logging.debug(f"Completion Tokens: {response.usage.completion_tokens}")
-            logging.debug(f"Total Tokens: {response.usage.total_tokens}")
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            logging.debug(f"Prompt Tokens: {usage.prompt_tokens}")
+            logging.debug(f"Completion Tokens: {usage.completion_tokens}")
+            logging.debug(f"Total Tokens: {usage.total_tokens}")
 
         logging.debug("\nGenerated Text:")
         # OpenAI response object always has choices
@@ -245,7 +505,7 @@ class OpenRouterGenerator(OpenAICompatible):
 
             # Try a single batched call first. Most OpenRouter routes honor n=,
             # but some upstream providers ignore it and return only one choice.
-            raw_response = self.generator.create(
+            raw_response = self._create_with_retry(
                 model=self.name,
                 messages=messages,
                 n=generations_this_call if "n" not in self.suppressed_params else None,
@@ -270,6 +530,8 @@ class OpenRouterGenerator(OpenAICompatible):
             )
             return self._call_model_sequential(messages, generations_this_call, prompt)
 
+        except (ProviderError, ProviderRetryExhausted):
+            raise
         except BadGeneratorException:
             raise
         except Exception as e:
@@ -281,7 +543,7 @@ class OpenRouterGenerator(OpenAICompatible):
         responses = []
         for _ in range(generations_this_call):
             try:
-                raw_response = self.generator.create(
+                raw_response = self._create_with_retry(
                     model=self.name,
                     messages=messages,
                     n=1 if "n" not in self.suppressed_params else None,
@@ -291,6 +553,8 @@ class OpenRouterGenerator(OpenAICompatible):
                 response_messages = self._messages_from_response(raw_response)
                 self._raise_if_all_generations_empty(response_messages)
                 responses.append(response_messages[0] if response_messages else None)
+            except (ProviderError, ProviderRetryExhausted):
+                raise
             except BadGeneratorException:
                 raise
             except Exception as e:
@@ -311,16 +575,205 @@ class OpenRouterGenerator(OpenAICompatible):
                 "OpenRouter returned only empty generations; the provider route may be unavailable."
             )
 
+    def _raise_for_completion(self, response):
+        error = _field(response, "error")
+        if error is None:
+            error = _field(_field(response, "model_extra"), "error")
+        if error is None:
+            return
+        self._emit_provider_error(error, http_status=200, response=response)
+
+    def _emit_provider_error(self, error, http_status, response):
+        error = _normalize_error(error)
+        http_status = _as_int(http_status)
+        provider_status = _provider_status(error)
+        provider_code = _provider_code(error)
+        provider_error_type = _provider_error_type(error)
+        message = _redacted_message(_field(error, "message") if error is not None else None)
+        request_id = _safe_request_id(error, response)
+        model = self.name if isinstance(getattr(self, "name", None), str) and self.name else None
+        category = _classify_error_payload(
+            http_status=http_status,
+            provider_status=provider_status,
+            provider_code=provider_code,
+            message=message,
+        )
+        self._write_record(
+            category=category,
+            http_status=http_status,
+            provider_status=provider_status,
+            provider_code=provider_code,
+            provider_error_type=provider_error_type,
+            request_id=request_id,
+            message=message,
+        )
+        if category in ("rate_limited", "upstream_unavailable"):
+            raise _TransientFailure(category, provider_status, response)
+        raise ProviderError(
+            category,
+            http_status,
+            provider_status,
+            provider_code,
+            provider_error_type,
+            request_id,
+            model,
+        ) from None
+
     def _raise_terminal_api_status_error(self, exc):
         import openai
 
-        if isinstance(exc, (openai.RateLimitError, openai.InternalServerError)):
-            raise exc
+        if isinstance(exc, (
+            openai.RateLimitError,
+            openai.InternalServerError,
+            openai.APITimeoutError,
+            openai.APIConnectionError,
+        )):
+            raise self._retry_exhausted(exc) from None
 
         if isinstance(exc, openai.APIStatusError):
-            raise BadGeneratorException(
-                _terminal_api_status_message(exc, self.generator_family_name, self.name)
-            ) from exc
+            self._emit_from_status(exc)
+
+        if isinstance(exc, openai.APIResponseValidationError):
+            self._emit_from_validation(exc)
+
+    def _emit_from_status(self, exc):
+        body = _safe_getattr(exc, "body")
+        error = _field(body, "error")
+        if error is None and (_field(body, "message") is not None or _field(body, "code") is not None):
+            error = body
+        http_status = _as_int(_safe_getattr(exc, "status_code"))
+        if http_status is None:
+            http_status = _as_int(_safe_getattr(_safe_getattr(exc, "response"), "status_code"))
+        self._emit_provider_error(error, http_status=http_status, response=_safe_getattr(exc, "response"))
+
+    def _emit_from_validation(self, exc):
+        body = _safe_getattr(exc, "body")
+        response = _safe_getattr(exc, "response")
+        if body is None and response is not None:
+            text = _safe_getattr(response, "text")
+            if isinstance(text, str):
+                try:
+                    body = json.loads(text)
+                except ValueError:
+                    body = None
+        error = _field(body, "error")
+        # No envelope: this is a malformed completion, not a provider refusal.
+        # Return so the caller's except Exception logs it and yields [None].
+        if error is None:
+            return
+        http_status = _as_int(_safe_getattr(response, "status_code")) or 200
+        self._emit_provider_error(error, http_status=http_status, response=response)
+
+    def _message_hex(self, message):
+        if not isinstance(message, str) or not message:
+            return None
+        redacted = message
+        for pattern, replacement in SECRET_VALUE_PATTERNS + _OUTPUT_REDACTION_PATTERNS:
+            redacted = pattern.sub(replacement, redacted)
+        logged = _logged_message(redacted)
+        if logged is None:
+            return None
+        return logged.encode("utf-8").hex()
+
+    def _write_record(self, *, category, http_status, provider_status, provider_code,
+                      provider_error_type, request_id, message):
+        model = self.name if isinstance(getattr(self, "name", None), str) and self.name else None
+        record = {
+            "v": 1,
+            "provider": self.generator_family_name,
+            "model": model,
+            "category": category,
+            "http_status": http_status,
+            "provider_status": provider_status,
+            "provider_code": provider_code,
+            "provider_error_type": provider_error_type,
+            "request_id": request_id,
+            # Hex, not text: RunCommand's output sanitizer would otherwise eat
+            # JSON escapes and the rest of a line that contains "Cookie:".
+            "message_hex": self._message_hex(message),
+        }
+        payload = json.dumps(record, separators=(",", ":"), ensure_ascii=True, sort_keys=True)
+        logging.error("PROVIDER_ERROR %s", payload)
+        print("PROVIDER_ERROR " + payload, file=sys.stderr, flush=True)
+
+    def _emit_native_exhaustion(self, source):
+        import openai
+
+        if isinstance(source, openai.RateLimitError):
+            category = "rate_limited"
+        else:
+            category = "upstream_unavailable"
+        status = _as_int(_safe_getattr(source, "status_code"))
+        self._write_record(
+            category=category,
+            http_status=status,
+            provider_status=status,
+            provider_code=None,
+            provider_error_type=None,
+            request_id=_safe_request_id(None, _safe_getattr(source, "response")),
+            message=_redacted_message(str(source)) if source is not None else None,
+        )
+
+    def _sleep(self, seconds):
+        time.sleep(seconds)
+
+    def _create_with_retry(self, **kwargs):
+        import openai
+
+        transient_errors = (
+            openai.RateLimitError,
+            openai.InternalServerError,
+            openai.APITimeoutError,
+            openai.APIConnectionError,
+        )
+        last = None
+        for attempt in range(1, self._MAX_TRANSIENT_ATTEMPTS + 1):
+            try:
+                response = self.generator.create(**kwargs)
+                self._raise_for_completion(response)
+                return response
+            except _TransientFailure as exc:
+                last = exc
+            except transient_errors as exc:
+                last = exc
+            except openai.APIStatusError as exc:
+                try:
+                    self._emit_from_status(exc)
+                except _TransientFailure as inner:
+                    last = inner
+            except openai.APIResponseValidationError as exc:
+                try:
+                    self._emit_from_validation(exc)
+                except _TransientFailure as inner:
+                    last = inner
+                else:
+                    raise
+            if attempt == self._MAX_TRANSIENT_ATTEMPTS:
+                if not isinstance(last, _TransientFailure):
+                    self._emit_native_exhaustion(last)
+                raise self._retry_exhausted(last) from None
+            self._sleep(self._retry_delay(last, attempt))
+
+    def _retry_delay(self, source, attempt):
+        retry_after = _retry_after_seconds(source)
+        if retry_after is not None:
+            return retry_after
+        return float(min(2 ** (attempt - 1), 8))
+
+    def _retry_exhausted(self, source):
+        import openai
+
+        if isinstance(source, _TransientFailure):
+            category = source.category
+            status = _as_int(source.provider_status)
+        elif isinstance(source, openai.RateLimitError):
+            category = "rate_limited"
+            status = _as_int(_safe_getattr(source, "status_code")) or 429
+        else:
+            category = "upstream_unavailable"
+            status = _as_int(_safe_getattr(source, "status_code"))
+        model = self.name if isinstance(getattr(self, "name", None), str) and self.name else None
+        return ProviderRetryExhausted(category, status, model)
 
 
 DEFAULT_CLASS = "OpenRouterGenerator"

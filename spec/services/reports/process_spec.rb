@@ -434,6 +434,41 @@ RSpec.describe Reports::Process, type: :service do
       end
     end
 
+    context 'when the generator logged a terminal provider error record' do
+      let!(:probe) { create(:probe, name: 'TestProbe') }
+      let(:record_log) { Rails.root.join('spec/fixtures/provider_errors/openrouter_identity_block.log').read }
+      let!(:raw_data) { create(:raw_report_data, report: report, jsonl_data: jsonl_content, logs_data: record_log) }
+
+      before { target.update!(model_type: 'OpenRouterGenerator', model: 'openai/gpt-4o') }
+
+      it 'fails the run as a provider policy block with partial results' do
+        service.call
+
+        report.reload
+        expect(report.status).to eq('failed')
+        expect(report.failure_code).to eq('provider_policy_block')
+        expect(report.failure_details).to include('provider_category' => 'identity_policy_block', 'provider_status' => 403)
+        expect(report).to be_partial_results
+      end
+
+      context 'with a different terminal category' do
+        let(:record_log) do
+          <<~LOG
+            PROVIDER_ERROR {"category":"auth_failed","http_status":401,"message":null,"model":"openai/gpt-4o","provider":"OpenRouter","provider_code":null,"provider_error_type":null,"provider_status":null,"request_id":null,"v":1}
+            2023-06-01 10:45:12,345 - __main__ - INFO - Garak scan completed - Report: test-uuid, Exit code: 1
+          LOG
+        end
+
+        it 'also downgrades completeness to partial' do
+          service.call
+
+          report.reload
+          expect(report.failure_code).to eq('provider_auth_failed')
+          expect(report).to be_partial_results
+        end
+      end
+    end
+
     context 'when completed results carry a trailing post-scan digest error' do
       let!(:probe) { create(:probe, name: 'TestProbe') }
       let!(:raw_data) do

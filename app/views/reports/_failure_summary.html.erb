@@ -5,7 +5,9 @@
   detail_items = [
     [ "Provider", details["provider"] ],
     [ "Model", details["model"] ],
-    [ "Status", details["status_code"] ]
+    [ "Status", details["status_code"] ],
+    [ "Provider status", details["provider_status"] ],
+    [ "Request ID", details["request_id"] ]
   ].select { |_label, value| value.present? }
 
   container_class = if admin

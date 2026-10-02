@@ -80,6 +80,11 @@ module Reports
       failure = FailureClassifier.new(report, logs: current_run_failure_logs).call
       if failure.failed? && !completed_scan_with_clean_exit?
         report.status = :failed
+        # An aborted run outranks completion rows an earlier segment left: either the
+        # code asserts it, or the generator's terminal ProviderError record does.
+        aborted = Report::INCOMPLETE_ASSERTING_FAILURE_CODES.include?(failure.code) ||
+          ProviderErrorRecord.terminal_category?(failure.details["provider_category"])
+        report.result_completeness = :partial if aborted && report.complete_results?
         report.failure_code = failure.code
         report.failure_message = failure.message
         report.failure_details = failure.details
