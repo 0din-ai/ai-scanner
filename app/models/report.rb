@@ -414,6 +414,8 @@ class Report < ApplicationRecord
 
   def failure_title
     case failure_code
+    when "target_config_rejected"
+      "Target configuration rejected"
     when "provider_policy_block"
       "Provider policy block"
     when "provider_error"
@@ -441,6 +443,9 @@ class Report < ApplicationRecord
 
   def failure_action
     case failure_code
+    when "target_config_rejected"
+      "Remove key_env_var from the target configuration or add that variable under Environment Variables, " \
+        "revalidate the target, then rerun the scan."
     when "provider_policy_block"
       "Contact the provider about this account and model, then revalidate the target and rerun the scan."
     when "provider_error"

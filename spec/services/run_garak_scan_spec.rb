@@ -314,6 +314,37 @@ RSpec.describe RunGarakScan, type: :service do
       expect(odd_report.reload.failure_code).to eq("target_validation_failed")
     end
 
+    it 'refuses to launch when the config names an env var the tenant does not own' do
+      leaky_target = create(:target, :good, model_type: "RestGenerator", model: "RestGenerator",
+        json_config: { "rest" => { "RestGenerator" => { "uri" => "https://example.com", "key_env_var" => "DATABASE_URL" } } }.to_json)
+      leaky_report = create(:report, target: leaky_target, company: leaky_target.company,
+        scan: create(:complete_scan, company: leaky_target.company))
+      service = described_class.new(leaky_report)
+      allow(service).to receive(:call).and_call_original
+      allow(RunCommand).to receive(:new)
+      allow(Rails.logger).to receive(:error)
+
+      service.call
+
+      expect(RunCommand).not_to have_received(:new)
+      leaky_report.reload
+      expect(leaky_report.failure_code).to eq("target_config_rejected")
+      expect(leaky_report.failure_message).to include("DATABASE_URL")
+    end
+
+    it 'refuses to launch a web chat target whose web_config names a foreign env var' do
+      chat_target = create(:target, :good, :webchat)
+      config = chat_target.web_config.is_a?(String) ? JSON.parse(chat_target.web_config) : chat_target.web_config.to_h
+      ActsAsTenant.with_tenant(chat_target.company) do
+        chat_target.update!(web_config: config.merge("key_env_var" => "SECRET_KEY_BASE"))
+      end
+      chat_report = create(:report, target: chat_target, company: chat_target.company,
+        scan: create(:complete_scan, company: chat_target.company))
+      service = described_class.new(chat_report)
+
+      expect(service.send(:env_key_violations)).to eq([ "SECRET_KEY_BASE" ])
+    end
+
     it 'proceeds normally for targets with good status' do
       good_target = create(:target, :good)
       good_report = create(:report, target: good_target, scan: scan)
@@ -342,7 +373,8 @@ RSpec.describe RunGarakScan, type: :service do
 
       run_command = double("RunCommand")
       expect(run_command).to receive(:call_async).with(hash_including(log_file: "/tmp/first.log"))
-      expect(RunCommand).to receive(:new) do |received_argv, env:|
+      expect(RunCommand).to receive(:new) do |received_argv, env:, isolated_env: false|
+        expect(isolated_env).to be(true)
         expect(received_argv).to eq(argv)
         captured_env = env
         run_command
@@ -769,7 +801,7 @@ RSpec.describe RunGarakScan, type: :service do
     describe '#call launch-failure cleanup' do
       it 'removes the web config file if the scan process fails to launch' do
         allow(service).to receive(:call).and_call_original
-        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, scan_launch_url_safe?: true))
+        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, scan_launch_url_safe?: true, web_config: nil))
         allow(service).to receive(:all_probes_completed?).and_return(false)
         allow(service).to receive(:build_argv).and_return([ 'echo' ])
         allow(service).to receive(:build_env).and_return({})
@@ -789,7 +821,7 @@ RSpec.describe RunGarakScan, type: :service do
 
       it 'removes the web config file when the scan process exits immediately (ImmediateExitError)' do
         allow(service).to receive(:call).and_call_original
-        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, scan_launch_url_safe?: true))
+        allow(service).to receive(:target).and_return(instance_double(Target, status: 'good', webchat?: true, scan_launch_url_safe?: true, web_config: nil))
         allow(service).to receive(:all_probes_completed?).and_return(false)
         allow(service).to receive(:build_argv).and_return([ 'echo' ])
         allow(service).to receive(:build_env).and_return({})

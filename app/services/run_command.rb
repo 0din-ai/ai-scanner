@@ -17,13 +17,17 @@ class RunCommand
 
   attr_reader :command, :env
 
-  def initialize(command, env: {})
+  # isolated_env: start the child with ONLY +env+ (Open3's unsetenv_others) instead of
+  # the worker's environment plus +env+. Used for garak, which runs tenant-configured
+  # generators that can read and send environment variables (see GarakSubprocessEnv).
+  def initialize(command, env: {}, isolated_env: false)
     @command = command
     @env = env
+    @spawn_options = isolated_env ? { unsetenv_others: true } : {}
   end
 
   def call(log_file: nil)
-    stdout, stderr, status = Open3.capture3(env, *command)
+    stdout, stderr, status = Open3.capture3(env, *command, **@spawn_options)
 
     if log_file
       FileUtils.mkdir_p(File.dirname(log_file))
@@ -56,7 +60,7 @@ class RunCommand
     end
 
     begin
-      stdin, stdout, stderr, wait_thr = Open3.popen3(env, *command)
+      stdin, stdout, stderr, wait_thr = Open3.popen3(env, *command, **@spawn_options)
     rescue StandardError
       log_io&.close
       raise
