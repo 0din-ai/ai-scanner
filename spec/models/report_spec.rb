@@ -1114,6 +1114,21 @@ RSpec.describe Report, type: :model do
       expect(report.failure_action).to include("Wait for the provider")
     end
 
+    it "maps a provider policy block to contact-the-provider copy" do
+      report.failure_code = "provider_policy_block"
+
+      expect(report.failure_title).to eq("Provider policy block")
+      expect(report.user_failure_message).to include("blocked this account for a previous policy violation")
+      expect(report.failure_action).to include("Contact the provider")
+    end
+
+    it "maps an unclassified provider error" do
+      report.failure_code = "provider_error"
+
+      expect(report.failure_title).to eq("Provider error")
+      expect(report.user_failure_message).to include("returned an error instead of a completion")
+    end
+
     it "falls back to generic failed copy" do
       expect(report.failure_title).to eq("Scan failed")
       expect(report.user_failure_message).to eq("The scan failed before results could be completed.")

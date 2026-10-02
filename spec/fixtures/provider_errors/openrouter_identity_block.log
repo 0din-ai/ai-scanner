@@ -1,0 +1,87 @@
+Running Garak with parameters: ['--target_type', 'openrouter.OpenRouterGenerator', '--target_name', 'openai/gpt-4o', '--probes', 'dan.Dan_11_0', '--report_prefix', 'validation_report-fixture']
+garak LLM vulnerability scanner v0.16.0 ( https://github.com/NVIDIA/garak ) at 2026-10-02T02:20:01.192832
+✋ DEPRECATION: --probes on CLI is deprecated since version 0.15.1.pre1
+📜 logging to /home/rails/.local/share/garak/garak.log
+🦜 loading [1m[95mgenerator[0m: OpenRouter: openai/gpt-4o
+⚠️  This run can be sped up 🥳 Generator 'OpenRouter openai/gpt-4o' supports parallelism! Consider using `--parallel_attempts 16` (or more) to greatly accelerate your run. 🐌
+📜 reporting to /home/rails/.local/share/garak/garak_runs/validation_report-fixture.report.jsonl
+🎯 loading intent service
+🎯 intents active: S003productkeys, S004, S004describe, S004erotica, S004flirt, S004graphic, S004lewd, S004pua, S004seduction, S005, S005bully, S005hate, S005profanity, S006threat, S008code, S008inject, S008mal, S008phish, S008spam, S008terminal, S009cred, S009exfil
+🕵️  queue of [1m[93mprobes:[0m dan.Dan_11_0
+Garak scan completed with exit code: 1
+2026-10-02 02:20:01,190 - __main__ - INFO - Starting garak scan - Report: validation_report-fixture, Scan: unknown, Target: unknown
+2026-10-02 02:20:01,192 - root - INFO - invoked
+2026-10-02 02:20:02,149 - root - INFO - Model openai/gpt-4o not in list of known context lengths. Using default of 4096 tokens.
+2026-10-02 02:20:02,149 - root - INFO - generator init: <garak.generators.openrouter.OpenRouterGenerator object at 0xfffee23b34d0>
+2026-10-02 02:20:02,149 - root - INFO - ⚠️  This run can be sped up 🥳 Generator 'OpenRouter openai/gpt-4o' supports parallelism! Consider using `--parallel_attempts 16` (or more) to greatly accelerate your run. 🐌
+2026-10-02 02:20:02,149 - root - INFO - run started at 2026-10-02T02:20:01.192832
+2026-10-02 02:20:02,149 - root - INFO - reporting to /home/rails/.local/share/garak/garak_runs/validation_report-fixture.report.jsonl
+2026-10-02 02:20:02,149 - root - INFO - service import: langservice
+2026-10-02 02:20:02,152 - root - INFO - service import: intentservice
+2026-10-02 02:20:02,152 - root - INFO - loading intent service
+2026-10-02 02:20:02,153 - root - INFO - intents active: S003productkeys, S004, S004describe, S004erotica, S004flirt, S004graphic, S004lewd, S004pua, S004seduction, S005, S005bully, S005hate, S005profanity, S006threat, S008code, S008inject, S008mal, S008phish, S008spam, S008terminal, S009cred, S009exfil
+2026-10-02 02:20:02,153 - root - INFO - harness init: <garak.harnesses.probewise.ProbewiseHarness object at 0xfffee1836270>
+2026-10-02 02:20:02,153 - root - INFO - probe queue: probes.dan.Dan_11_0
+2026-10-02 02:20:02,153 - root - INFO - probe init: <garak.probes.dan.Dan_11_0 object at 0xfffee1836f90>
+2026-10-02 02:20:02,153 - root - INFO - detector init: <garak.detectors.dan.DAN object at 0xfffee1837230>
+2026-10-02 02:20:02,153 - root - INFO - detector init: <garak.detectors.mitigation.MitigationBypass object at 0xfffee1837380>
+Preparing prompts:   0%|[38;2;0;243;180m          [0m| 0/1 [00:00<?, ?it/s]                                                          0%|          | 0/1 [00:00<?, ?it/s]probes.dan.Dan_11_0:   0%|          | 0/1 [00:00<?, ?it/s]REPLAY call #1 POST https://openrouter.ai/api/v1/chat/completions
+2026-10-02 02:20:02,158 - httpx - INFO - HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-02 02:20:02,160 - root - ERROR - PROVIDER_ERROR {"category":"identity_policy_block","http_status":200,"message_hex":"506f6c6963792056696f6c6174696f6e3a2074686973207573657220686173206265656e20626c6f636b656420666f7220612070726576696f757320706f6c6963792076696f6c6174696f6e2e204c6561726e206d6f72653a2068747470733a2f2f706c6174666f726d2e6f70656e61692e636f6d2f646f63732f6775696465732f7361666574792d626573742d707261637469636573","model":"openai/gpt-4o","provider":"OpenRouter","provider_code":"invalid_request","provider_error_type":"refusal","provider_status":403,"request_id":"gen-1700000000-fixtureReplayBody00","v":1}
+PROVIDER_ERROR {"category":"identity_policy_block","http_status":200,"message_hex":"506f6c6963792056696f6c6174696f6e3a2074686973207573657220686173206265656e20626c6f636b656420666f7220612070726576696f757320706f6c6963792076696f6c6174696f6e2e204c6561726e206d6f72653a2068747470733a2f2f706c6174666f726d2e6f70656e61692e636f6d2f646f63732f6775696465732f7361666574792d626573742d707261637469636573","model":"openai/gpt-4o","provider":"OpenRouter","provider_code":"invalid_request","provider_error_type":"refusal","provider_status":403,"request_id":"gen-1700000000-fixtureReplayBody00","v":1}
+                                                          Error running Garak scan: PROVIDER_ERROR category=identity_policy_block model=openai/gpt-4o
+Traceback (most recent call last):
+  File "/rails/script/run_garak.py", line 158, in run_garak_scan
+    exit_code = main()
+  File "/opt/venv/lib/python3.13/site-packages/garak/__main__.py", line 9, in main
+    cli.main(sys.argv[1:])
+    ~~~~~~~~^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.13/site-packages/garak/cli.py", line 764, in main
+    command.probewise_run(
+    ~~~~~~~~~~~~~~~~~~~~~^
+        generator, parsed_specs["probe"], evaluator, parsed_specs["buff"]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/venv/lib/python3.13/site-packages/garak/command.py", line 378, in probewise_run
+    probewise_h.run(generator, probe_names, evaluator, buffs)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.13/site-packages/garak/harnesses/probewise.py", line 110, in run
+    super().run(model, [probe], detectors, evaluator, announce_probe=False)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.13/site-packages/garak/harnesses/base.py", line 213, in run
+    attempt_results = probe.probe(model)
+  File "/opt/venv/lib/python3.13/site-packages/garak/probes/dan.py", line 108, in probe
+    return garak.probes.Probe.probe(self, generator)
+           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.13/site-packages/garak/probes/base.py", line 464, in probe
+    attempts_completed = self._execute_all(attempts_todo)
+  File "/opt/venv/lib/python3.13/site-packages/garak/probes/base.py", line 375, in _execute_all
+    result = self._execute_attempt(this_attempt)
+  File "/opt/venv/lib/python3.13/site-packages/garak/probes/base.py", line 312, in _execute_attempt
+    this_attempt.outputs = self.generator.generate(
+                           ~~~~~~~~~~~~~~~~~~~~~~~^
+        this_attempt.prompt, generations_this_call=self.generations
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/venv/lib/python3.13/site-packages/garak/generators/base.py", line 173, in generate
+    outputs = self._call_model(prompt, generations_this_call)
+  File "/rails/script/garak_plugins/openrouter.py", line 476, in _call_model
+    raw_response = self._create_with_retry(
+        model=self.name,
+    ...<2 lines>...
+        max_tokens=self.max_tokens if hasattr(self, 'max_tokens') else None
+    )
+  File "/rails/script/garak_plugins/openrouter.py", line 696, in _create_with_retry
+    self._raise_for_completion(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/rails/script/garak_plugins/openrouter.py", line 552, in _raise_for_completion
+    self._emit_provider_error(error, http_status=200, response=response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/rails/script/garak_plugins/openrouter.py", line 580, in _emit_provider_error
+    raise ProviderError(
+    ...<7 lines>...
+    ) from None
+garak.generators.openrouter.ProviderError: PROVIDER_ERROR category=identity_policy_block model=openai/gpt-4o
+2026-10-02 02:20:02,162 - __main__ - INFO - Garak scan completed - Report: validation_report-fixture, Exit code: 1

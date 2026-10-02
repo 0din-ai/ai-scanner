@@ -21,7 +21,7 @@ class ValidateTargetJob < ApplicationJob
     begin
       target = ActsAsTenant.without_tenant { Target.find(target_id) }
       ActsAsTenant.with_tenant(target.company) do
-        target.update(status: :bad, validation_text: "Validation job failed: #{e.message}")
+        target.update(status: :bad, validation_text: "Validation job failed: #{e.message}", validation_failure_code: nil)
       end
     rescue ActiveRecord::RecordNotFound
       # Target was deleted, ignore

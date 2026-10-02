@@ -182,8 +182,12 @@ class Report < ApplicationRecord
   # without finishing. What went missing there may be a completion row or usable
   # timing rather than a probe result, so a full probe count cannot overturn it.
   # legacy_stale_processing is no longer written, but historical rows carry it.
+  # provider_policy_block and provider_error come from the generator's terminal
+  # ProviderError, which aborts the run at the first refused call.
   INCOMPLETE_ASSERTING_FAILURE_CODES = %w[
     scan_incomplete_results
+    provider_policy_block
+    provider_error
     legacy_stale_processing
   ].freeze
 
@@ -375,6 +379,13 @@ class Report < ApplicationRecord
     return failure_message if failure_message.present?
 
     case failure_code
+    when "provider_policy_block"
+      "The upstream provider refused the configured model because it blocked this account for a previous " \
+        "policy violation. Other models on the same key may still work. Contact the provider before " \
+        "revalidating the target or rerunning the scan."
+    when "provider_error"
+      "The provider returned an error instead of a completion. Review the target configuration, " \
+        "revalidate the target, then rerun the scan."
     when "provider_model_unavailable"
       "The provider rejected the configured model as unavailable. Update the target model, " \
         "revalidate the target, then rerun the scan."
@@ -403,6 +414,10 @@ class Report < ApplicationRecord
 
   def failure_title
     case failure_code
+    when "provider_policy_block"
+      "Provider policy block"
+    when "provider_error"
+      "Provider error"
     when "provider_model_unavailable"
       "Provider model unavailable"
     when "provider_payment_required"
@@ -426,6 +441,10 @@ class Report < ApplicationRecord
 
   def failure_action
     case failure_code
+    when "provider_policy_block"
+      "Contact the provider about this account and model, then revalidate the target and rerun the scan."
+    when "provider_error"
+      "Review the target configuration, revalidate the target, then rerun the scan."
     when "provider_model_unavailable"
       "Update the target model, revalidate the target, then rerun the scan."
     when "provider_payment_required"

@@ -112,7 +112,8 @@ class TestLocalPluginSources(unittest.TestCase):
         self.assertIn("def _load_unsafe", source)
         self.assertIn("OPENROUTER_BASE_URL", source)
         self.assertIn("def _call_model_sequential", source)
-        self.assertIn("terminal API status error", source)
+        self.assertIn("class ProviderError", source)
+        self.assertIn("PROVIDER_ERROR ", source)
 
     def test_probe_sources_never_reassign_an_attempt_prompt(self):
         # garak >= 0.15: Attempt.prompt is write-once. A reassignment anywhere in the
@@ -161,9 +162,11 @@ class TestOpenRouterTerminalErrors(unittest.TestCase):
         request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
         return httpx.Response(status_code, request=request, json={"error": {"message": "provider rejected"}})
 
-    def test_openrouter_converts_terminal_api_status_to_bad_generator(self):
+    def test_openrouter_converts_terminal_api_status_to_provider_error(self):
+        import contextlib
+        import io
         import openai
-        from garak.exception import BadGeneratorException
+        from garak.exception import GarakException
 
         body = {
             "error": "invalid request",
@@ -175,30 +178,44 @@ class TestOpenRouterTerminalErrors(unittest.TestCase):
         def create(**_kwargs):
             raise openai.BadRequestError("request rejected", response=self._response(422), body=body)
 
-        _module, generator = self._generator_with_create(create)
+        module, generator = self._generator_with_create(create)
+        stderr = io.StringIO()
 
-        with self.assertRaises(BadGeneratorException) as ctx:
-            generator._call_model("prompt", generations_this_call=1)
+        with self.assertLogs(level="ERROR"):
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(module.ProviderError) as ctx:
+                    generator._call_model("prompt", generations_this_call=1)
 
         message = str(ctx.exception)
-        self.assertIn("OpenRouter terminal API status error", message)
-        self.assertIn("status_code=422", message)
-        self.assertIn("model='openai/gpt-4o'", message)
-        self.assertNotIn("sk-or-v1-secretvalue", message)
-        self.assertNotIn("plainsecret", message)
-        self.assertNotIn("topsecret", message)
-        self.assertIn("[REDACTED]", message)
+        self.assertEqual(message, "PROVIDER_ERROR category=rejected_request model=openai/gpt-4o")
+        self.assertNotIsInstance(ctx.exception, GarakException)
+        self.assertEqual(ctx.exception.http_status, 422)
+        combined = message + stderr.getvalue()
+        self.assertNotIn("sk-or-v1-secretvalue", combined)
+        self.assertNotIn("plainsecret", combined)
+        self.assertNotIn("topsecret", combined)
+        self.assertIn("PROVIDER_ERROR {", stderr.getvalue())
 
-    def test_openrouter_retryable_rate_limit_propagates(self):
+    def test_openrouter_retryable_rate_limit_becomes_retry_exhausted(self):
         import openai
+        from garak.exception import GarakException
+
+        calls = []
 
         def create(**_kwargs):
+            calls.append(1)
             raise openai.RateLimitError("rate limited", response=self._response(429), body={})
 
-        _module, generator = self._generator_with_create(create)
+        module, generator = self._generator_with_create(create)
+        generator._sleep = lambda _seconds: None
 
-        with self.assertRaises(openai.RateLimitError):
+        with self.assertRaises(module.ProviderRetryExhausted) as ctx:
             generator._call_model("prompt", generations_this_call=1)
+
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(ctx.exception.category, "rate_limited")
+        self.assertNotIsInstance(ctx.exception, GarakException)
+        self.assertFalse(getattr(ctx.exception, "terminal_provider_error", False))
 
     def test_openrouter_all_empty_generations_raise_bad_generator(self):
         from garak.exception import BadGeneratorException

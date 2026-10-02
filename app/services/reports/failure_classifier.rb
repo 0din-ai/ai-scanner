@@ -73,6 +73,17 @@ module Reports
     def call
       return EMPTY_RESULT if evidence_text.blank? && exit_code.blank?
 
+      structured_result = classify_structured_provider_error
+      return structured_result if structured_result.failed?
+
+      # A retried rate limit / upstream outage names the failure only when it is what
+      # ended the run (nothing else failed after it). When it is, it outranks the prose
+      # and HTTP-status heuristics below, which would report the FIRST status a retry
+      # loop saw rather than the one it gave up on. Reports::Process ignores every
+      # classification on a run that completed cleanly.
+      transient_result = classify_transient_provider_error
+      return transient_result if transient_result.failed?
+
       provider_result = classify_provider_failure
       return provider_result if provider_result.failed?
 
@@ -88,6 +99,27 @@ module Reports
     private
 
     attr_reader :report, :logs, :exit_code, :exception_message
+
+    # The generator's own classification wins over every prose heuristic below,
+    # which stay as the fallback for logs written before the PROVIDER_ERROR record.
+    def classify_structured_provider_error
+      structured_result(ProviderErrorRecord.last_in(evidence_text, terminal_only: true))
+    end
+
+    def classify_transient_provider_error
+      record = ProviderErrorRecord.last_in(evidence_text)
+      return EMPTY_RESULT if record.nil? || record.terminal? || !record.explains_failure?
+
+      structured_result(record)
+    end
+
+    def structured_result(record)
+      return EMPTY_RESULT unless record
+
+      details = record.details
+      details["exit_code"] = effective_exit_code if effective_exit_code
+      Result.new(code: record.failure_code, message: record.user_message, details: details)
+    end
 
     def classify_provider_failure
       return EMPTY_RESULT unless provider_error_evidence?

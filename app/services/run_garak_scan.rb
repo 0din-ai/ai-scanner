@@ -369,12 +369,18 @@ class RunGarakScan
       Rails.logger.error("Cannot run scan for report #{report.id} - target #{target.id} (#{target.name}) has unexpected status: #{target.status}")
     end
 
+    # Validation already identified a provider failure (a policy block, bad
+    # credentials...): carry that code so the report says why, instead of the
+    # generic validation failure. Keyed on the stored code, never on the text.
+    provider_code = target.validation_failure_code if target.status == "bad"
+    provider_code = nil unless Reports::ProviderErrorRecord::CATEGORY_FAILURE_CODES.value?(provider_code)
+
     sanitized_error_message = Reports::FailureClassifier.sanitize_text(error_message)
     report.update(
       status: :failed,
       execution_token: nil,
       logs: "Scan failed: #{sanitized_error_message}",
-      failure_code: "target_validation_failed",
+      failure_code: provider_code || "target_validation_failed",
       failure_message: sanitized_error_message,
       failure_details: {}
     )
