@@ -18,6 +18,14 @@ class Report < ApplicationRecord
   validates :scan, presence: true
 
   before_create :snapshot_evaluation_threshold
+  # After the threshold snapshot: the judge's band is centred on it.
+  before_create :snapshot_judge_config
+
+  # True when this report was created with the LLM judge on. The snapshot, never the
+  # live settings, decides: a retry is judged the way its first segment was.
+  def judge_enabled?
+    judge_config.is_a?(Hash) && judge_config["enabled"] == true
+  end
 
   # The threshold this report is pinned to, resolving and persisting it if it is still
   # NULL. Returns the value that WON, which is not necessarily the one this caller
@@ -710,6 +718,19 @@ class Report < ApplicationRecord
     ActsAsTenant.with_tenant(tenant) do
       self.evaluation_threshold = EnvironmentVariable.evaluation_threshold_for(target)
     end
+  end
+
+  # Pinned once at creation, like the threshold. A variant child copies its parent's
+  # snapshot -- including "off" -- so the two halves of one assessment are never judged
+  # under different settings.
+  def snapshot_judge_config
+    if parent_report_id.present?
+      self.judge_config = (parent_report&.judge_config || {}).deep_dup
+      return
+    end
+    return if judge_config.present?
+
+    self.judge_config = Reports::JudgeConfigSnapshot.build(evaluation_threshold)
   end
 
   def generate_uuid

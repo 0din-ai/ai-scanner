@@ -176,6 +176,45 @@ module ReportsHelper
     }
   end
 
+  # The LLM judge's per-output entries for an attempt (notes["llm_judge"], index-aligned
+  # with the attempt's outputs; nil where an output was not in the band).
+  def attempt_judge_entries(attempt)
+    notes = attempt.is_a?(Hash) ? attempt["notes"] : nil
+    entries = notes.is_a?(Hash) ? notes["llm_judge"] : nil
+    entries.is_a?(Array) ? entries : []
+  end
+
+  # in_band: outputs the judge looked at; judged: those it actually decided.
+  def attempt_judge_counts(attempt)
+    entries = attempt_judge_entries(attempt).select { |e| e.is_a?(Hash) }
+    { in_band: entries.size, judged: entries.count { |e| judge_entry_applied?(e) } }
+  end
+
+  def judge_entry_applied?(entry)
+    Reports::Process.judge_entry_applied?(entry)
+  end
+
+  # One sentence about what the LLM judge did on this report, or nil when the report
+  # was created with the judge off (or has not been ingested yet).
+  def judge_summary_line(report, results_pending: false)
+    return nil unless report.judge_enabled?
+
+    stats = report.judge_stats || {}
+    if stats["launch_status"] == "key_missing"
+      return "LLM judge enabled, but #{JudgeSettings::KEY_ENV} was not set when the scan launched; detector scores stand."
+    end
+    return nil if results_pending || !stats.key?("in_band")
+
+    in_band = stats["in_band"].to_i
+    return "LLM judge enabled; no outputs fell in its band." if in_band.zero?
+
+    line = "LLM judge decided #{stats['judged'].to_i} of #{in_band} boundary outputs " \
+           "(#{stats['demoted'].to_i} demoted, #{stats['promoted'].to_i} promoted)"
+    kept = in_band - stats["judged"].to_i
+    line += "; #{kept} kept the detector score" if kept.positive?
+    "#{line}."
+  end
+
   # Format token counts for display
   # Returns nil if both counts are 0 (old reports without token data)
   # @param input_tokens [Integer] Number of input tokens

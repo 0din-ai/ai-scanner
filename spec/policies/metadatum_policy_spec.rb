@@ -36,6 +36,42 @@ RSpec.describe MetadatumPolicy do
     end
   end
 
+  describe 'judge_* keys' do
+    let(:super_admin) { create(:user, current_company: company, super_admin: true) }
+    let(:judge_row) { create(:metadatum, key: 'judge_enabled', value: 'true') }
+
+    it 'refuses create, update and destroy even to a super admin' do
+      policy = described_class.new(super_admin, judge_row)
+      expect(policy.create?).to be(false)
+      expect(policy.update?).to be(false)
+      expect(policy.destroy?).to be(false)
+    end
+
+    it 'refuses a rename of an ordinary row into the judge namespace' do
+      metadatum.key = 'judge_model_name'
+      expect(described_class.new(super_admin, metadatum).update?).to be(false)
+    end
+
+    it 'refuses a rename of a judge row out of the judge namespace' do
+      judge_row.key = 'harmless'
+      expect(described_class.new(super_admin, judge_row).update?).to be(false)
+    end
+
+    it 'shows judge rows only to a super admin' do
+      expect(described_class.new(super_admin, judge_row).show?).to be(true)
+      expect(described_class.new(user, judge_row).show?).to be(false)
+    end
+
+    it 'scopes judge rows out for a member but not for a super admin' do
+      judge_row
+      lookalike = create(:metadatum, key: 'judgeXnot_protected')
+
+      expect(described_class::Scope.new(user, Metadatum).resolve).not_to include(judge_row)
+      expect(described_class::Scope.new(user, Metadatum).resolve).to include(lookalike)
+      expect(described_class::Scope.new(super_admin, Metadatum).resolve).to include(judge_row)
+    end
+  end
+
   describe 'Scope' do
     # Metadatum doesn't have acts_as_tenant - it's a global resource
     let!(:meta1) { create(:metadatum) }

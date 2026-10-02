@@ -64,6 +64,16 @@
           <p class="text-xs text-contentSecondary mt-2">Based on tiktoken (GPT-4 tokenization)</p>
         </div>
       <% end %>
+
+      <% judge_line = judge_summary_line(report, results_pending: in_flight) %>
+      <% if judge_line %>
+        <div class="mt-4 pt-3 border-t border-zinc-700" data-judge-summary>
+          <h3 class="text-xs font-sans font-medium text-contentTertiary uppercase tracking-wide mb-2">
+            LLM Judge
+          </h3>
+          <p class="text-xs text-contentSecondary" title="Model: <%= report.judge_config["model"] %>"><%= judge_line %></p>
+        </div>
+      <% end %>
     </div>
 
     <%# Middle Column - ASR History Chart %>

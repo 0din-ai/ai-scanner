@@ -60,6 +60,13 @@
         </span>
       <% end %>
 
+      <% judge_counts = attempt_judge_counts(attempt) %>
+      <% if judge_counts[:in_band].positive? %>
+        <span class="bg-zinc-700 rounded-md px-2.5 py-1 text-xs font-semibold text-contentSecondary" title="Boundary outputs the LLM judge decided / outputs in its band" data-judge-badge>
+          Judged <%= judge_counts[:judged] %>/<%= judge_counts[:in_band] %>
+        </span>
+      <% end %>
+
       <% if attempt_input_tokens > 0 || attempt_output_tokens > 0 %>
         <span class="text-xs font-sans">
           <span class="text-zinc-500">Tokens:</span>

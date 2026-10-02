@@ -50,6 +50,7 @@ module Reports
         persist_final_logs
         apply_failure_metadata
         save_detector_results
+        persist_judge_stats
         update_target_token_rate
 
         @raw_data.destroy!
@@ -480,6 +481,89 @@ module Reports
       end
 
       true
+    end
+
+    JUDGE_COUNTERS = %w[in_band judged cache_hits errors skipped_budget skipped_circuit
+                        skipped_truncated skipped_unusable skipped_config_error demoted promoted].freeze
+
+    # The plugin's judge_skipped vocabulary onto its counter. An unknown reason counts
+    # toward in_band only.
+    JUDGE_SKIP_COUNTERS = {
+      "config_error" => "skipped_config_error",
+      "circuit_open" => "skipped_circuit",
+      "budget" => "skipped_budget",
+      "truncated" => "skipped_truncated",
+      "unusable" => "skipped_unusable"
+    }.freeze
+
+    # "The judge decided this output": a label with no error and no skip reason.
+    def self.judge_entry_applied?(entry)
+      entry.is_a?(Hash) && entry["label"].present? && entry["judge_error"].blank? && entry["judge_skipped"].blank?
+    end
+
+    # Aggregates the per-output judge notes (attempt.notes["llm_judge"], index-aligned
+    # with attempt.outputs) into reports.judge_stats. Read-only over the results: the
+    # judge already acted inside garak, so probe_results, detector_results and the eval
+    # rows are exactly what garak reported, and nothing here may move them.
+    #
+    # Recomputed from the attempts that were actually KEPT on this report's probe
+    # results, after every eval row has been applied, rather than accumulated while
+    # streaming: a resumed report keeps earlier passes' attempts, and an accumulator
+    # would count evidence this pass threw away. De-duplicated the way the evidence
+    # drawer de-duplicates (garak writes each evaluated item twice).
+    def persist_judge_stats
+      totals = JUDGE_COUNTERS.to_h { |k| [ k, 0 ] }
+      seen = false
+
+      report.probe_results.find_each(batch_size: 25) do |probe_result|
+        probe_result.displayed_attempts.each do |attempt|
+          notes = attempt["notes"]
+          entries = notes.is_a?(Hash) ? notes["llm_judge"] : nil
+          next unless entries.is_a?(Array)
+
+          entries.each do |entry|
+            next unless entry.is_a?(Hash)
+
+            seen = true
+            fold_judge_entry(totals, entry)
+          end
+        end
+      end
+
+      existing = report.judge_stats || {}
+      # A report run with the judge on records its counters even when no output fell
+      # in the band (all zero), so it never looks unjudged. A report run with the judge
+      # off keeps its stats as they are (launch status only, or nothing); one whose
+      # judged attempts were all replaced is recomputed to zero, so stale counts cannot
+      # outlive the evidence that produced them.
+      judged_run = report.judge_config.is_a?(Hash) && report.judge_config["enabled"] == true
+      return unless seen || judged_run || JUDGE_COUNTERS.any? { |k| existing.key?(k) }
+
+      report.judge_stats = existing.merge(totals)
+    end
+
+    def fold_judge_entry(totals, entry)
+      totals["model"] ||= entry["model"] if entry["model"].is_a?(String)
+      totals["prompt_version"] ||= entry["prompt_version"] if entry["prompt_version"].is_a?(String)
+      totals["in_band"] += 1
+      # A cache hit is a saved provider call whatever the cached verdict was.
+      totals["cache_hits"] += 1 if entry["cache"] == "hit"
+      if entry["judge_skipped"].present?
+        key = JUDGE_SKIP_COUNTERS[entry["judge_skipped"]]
+        totals[key] += 1 if key
+        return
+      end
+      if entry["judge_error"].present?
+        totals["errors"] += 1
+        return
+      end
+      return unless self.class.judge_entry_applied?(entry)
+
+      totals["judged"] += 1
+      before = entry["surface_score"].to_f >= eval_threshold
+      after = entry["final_score"].to_f >= eval_threshold
+      totals["demoted"] += 1 if before && !after
+      totals["promoted"] += 1 if !before && after
     end
 
     # Resolves a probe classname to a probe_id and optional variant.

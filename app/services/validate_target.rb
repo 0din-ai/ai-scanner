@@ -69,6 +69,10 @@ class ValidateTarget
   def build_env
     env = GarakSubprocessEnv.inherited.merge(merged_env_vars_hash)
     env["HOME"] = "/home/rails"
+    # A validation run is never judged. Blanked after the tenant merge so neither a
+    # tenant row nor the inherited deployment environment can turn the judge on here.
+    env["JUDGE_CONFIG"] = ""
+    env[JudgeSettings::KEY_ENV] = ""
     env
   end
 
