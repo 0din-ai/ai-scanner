@@ -32,11 +32,11 @@ RSpec.describe "Settings: LLM judge", type: :request do
     expect(response.body).to include('value="openai/gpt-4.1-mini"')
   end
 
-  it "rejects an invalid unit with the failing key and writes none of the request's settings" do
+  it "rejects an invalid unit naming the failing field and writes none of the request's settings" do
     patch settings_path, params: judge_params.merge(judge_model_name: "", parallel_scans_limit: "7")
 
     expect(response).to redirect_to(settings_path)
-    expect(flash[:alert]).to include("judge_model_name")
+    expect(flash[:alert]).to include("Model is required")
     expect(JudgeSettings.stored["judge_enabled"]).to eq("false")
     expect(SettingsService.parallel_scans_limit).not_to eq(7)
   end

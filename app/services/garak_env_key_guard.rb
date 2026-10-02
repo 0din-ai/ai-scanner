@@ -14,6 +14,8 @@
 class GarakEnvKeyGuard
   # key_env_var, client_key_passphrase_env_var, model_name_env_var, endpoint_env_var,
   # ENV_VAR...: garak getenv's every one of these across its generators.
+  FAILURE_CODE = "target_config_rejected"
+
   ENV_KEY_PARAMS = /(?:\A|_)env_var\z/i
 
   # Names RunGarakScan#build_env / ValidateTarget#build_env assign from deployment

@@ -72,10 +72,29 @@ _COOKIE_PATTERN = (
     ),
     r"\1[REDACTED]",
 )
+# Skip only an already-written marker. Brackets stay in the value so
+# password=[hunter2] is still fully redacted; excluding "]" would stop inside
+# the marker and leave a stray "]".
+# A complete marker, then end or a delimiter. A prefix check would keep
+# password="[REDACTED]hunter2" and token=[REDACTED]abc123.
+_NOT_MARKER = r"(?!\[REDACTED\](?:$|[\s\"',}&;]))"
+# Scheme words are kept only for an authorization header ("Authorization: Basic
+# <cred>"). "\s", not "\b": password=basic-secret is a secret, not a scheme.
+_NOT_AUTH_SCHEME = r"(?!(?:bearer|basic|digest|ntlm|negotiate)\s)"
+_SECRET_VALUE = _NOT_MARKER + r"[^\"'\s,}]+"
 SECRET_VALUE_PATTERNS = (
     _BEARER_PATTERN,
     _AUTH_SCHEME_PATTERN,
-    (re.compile(r"((?:api[_-]?key|token|secret|password|authorization)[\"']?\s*[:=]\s*)[\"']?[^\"'\s,}]+", re.I), r"\1[REDACTED]"),
+    (re.compile(
+        r"((?:api[_-]?key|token|secret|password)[\"']?\s*[:=]\s*)[\"']?"
+        + _SECRET_VALUE,
+        re.I,
+    ), r"\1[REDACTED]"),
+    (re.compile(
+        r"((?:proxy-authorization|www-authenticate|authorization)[\"']?\s*[:=]\s*)[\"']?"
+        + _NOT_MARKER + _NOT_AUTH_SCHEME + r"[^\"'\s,}]+",
+        re.I,
+    ), r"\1[REDACTED]"),
     (re.compile(r"\bsk-(?:or-v1-)?[A-Za-z0-9_-]{8,}\b", re.I), "[REDACTED]"),
 )
 # Rails redacts these in RunCommand and FailureClassifier. message_hex is
@@ -88,12 +107,15 @@ _OUTPUT_REDACTION_PATTERNS = (
         r"((?:api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|"
         r"credential|bearer|authorization|cookie|set[_-]?cookie|database[_-]?url|"
         r"redis[_-]?url|secret[_-]?key[_-]?base)[\"']?\s*[=:]\s*[\"']?"
-        r"(?:(?:bearer|basic|splunk|negotiate|digest|token|bot)\s+)?)"
-        r"[^\s\"',}\]&;]+",
+        r"(?:(?>(?:bearer|basic|splunk|negotiate|digest|token|bot)\s+)"
+        r"|(?!(?:bearer|basic|digest|ntlm|negotiate)\s)))"
+        + _NOT_MARKER
+        + r"[^\s\"',}&;]+",
         re.I,
     ), r"\1[REDACTED]"),
     (re.compile(
-        r"(x-[\w-]*(?:key|token|auth|secret|cookie)[\w-]*\s*[=:]\s*)[\"']?[^\"'\s,}]+",
+        r"(x-[\w-]*(?:key|token|auth|secret|cookie)[\w-]*\s*[=:]\s*)[\"']?"
+        + _SECRET_VALUE,
         re.I,
     ), r"\1[REDACTED]"),
     _COOKIE_PATTERN,

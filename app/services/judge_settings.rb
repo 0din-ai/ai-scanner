@@ -105,8 +105,17 @@ module JudgeSettings
 
     private
 
+    # Errors name the field as the Settings page labels it, not by its storage key.
+    LABELS = {
+      "judge_enabled" => "Enable LLM judge", "judge_provider" => "Provider", "judge_model_name" => "Model",
+      "judge_band_below" => "Band below threshold", "judge_band_above" => "Band above threshold",
+      "judge_max_calls_per_scan" => "Max judge calls per scan",
+      "judge_max_provider_errors" => "Provider errors before stopping",
+      "judge_timeout_seconds" => "Timeout (seconds)", "judge_concurrency" => "Concurrent judge calls"
+    }.freeze
+
     def fail_on(key, message)
-      raise ValidationError, "#{key} #{message}"
+      raise ValidationError, "#{LABELS.fetch(key, key.to_s.humanize)} #{message}"
     end
   end
 end

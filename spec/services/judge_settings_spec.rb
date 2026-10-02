@@ -26,36 +26,36 @@ RSpec.describe JudgeSettings do
 
     it "rejects enabling without a model" do
       expect { described_class.validate!(enabled.merge("judge_model_name" => " ")) }
-        .to raise_error(JudgeSettings::ValidationError, /judge_model_name is required/)
+        .to raise_error(JudgeSettings::ValidationError, /\AModel is required/)
     end
 
     it "accepts only the fixed providers" do
       %w[openai_compatible custom http://evil].each do |provider|
         expect { described_class.validate!(enabled.merge("judge_provider" => provider)) }
-          .to raise_error(JudgeSettings::ValidationError, /judge_provider/)
+          .to raise_error(JudgeSettings::ValidationError, /\AProvider /)
       end
     end
 
     it "rejects a boolean token it does not recognise rather than enabling the judge" do
       expect { described_class.validate!(enabled.merge("judge_enabled" => "yes please")) }
-        .to raise_error(JudgeSettings::ValidationError, /judge_enabled/)
+        .to raise_error(JudgeSettings::ValidationError, /\AEnable LLM judge /)
     end
 
     it "rejects a band width outside 0..1" do
       expect { described_class.validate!(enabled.merge("judge_band_below" => "1.5")) }
-        .to raise_error(JudgeSettings::ValidationError, /judge_band_below/)
+        .to raise_error(JudgeSettings::ValidationError, /\ABand below threshold /)
     end
 
     it "rejects integers outside the plugin's ranges" do
       expect { described_class.validate!(enabled.merge("judge_timeout_seconds" => "500")) }
-        .to raise_error(JudgeSettings::ValidationError, /judge_timeout_seconds/)
+        .to raise_error(JudgeSettings::ValidationError, /\ATimeout \(seconds\) /)
       expect { described_class.validate!(enabled.merge("judge_concurrency" => "2.5")) }
-        .to raise_error(JudgeSettings::ValidationError, /judge_concurrency/)
+        .to raise_error(JudgeSettings::ValidationError, /\AConcurrent judge calls /)
     end
 
     it "requires the error circuit to open before the call budget runs out" do
       expect { described_class.validate!(enabled.merge("judge_max_calls_per_scan" => "10", "judge_max_provider_errors" => "10")) }
-        .to raise_error(JudgeSettings::ValidationError, /judge_max_provider_errors/)
+        .to raise_error(JudgeSettings::ValidationError, /\AProvider errors before stopping /)
       expect(described_class.validate!(enabled.merge("judge_max_calls_per_scan" => "1", "judge_max_provider_errors" => "1")))
         .to include("judge_max_calls_per_scan" => 1)
     end

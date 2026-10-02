@@ -301,6 +301,21 @@ RSpec.describe RunGarakScan, type: :service do
       expect(blocked_report.failure_title).to eq("Provider policy block")
     end
 
+    it 'reports a config rejected at validation as target_config_rejected' do
+      rejected = create(:target, :bad, validation_failure_code: "target_config_rejected",
+        validation_text: "Target configuration references environment variable SECRET_KEY_BASE…")
+      rejected_report = build(:report, target: rejected, scan: scan)
+      rejected_report.save(validate: false)
+      service = described_class.new(rejected_report)
+      allow(service).to receive(:call).and_call_original
+      allow(Rails.logger).to receive(:error)
+
+      service.call
+
+      expect(rejected_report.reload.failure_code).to eq("target_config_rejected")
+      expect(rejected_report.failure_title).to eq("Target configuration rejected")
+    end
+
     it 'ignores a stored validation code that is not a provider failure code' do
       odd_target = create(:target, :bad, validation_failure_code: "made_up")
       odd_report = build(:report, target: odd_target, scan: scan)

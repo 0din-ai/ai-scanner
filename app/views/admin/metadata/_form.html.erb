@@ -1,4 +1,4 @@
-<%= form_for [:admin, metadatum], html: { class: "formtastic metadatum" } do |f| %>
+<%= form_for metadatum, html: { class: "formtastic metadatum" } do |f| %>
   <% if metadatum.errors.any? %>
     <div class="flash flash_error">
       <ul>
