@@ -74,7 +74,7 @@ RSpec.describe ValidateTarget, type: :service do
 
     context 'with API target' do
       it 'uses RunCommand for API targets' do
-        expect(RunCommand).to receive(:new).with(kind_of(Array), env: kind_of(Hash)).and_return(mock_run_command)
+        expect(RunCommand).to receive(:new).with(kind_of(Array), env: kind_of(Hash), isolated_env: true).and_return(mock_run_command)
         expect(mock_run_command).to receive(:call).with(log_file: kind_of(String))
 
         service.call
@@ -96,7 +96,7 @@ RSpec.describe ValidateTarget, type: :service do
     end
 
     it 'creates and calls RunCommand with argv array and env hash' do
-      expect(RunCommand).to receive(:new).with(kind_of(Array), env: kind_of(Hash)).and_return(mock_run_command)
+      expect(RunCommand).to receive(:new).with(kind_of(Array), env: kind_of(Hash), isolated_env: true).and_return(mock_run_command)
       expect(mock_run_command).to receive(:call).with(log_file: kind_of(String))
 
       service.call
@@ -113,6 +113,23 @@ RSpec.describe ValidateTarget, type: :service do
       expect(logger).to receive(:info).with("validation.invoking")
 
       service.call
+    end
+
+    context 'when the config names an env var the tenant does not own' do
+      let(:target) do
+        create(:target, model_type: 'RestGenerator', model: 'RestGenerator',
+          json_config: { "rest" => { "RestGenerator" => { "key_env_var" => "SECRET_KEY_BASE" } } }.to_json)
+      end
+
+      it 'fails validation without starting garak' do
+        allow(logger).to receive(:warn)
+        expect(RunCommand).not_to receive(:new)
+
+        service.call
+
+        expect(target.reload.status).to eq('bad')
+        expect(target.validation_text).to include('SECRET_KEY_BASE')
+      end
     end
 
     context 'when an error occurs during execution' do

@@ -49,6 +49,14 @@ class RunGarakScan
       return
     end
 
+    # A config naming an env var garak should read its key from must name one of the
+    # tenant's own variables; otherwise garak would send a deployment secret to the
+    # target's URI. See GarakEnvKeyGuard.
+    if (violations = env_key_violations).any?
+      handle_rejected_env_keys(violations)
+      return
+    end
+
     if MonitoringService.active?
       MonitoringService.transaction("run_garak_scan", "background") do
         MonitoringService.set_label(:report_uuid, report.uuid)
@@ -255,7 +263,7 @@ class RunGarakScan
       # on_spawn fires once a child actually exists. popen3 can raise before that -- a
       # missing interpreter, EAGAIN from process creation -- and those failures leave
       # nothing running, so the attempt and its credential file must be released.
-      RunCommand.new(argv, env: env).call_async(
+      RunCommand.new(argv, env: env, isolated_env: true).call_async(
         log_file: log_path,
         on_spawn: -> { @scan_process_may_be_running = true }
       )
@@ -288,7 +296,7 @@ class RunGarakScan
   def build_env
     with_report_tenant do
       merged = merged_env_vars
-      env = merged.dup
+      env = GarakSubprocessEnv.inherited.merge(merged)
 
       env["HOME"] = "/home/rails"
       env["VARIANT_SCAN"] = "true" if report.is_variant_report?
@@ -335,6 +343,34 @@ class RunGarakScan
       Rails.logger.info(yellow + "argv: #{argv.inspect}" + reset)
       Rails.logger.info(separator)
     end
+  end
+
+  # Checks what garak will actually load: the $NAME-substituted json_config, or the
+  # web_config (not substituted) for a web chat target.
+  def env_key_violations
+    with_report_tenant do
+      payload = if target.webchat?
+        target.web_config
+      elsif target.json_config.present?
+        substitute_env_vars(target.json_config, merged_env_vars)
+      end
+      next [] if payload.blank?
+
+      GarakEnvKeyGuard.violations(payload, merged_env_vars)
+    end
+  end
+
+  def handle_rejected_env_keys(names)
+    message = GarakEnvKeyGuard.rejection_message(names)
+    Rails.logger.error("[RunGarakScan] aborting report #{report.id}: target #{target.id} config references disallowed env vars")
+    report.update(
+      status: :failed,
+      execution_token: nil,
+      logs: "Scan failed: #{message}",
+      failure_code: "target_config_rejected",
+      failure_message: message,
+      failure_details: { "target_id" => target.id }
+    )
   end
 
   def handle_unsafe_target_uri

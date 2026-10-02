@@ -23,8 +23,18 @@ class ValidateTarget
       if target.webchat?
         ValidateWebChatTarget.new(target).call
       else
+        if target.json_config.present? &&
+           (violations = GarakEnvKeyGuard.violations(substitute_env_vars(target.json_config, merged_env_vars_hash),
+                                                     merged_env_vars_hash)).any?
+          target.update(status: :bad, validation_text: GarakEnvKeyGuard.rejection_message(violations))
+          Logging.with(target_id: target.id, validation_uuid: validation_uuid) do
+            Rails.logger.warn("validation.env_key_rejected")
+          end
+          return
+        end
+
         Rails.logger.info("validation.invoking")
-        RunCommand.new(build_argv, env: build_env).call(log_file: validation_log_path)
+        RunCommand.new(build_argv, env: build_env, isolated_env: true).call(log_file: validation_log_path)
         result = process_validation_result
         dur_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round
         Logging.with(event: "validation.finished", target_id: target.id, validation_uuid: validation_uuid, decision: (target.good? ? "valid" : "invalid"), response_count: result[:response_count], evaluation: result[:evaluation_result], duration_ms: dur_ms) do
@@ -57,7 +67,7 @@ class ValidateTarget
   end
 
   def build_env
-    env = merged_env_vars_hash.dup
+    env = GarakSubprocessEnv.inherited.merge(merged_env_vars_hash)
     env["HOME"] = "/home/rails"
     env
   end
