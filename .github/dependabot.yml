@@ -4,9 +4,17 @@ updates:
   directory: "/"
   schedule:
     interval: daily
+  groups:
+    non-major-updates:
+      applies-to: version-updates
+      update-types: ["minor", "patch"]
   open-pull-requests-limit: 10
 - package-ecosystem: github-actions
   directory: "/"
   schedule:
     interval: daily
+  groups:
+    non-major-updates:
+      applies-to: version-updates
+      update-types: ["minor", "patch"]
   open-pull-requests-limit: 10
