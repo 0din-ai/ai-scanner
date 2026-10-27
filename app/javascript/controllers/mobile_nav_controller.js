@@ -14,7 +14,7 @@ import { Controller } from "@hotwired/stimulus"
  *   </body>
  */
 export default class extends Controller {
-  static targets = ["drawer", "backdrop"]
+  static targets = ["drawer", "backdrop", "toggleButton"]
   static values = { open: Boolean }
 
   connect() {
@@ -23,6 +23,7 @@ export default class extends Controller {
 
     document.addEventListener("keydown", this.handleKeydown)
     window.addEventListener("resize", this.handleResize)
+    this.syncAriaExpanded()
   }
 
   disconnect() {
@@ -37,6 +38,7 @@ export default class extends Controller {
 
   open() {
     this.openValue = true
+    this.syncAriaExpanded()
 
     // Show drawer
     this.drawerTarget.classList.remove("-translate-x-full")
@@ -60,6 +62,7 @@ export default class extends Controller {
 
   close() {
     this.openValue = false
+    this.syncAriaExpanded()
 
     // Hide drawer
     this.drawerTarget.classList.add("-translate-x-full")
@@ -71,6 +74,12 @@ export default class extends Controller {
 
     // Re-enable body scroll
     this.enableBodyScroll()
+  }
+
+  syncAriaExpanded() {
+    this.toggleButtonTargets.forEach(button => {
+      button.setAttribute("aria-expanded", String(this.openValue))
+    })
   }
 
   handleKeydown(event) {

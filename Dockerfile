@@ -221,6 +221,11 @@ RUN gosu rails sh -c 'HOME=/tmp /opt/venv/bin/garak --list_probes' \
 # fix bind-mount ownership before dropping to rails via gosu.
 # See bin/docker-entrypoint for the privilege-drop logic.
 
+# Keep release metadata after all RUN steps so version changes reuse dependency caches.
+ARG APP_VERSION=development
+ENV APP_VERSION=${APP_VERSION}
+LABEL org.opencontainers.image.version=${APP_VERSION}
+
 # Entrypoint prepares the database.
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 

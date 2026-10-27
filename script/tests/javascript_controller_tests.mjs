@@ -60,6 +60,27 @@ function loadActivityStreamController() {
   return { ControllerClass, context }
 }
 
+function loadMobileNavController() {
+  const transformed = loadControllerSource("mobile_nav_controller.js", "MobileNavController")
+  const documentListeners = new Map()
+  const windowListeners = new Map()
+  const context = {
+    Controller: class {},
+    document: {
+      body: { style: { overflow: "" } },
+      addEventListener(name, callback) { documentListeners.set(name, callback) },
+      removeEventListener(name) { documentListeners.delete(name) }
+    },
+    window: {
+      innerWidth: 1200,
+      addEventListener(name, callback) { windowListeners.set(name, callback) },
+      removeEventListener(name) { windowListeners.delete(name) }
+    }
+  }
+  const ControllerClass = vm.runInNewContext(`${transformed}\nMobileNavController`, context)
+  return { ControllerClass, context, documentListeners, windowListeners }
+}
+
 function loadDebugTabsController() {
   const transformed = loadControllerSource(
     "debug_tabs_controller.js",
@@ -425,6 +446,60 @@ function testActivityStreamController() {
   assert.equal(details.classList.contains("hidden"), true)
   assert.equal(button.getAttribute("aria-expanded"), "false")
   assert.equal(buttonLabel.textContent, "View activity")
+}
+
+function testMobileNavExpandedState() {
+  const { ControllerClass, context, documentListeners, windowListeners } = loadMobileNavController()
+  assert.equal(ControllerClass.targets.includes("toggleButton"), true)
+
+  const controller = new ControllerClass()
+  const button = fakeElement()
+  button.setAttribute("aria-expanded", "true")
+  controller.toggleButtonTargets = [button]
+  controller.drawerTarget = fakeElement("-translate-x-full")
+  controller.backdropTarget = fakeElement("hidden")
+  controller.openValue = false
+  controller.connect()
+  assert.equal(button.getAttribute("aria-expanded"), "false")
+
+  controller.toggle()
+  assert.equal(button.getAttribute("aria-expanded"), "true")
+  assert.equal(controller.drawerTarget.classList.contains("translate-x-0"), true)
+  assert.equal(controller.backdropTarget.classList.contains("hidden"), false)
+  assert.equal(context.document.body.style.overflow, "hidden")
+
+  controller.toggle()
+  assert.equal(button.getAttribute("aria-expanded"), "false")
+  assert.equal(controller.drawerTarget.classList.contains("-translate-x-full"), true)
+  assert.equal(controller.backdropTarget.classList.contains("hidden"), true)
+  assert.equal(context.document.body.style.overflow, "")
+
+  controller.open()
+  documentListeners.get("keydown")({ key: "Escape" })
+  assert.equal(button.getAttribute("aria-expanded"), "false")
+
+  controller.open()
+  controller.close() // The backdrop's click action uses this same close path.
+  assert.equal(button.getAttribute("aria-expanded"), "false")
+
+  controller.open()
+  context.window.innerWidth = 1279
+  windowListeners.get("resize")()
+  assert.equal(button.getAttribute("aria-expanded"), "true")
+  context.window.innerWidth = 1280
+  windowListeners.get("resize")()
+  assert.equal(button.getAttribute("aria-expanded"), "false")
+  assert.equal(controller.openValue, false)
+  controller.disconnect()
+  assert.equal(documentListeners.size, 0)
+  assert.equal(windowListeners.size, 0)
+
+  // A restored open drawer must expose its current state when Stimulus reconnects.
+  controller.openValue = true
+  button.setAttribute("aria-expanded", "false")
+  controller.connect()
+  assert.equal(button.getAttribute("aria-expanded"), "true")
+  controller.disconnect()
 }
 
 function testDebugTabsController() {
@@ -1991,6 +2066,7 @@ async function testReportProgressSwapsTheRenderedBody() {
 
 await testDebugStreamLeaseController()
 testActivityStreamController()
+testMobileNavExpandedState()
 testDebugTabsController()
 testDebugStreamFilterController()
 testReportRedesignedController()

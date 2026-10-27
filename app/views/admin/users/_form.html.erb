@@ -1,4 +1,4 @@
-<%= form_with model: user, url: user.persisted? ? user_path(user) : users_path, local: true, class: "space-y-6" do |f| %>
+<%= form_with model: user, url: user.persisted? ? user_path(user) : users_path, local: true, data: { turbo_frame: "_top" }, class: "space-y-6" do |f| %>
   <% if user.errors.any? %>
     <div class="bg-red-950/20 border border-red-400/30 rounded-lg p-4">
       <div class="flex">
@@ -46,6 +46,30 @@
           <%= f.check_box :super_admin %>
           <%= f.label :super_admin, "Super Admin", class: "ml-2 block text-sm text-contentPrimary" %>
           <p class="ml-6 text-sm text-contentSecondary">— grants full administrative privileges</p>
+        </div>
+      <% end %>
+
+      <% if policy(user).manage_company? %>
+        <div class="border-t border-borderPrimary pt-6 space-y-4">
+          <h3 class="text-base font-sans font-semibold text-white">Company Access</h3>
+          <fieldset>
+            <legend class="block text-sm font-medium text-contentSecondary mb-2">Member companies</legend>
+            <%= f.collection_check_boxes :company_ids, @companies, :id, :name,
+                { checked: @selected_company_ids } do |company| %>
+              <div class="flex items-center gap-2 mb-2">
+                <%= company.check_box %>
+                <%= company.label class: "text-sm text-contentPrimary" %>
+              </div>
+            <% end %>
+            <p class="mt-1 text-sm text-contentTertiary">Select every company this user may access.</p>
+          </fieldset>
+          <div>
+            <%= f.label :current_company_id, "Active company", class: "block text-sm font-medium text-contentSecondary mb-2" %>
+            <%= f.collection_select :current_company_id, @companies, :id, :name,
+                { include_blank: "Select an active company", selected: @selected_current_company_id },
+                { required: true, class: "input-select" } %>
+            <p class="mt-1 text-sm text-contentTertiary">The active company must also be selected as a member company above.</p>
+          </div>
         </div>
       <% end %>
 
