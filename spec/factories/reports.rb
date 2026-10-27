@@ -4,7 +4,14 @@ FactoryBot.define do
       skip_validate { false }
     end
 
-    company
+    company do
+      associated_company = if __override_names__.include?(:scan)
+        scan&.company
+      elsif __override_names__.include?(:target)
+        target&.company
+      end
+      associated_company || ActsAsTenant.current_tenant || association(:default_company, strategy: :create)
+    end
     scan { association :complete_scan, company: company }
     target { association :target, company: company }
 

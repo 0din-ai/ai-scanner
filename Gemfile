@@ -1,19 +1,15 @@
 source "https://rubygems.org"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-# json 3 turned JSON.parse's options into keywords, but Rails 8.1's
-# ActiveSupport::JSON.decode still passes them positionally. The schema dumper
-# then fails on every jsonb column with a default, db:migrate in the test env
-# quietly drops those tables from db/schema.rb, and every RSpec run fails at
-# boot. Lift this once Rails ships json-3 support.
-gem "json", "< 3"
-gem "rails", "~> 8.0"
+# Rails 8.1.4 forwards JSON.parse options as keywords, as required by json 3.
+gem "json", "~> 3.1"
+gem "rails", "~> 8.1", ">= 8.1.4"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
 # Use PostgreSQL as the database for Active Record
-gem "pg", "~> 1.5"
+gem "pg", "~> 1.7"
 # Use the Puma web server [https://github.com/puma/puma]
-gem "puma", "~> 7.0"
+gem "puma", "~> 8.0"
 # Use JavaScript with ESM import maps [https://github.com/rails/importmap-rails]
 gem "importmap-rails"
 # Hotwire's SPA-like page accelerator [https://turbo.hotwired.dev]

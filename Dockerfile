@@ -8,22 +8,26 @@
 # For a containerized dev environment, see Dev Containers: https://guides.rubyonrails.org/getting_started_with_devcontainer.html
 
 # Make sure RUBY_VERSION matches the Ruby version in .ruby-version
-ARG RUBY_VERSION=4.0.1
+ARG RUBY_VERSION=4.0.9
+ARG NODE_VERSION=24.22.1
+FROM docker.io/library/node:${NODE_VERSION}-bookworm-slim AS node
 FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
+
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 
 LABEL org.opencontainers.image.source="https://github.com/0din-ai/ai-scanner"
 
 # Rails app lives here
 WORKDIR /rails
 
-# Install base packages including nodejs for runtime Playwright execution
+# Install runtime libraries; Node comes from the pinned image above.
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
     curl wget python3 python3-venv libyaml-dev libjemalloc2 gosu \
     libatk-bridge2.0-0 libatk1.0-0 libcups2 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 libxcomposite1 \
     libxdamage1 libxfixes3 libxkbcommon0 libxrandr2 xdg-utils fonts-liberation libasound2t64 \
     openssl ca-certificates \
-    gnupg lsb-release nodejs && \
+    gnupg lsb-release && \
     # Add PostgreSQL APT repository (for client tools and pgloader)
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
@@ -33,7 +37,8 @@ RUN apt-get update -qq && \
 
 # Create and activate a virtual environment for Python packages
 RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PATH="/opt/venv/bin:$PATH" \
+    PLAYWRIGHT_NODEJS_PATH="/usr/local/bin/node"
 
 # Set production environment
 ENV RAILS_ENV="production" \
@@ -54,11 +59,13 @@ FROM base AS build
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential pkg-config python3-dev python3-pip nodejs npm rustc cargo libpq-dev
+    apt-get install --no-install-recommends -y build-essential pkg-config python3-dev python3-pip rustc cargo libpq-dev
 
-# Install Node.js tools and clean up
-RUN npm install --global yarn && \
-    rm -rf /tmp/* /var/tmp/* ~/.npm
+# npm is only needed while building assets; runtime Playwright uses Node directly.
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
+    npm install --global npm@12.2.1
 
 # Install application gems first (better caching when only code changes)
 COPY Gemfile Gemfile.lock ./
@@ -96,7 +103,7 @@ RUN /opt/venv/bin/python -m pip install --upgrade pip wheel setuptools && \
 # Copy package files and install Node dependencies (Playwright library only)
 # Note: Browsers are installed separately below using shared PLAYWRIGHT_BROWSERS_PATH
 COPY package.json package-lock.json* ./
-RUN npm ci --production && \
+RUN npm ci --omit=dev && \
     rm -rf /tmp/* /var/tmp/* ~/.npm
 
 # Install Playwright browsers once into a shared path using Python Playwright only
@@ -129,7 +136,7 @@ RUN bundle exec bootsnap precompile app/ lib/
 RUN SECRET_KEY_BASE_DUMMY=1 ASSETS_PRECOMPILE=1 CYPRESS_INSTALL_BINARY=0 ./bin/rails assets:precompile
 
 # Clean up build dependencies and temporary files aggressively
-RUN apt-get purge -y --auto-remove build-essential pkg-config nodejs npm rustc cargo && \
+RUN apt-get purge -y --auto-remove build-essential pkg-config rustc cargo && \
     apt-get autoremove -y && \
     apt-get autoclean && \
     rm -rf /tmp/* /var/tmp/* ~/.npm ~/.cache \

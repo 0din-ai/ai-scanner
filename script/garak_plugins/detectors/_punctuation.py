@@ -59,12 +59,13 @@ _ORIGINAL_DETECT_ATTR = "_0din_original_detect"
 # patch_upstream_string_detector() below reimplements StringDetector.detect
 # rather than wrapping it, so it can only be correct for the exact upstream
 # garak version it was copied from. Keep this in step with the garak pin in
-# garak-requirements.txt (garak==0.16.0): tests/test_upstream_string_detector_
+# garak-requirements.txt (garak==0.17.1): tests/test_upstream_string_detector_
 # punctuation.py::test_patch_mirrors_the_pinned_garak_version fails loudly the
 # moment the pin moves, to force a re-read of the real StringDetector.detect
 # (and knock-on subclasses like MitigationBypass/Prefixes, which each define
 # their own detect() calling super()) before the new version ships.
-MIRRORED_GARAK_VERSION = "0.16.0"
+# Reviewed 0.17.1: StringDetector only changes logging formatting from 0.16.0.
+MIRRORED_GARAK_VERSION = "0.17.1"
 
 
 def patch_upstream_string_detector() -> None:

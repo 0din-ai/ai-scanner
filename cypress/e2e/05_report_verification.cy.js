@@ -36,7 +36,7 @@ describe('Report Verification', () => {
     cy.selectTargetByName(testTargetName)
     
     // Select a DAN probe (community probe, always available)
-    cy.selectProbeByName('dan.Dan_11_0', 'dan')
+    cy.selectProbeByName('test.Blank', 'anyoutput')
 
     // Check priority
     cy.get('#scan_priority').check({ force: true })
@@ -114,7 +114,7 @@ describe('Report Verification', () => {
         cy.trackResource({ type: 'scan', name: scanName })
         
         // Select probe by name
-      cy.selectProbeByName('dan.Dan_11_0', 'dan')
+      cy.selectProbeByName('test.Blank', 'anyoutput')
       cy.contains('button[type="submit"]', 'Create Scan').click()
     }
     
@@ -164,29 +164,13 @@ describe('Report Verification', () => {
         cy.get('td').eq(3).then(($statusCell) => {
           const status = $statusCell.text().trim().toLowerCase()
 
-          // Check status-specific actions - be flexible as UI may vary
+          // Check destinations rather than tooltip wording shared across tables.
+          cy.get('a[href]').should(($links) => {
+            const overviewLinks = $links.filter((_index, link) => /^\/reports\/\d+$/.test(link.getAttribute('href')))
+            expect(overviewLinks.length, 'report overview link').to.be.greaterThan(0)
+          })
           if (status === 'completed') {
-            // Completed reports should have View link(s)
-            cy.get('a').then($links => {
-              const hasViewLink = $links.filter((i, el) =>
-                el.textContent.includes('View')
-              ).length > 0
-              if (hasViewLink) {
-                cy.log('View link found for completed report')
-              }
-            })
-          } else if (status === 'running' || status === 'starting') {
-            // Running reports - just log status
-            cy.log(`Report is ${status}`)
-          } else {
-            cy.log(`Report status: ${status}`)
-          }
-
-          // All reports should have View Overview action (always present)
-          cy.get('a[title="View Overview"]').should('exist')
-          // Completed reports should have View Detailed Report action
-          if (status === 'completed') {
-            cy.get('a[title="View Detailed Report"]').should('exist')
+            cy.get('a[href^="/report_details/"]').should('exist')
           }
         })
       })
@@ -284,10 +268,9 @@ describe('Report Verification', () => {
     // Track the created scan for cleanup now (safe even if it completes quickly)
     cy.trackResource({ type: 'scan', name: stopTestScanName })
     
-    // Select 2-3 probes by name to make it run long enough to stop but not too long
-    cy.selectProbeByName('dan.Dan_11_0', 'dan')
-    cy.selectProbeByName('dan.Dan_6_0', 'dan')
-    cy.selectProbeByName('dan.Dan_7_0', 'dan')
+    // Select two test probes by name to make it run long enough to stop but not too long
+    cy.selectProbeByName('test.Blank', 'anyoutput')
+    cy.selectProbeByName('test.Test', 'pass')
     
     // Submit
     cy.contains('button[type="submit"]', 'Create Scan').click()
@@ -361,7 +344,7 @@ describe('Report Verification', () => {
     cy.get('#scan_priority').check({ force: true })
 
     // Select a probe using the helper (more reliable with tier filtering)
-    cy.selectProbeByName('dan.Dan_11_0', 'dan')
+    cy.selectProbeByName('test.Blank', 'anyoutput')
 
     // Submit
     cy.contains('button[type="submit"]', 'Create Scan').click()

@@ -4,7 +4,7 @@
 # db_notifier.py - PostgreSQL database notifications for multi-pod IPC
 # Using source build (not -binary) per psycopg2 production recommendations:
 # https://www.psycopg.org/docs/install.html#psycopg-vs-psycopg-binary
-psycopg2==2.9.11
+psycopg2==2.9.13
 
 # JEF (Jailbreak Evaluation Framework) - scoring for probe detectors.
 #

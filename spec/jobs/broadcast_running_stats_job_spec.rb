@@ -20,7 +20,8 @@ RSpec.describe BroadcastRunningStatsJob, type: :job do
       # Create reports for both companies
       create(:report, target: target, scan: scan, status: :running, company: company)
       other_target = create(:target, company: other_company)
-      create(:report, target: other_target, scan: scan, status: :running, company: other_company)
+      other_scan = create(:complete_scan, company: other_company)
+      create(:report, target: other_target, scan: other_scan, status: :running, company: other_company)
 
       job = described_class.new
       stats = job.send(:calculate_company_stats, company.id)
@@ -90,7 +91,8 @@ RSpec.describe BroadcastRunningStatsJob, type: :job do
       it 'calculates global stats across all companies' do
         create(:report, target: target, scan: scan, status: :running, company: company)
         other_target = create(:target, company: other_company)
-        create(:report, target: other_target, scan: scan, status: :running, company: other_company)
+        other_scan = create(:complete_scan, company: other_company)
+        create(:report, target: other_target, scan: other_scan, status: :running, company: other_company)
 
         job = described_class.new
         stats = job.send(:calculate_global_stats)

@@ -48,7 +48,7 @@ describe('Report Details Page', () => {
           cy.visit('/scans/new')
           cy.get('#scan_name').type(scanName)
           cy.selectTargetByName(createdTargetName)
-          cy.selectProbeByName('dan.Dan_11_0', 'dan')
+          cy.selectProbeByName('test.Blank', 'anyoutput')
           cy.contains('button[type="submit"]', 'Create Scan').click()
 
           // Track created scan
@@ -153,7 +153,7 @@ describe('Report Details Page', () => {
   it('verifies PDF download flow and response', () => {
     cy.visit(`/report_details/${reportId}`)
 
-    const pdfTimeout = Number(Cypress.env('PDF_REQUEST_TIMEOUT_MS') || 240000) // default 240s for CI
+    const pdfTimeout = Number(Cypress.expose('PDF_REQUEST_TIMEOUT_MS') || 240000) // default 240s for CI
     const statusUrl = `/report_details/${reportId}/pdf`
 
     cy.log(`Polling PDF status: ${statusUrl} (timeout ${pdfTimeout} ms)`)
@@ -171,19 +171,13 @@ describe('Report Details Page', () => {
       const ct = (resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || ''
       cy.log(`Status response: status=${resp.status} content-type=${ct}`)
 
-      if (resp.status === 500) {
-        cy.log('PDF generation returned 500 - server-side issue')
-        return
-      }
-
       // 202 = generation in progress, body has {status: pending|processing}
       if (resp.status === 202) {
         if (retries > 0) {
           cy.wait(5000)
           return fetchStatus(retries - 1)
         }
-        cy.log('PDF generation taking too long, but async flow is working')
-        return
+        throw new Error('PDF generation did not finish before the polling limit')
       }
 
       // 200 = ready, body has {status: "ready", download_url: "...pdf_token=..."}
@@ -209,6 +203,7 @@ describe('Report Details Page', () => {
         expect(fileResp.status).to.eq(200)
         expect((fct || '').toLowerCase()).to.include('application/pdf')
         expect(fileResp.body && fileResp.body.length).to.be.greaterThan(1000)
+        expect(fileResp.body.slice(0, 5)).to.eq('%PDF-')
       })
     })
 

@@ -59,6 +59,7 @@ function pruneE2eFiles(projectRoot, options = {}) {
 }
 
 export default defineConfig({
+  expose: {},
   e2e: {
     baseUrl: envBaseUrl || 'https://localhost',
     viewportWidth: 1280,
@@ -72,6 +73,17 @@ export default defineConfig({
     // Enable Chrome Web Security to be disabled for cross-origin OAuth flows
     chromeWebSecurity: false,
     setupNodeEvents(on, config) {
+      // Keep existing --env/CYPRESS_* flags working while exposing only public settings.
+      const publicKeys = [
+        'OAUTH_PROVIDER_URL', 'OAUTH_PROVIDER', 'MOCK_LLM_PORT', 'MOCK_LLM_HOST',
+        'SKIP_CLEANUP', 'NO_CLEANUP', 'FAIL_SCAN_CREATION_TEST', 'PDF_REQUEST_TIMEOUT_MS'
+      ]
+      for (const key of publicKeys) {
+        if (config.env[key] !== undefined && config.expose[key] === undefined) {
+          config.expose[key] = config.env[key]
+        }
+      }
+
       // Simple JSON file-backed registry to track resources created during a run
       const registryFile = getRegistryFile(config.projectRoot)
       const failureFlagFile = getFailureFlagFile(config.projectRoot)

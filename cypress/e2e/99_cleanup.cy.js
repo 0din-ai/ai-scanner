@@ -6,7 +6,7 @@
 //   npx cypress run --env SKIP_CLEANUP=true
 //   CYPRESS_SKIP_CLEANUP=1 npx cypress run
 const flagTrue = (v) => v === true || v === 'true' || v === '1' || v === 1 || v === 'yes' || v === 'on'
-const shouldSkipByEnv = flagTrue(Cypress.env('SKIP_CLEANUP')) || flagTrue(Cypress.env('NO_CLEANUP'))
+const shouldSkipByEnv = flagTrue(Cypress.expose('SKIP_CLEANUP')) || flagTrue(Cypress.expose('NO_CLEANUP'))
 
 // Always define the suite; gate execution in a before() hook so we can also
 // skip when any earlier test failed.
@@ -43,11 +43,11 @@ describe('99: cleanup tracked resources', function () {
 
   before(() => {
     // Login without session caching for cleanup (skip if no credentials for localhost)
-    const email = Cypress.env('ADMIN_EMAIL') || Cypress.env('OAUTH_EMAIL')
-    const password = Cypress.env('ADMIN_PASSWORD') || Cypress.env('OAUTH_PASSWORD')
-    if (email && password) {
-      cy.adminApiLogin()
-    }
+    return cy.env(['ADMIN_EMAIL', 'ADMIN_PASSWORD', 'OAUTH_EMAIL', 'OAUTH_PASSWORD']).then((env) => {
+      const email = env.ADMIN_EMAIL || env.OAUTH_EMAIL
+      const password = env.ADMIN_PASSWORD || env.OAUTH_PASSWORD
+      if (email && password) return cy.adminApiLogin(email, password)
+    })
   })
 
   it('cleans up reports, scans, targets, and environment variables by name', () => {

@@ -57,6 +57,12 @@ class Target < ApplicationRecord
   scope :deleted, -> { unscope(where: :deleted_at).where.not(deleted_at: nil) }
   scope :with_deleted, -> { unscope(where: :deleted_at) }
 
+  # Historical reports may reference a deleted target; retain tenant scoping when
+  # acts_as_tenant validates that association.
+  def self.tenant_validation_scope(relation)
+    relation.unscope(where: :deleted_at)
+  end
+
   def validate_target!
     ValidateTargetJob.perform_later(id)
   end

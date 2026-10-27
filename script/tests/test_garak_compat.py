@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility checks for the local OSS garak 0.16.0 integration."""
+"""Compatibility checks for the local OSS garak 0.17.1 integration."""
 
 import importlib
 import importlib.metadata
@@ -37,12 +37,12 @@ def _load_local_plugin(module_name, relative_path):
 
 
 class TestGarakDistribution(unittest.TestCase):
-    def test_requirements_pin_garak_0160(self):
-        self.assertEqual((ROOT / "garak-requirements.txt").read_text().strip(), "garak==0.16.0")
+    def test_requirements_pin_garak_0171(self):
+        self.assertEqual((ROOT / "garak-requirements.txt").read_text().strip(), "garak==0.17.1")
 
     @unittest.skipUnless(_garak_available(), "garak is not importable")
-    def test_installed_garak_version_is_0160(self):
-        self.assertEqual(importlib.metadata.version("garak"), "0.16.0")
+    def test_installed_garak_version_is_0171(self):
+        self.assertEqual(importlib.metadata.version("garak"), "0.17.1")
 
     @unittest.skipUnless(_garak_available(), "garak is not importable")
     def test_garak_cli_exposes_scanner_flags(self):

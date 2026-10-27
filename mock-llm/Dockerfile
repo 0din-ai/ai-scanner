@@ -1,4 +1,4 @@
-FROM ruby:3.2-slim
+FROM ruby:4.0.9-slim
 
 WORKDIR /app
 

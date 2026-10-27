@@ -17,7 +17,7 @@ describe('Target Creation', () => {
     cy.url().should('include', '/targets/new')
 
     // Step 1: Select Custom Configuration provider
-    cy.get('[data-provider="custom"]').click()
+    cy.selectCustomTargetProvider()
 
     // Step 2: Fill in target details
     cy.get('#target_name').should('be.visible').type(targetName)
@@ -52,7 +52,7 @@ describe('Target Creation', () => {
     cy.visit('/targets/new')
 
     // Step 1: Select Custom Configuration
-    cy.get('[data-provider="custom"]').click()
+    cy.selectCustomTargetProvider()
 
     // Step 2: Fill in minimal details
     cy.get('#target_name').should('be.visible').type(targetName)
@@ -82,7 +82,7 @@ describe('Target Creation', () => {
     cy.visit('/targets/new')
 
     // Step 1: Select Custom Configuration
-    cy.get('[data-provider="custom"]').click()
+    cy.selectCustomTargetProvider()
 
     // Step 2: Name field should be required
     cy.get('#target_name').should('be.visible').should('have.attr', 'required')
@@ -108,7 +108,7 @@ describe('Target Creation', () => {
     cy.visit('/targets/new')
 
     // Step 1: Select a provider to get to step 2
-    cy.get('[data-provider="custom"]').click()
+    cy.selectCustomTargetProvider()
 
     // Step 2: Fill in some data then navigate away via sidebar
     cy.get('#target_name').should('be.visible').type('Cancelled Target')

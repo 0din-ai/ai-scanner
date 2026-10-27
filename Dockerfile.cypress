@@ -1,7 +1,13 @@
 # Dockerfile for Cypress E2E tests
 # This creates a lightweight image containing only the cypress tests and configuration
 
-FROM cypress/included:15.17.0
+ARG NODE_VERSION=24.22.1
+FROM node:${NODE_VERSION}-bookworm-slim AS node
+FROM cypress/included:16.2.0
+
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN npm install --global npm@12.2.1
 
 # Set working directory
 WORKDIR /e2e

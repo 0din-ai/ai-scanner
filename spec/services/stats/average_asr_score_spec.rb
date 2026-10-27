@@ -7,8 +7,8 @@ RSpec.describe Stats::AverageAsrScore do
   around { |example| ActsAsTenant.with_tenant(company) { example.run } }
 
   let(:detector) { create(:detector) }
-  let(:target) { create(:target) }
-  let(:scan) { create(:complete_scan) }
+  let(:target) { create(:target, company: company) }
+  let(:scan) { create(:complete_scan, company: company) }
   let(:probe) { create(:probe) }
 
   describe '#call' do

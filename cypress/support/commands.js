@@ -21,10 +21,16 @@ function extractCsrfToken(html) {
 
 // Helper: Get OAuth credentials with fallbacks
 function getOAuthCredentials(email, password) {
-  return {
-    email: email || Cypress.env('OAUTH_EMAIL') || Cypress.env('ADMIN_EMAIL'),
-    password: password || Cypress.env('OAUTH_PASSWORD') || Cypress.env('ADMIN_PASSWORD')
-  };
+  return cy.env(['OAUTH_EMAIL', 'OAUTH_PASSWORD', 'ADMIN_EMAIL', 'ADMIN_PASSWORD']).then((env) => ({
+    email: email || env.OAUTH_EMAIL || env.ADMIN_EMAIL,
+    password: password || env.OAUTH_PASSWORD || env.ADMIN_PASSWORD
+  }));
+}
+
+// Resolve credentials inside the command queue before running a login command.
+function withOAuthCredentials(callback) {
+  return (email, password, ...args) => getOAuthCredentials(email, password)
+    .then((credentials) => callback(credentials, ...args));
 }
 
 /**
@@ -120,9 +126,8 @@ Cypress.Commands.add('waitForTargetValidation', (maxAttempts = 30) => {
  * @param {string} password - OAuth provider password
  * @returns {Cypress.Chainable}
  */
-Cypress.Commands.add('oauthLogin', (email, password) => {
-  const { email: oauthEmail, password: oauthPassword } = getOAuthCredentials(email, password);
-  const oauthProviderUrl = Cypress.env('OAUTH_PROVIDER_URL');
+Cypress.Commands.add('oauthLogin', withOAuthCredentials(({ email: oauthEmail, password: oauthPassword }) => {
+  const oauthProviderUrl = Cypress.expose('OAUTH_PROVIDER_URL');
 
   if (!oauthEmail || !oauthPassword) {
     throw new Error('oauthLogin: missing credentials');
@@ -149,7 +154,7 @@ Cypress.Commands.add('oauthLogin', (email, password) => {
     cy.log('Found Scanner CSRF token, initiating OAuth flow');
 
     // POST to the OAuth provider endpoint with CSRF token
-    const oauthProvider = Cypress.env('OAUTH_PROVIDER') || 'oauth';
+    const oauthProvider = Cypress.expose('OAUTH_PROVIDER') || 'oauth';
     cy.request({
       method: 'POST',
       url: `/auth/${oauthProvider}`,
@@ -217,7 +222,7 @@ Cypress.Commands.add('oauthLogin', (email, password) => {
   // Verify we're logged in
   cy.location('pathname', { timeout: 15000 }).should('not.match', /(login|sign_in)$/);
   cy.log('OAuth login via API complete');
-});
+}));
 
 /**
  * Programmatic login via API using Rails /login flow.
@@ -225,17 +230,16 @@ Cypress.Commands.add('oauthLogin', (email, password) => {
  * Options: { email, password }
  */
 Cypress.Commands.add('apiLogin', (options = {}) => {
-  const email = options.email || Cypress.env('ADMIN_EMAIL');
-  const password = options.password || Cypress.env('ADMIN_PASSWORD');
-  return cy.adminApiLogin(email, password);
+  return cy.env(['ADMIN_EMAIL', 'ADMIN_PASSWORD']).then((env) => {
+    return cy.adminApiLogin(options.email || env.ADMIN_EMAIL, options.password || env.ADMIN_PASSWORD);
+  });
 });
 
 /**
  * Programmatic login for Rails admin.
  * Detects OAuth mode and delegates to oauthLogin, otherwise does traditional login.
  */
-Cypress.Commands.add('adminApiLogin', (emailArg, passwordArg) => {
-  const { email, password } = getOAuthCredentials(emailArg, passwordArg);
+Cypress.Commands.add('adminApiLogin', withOAuthCredentials(({ email, password }) => {
   if (!email || !password) {
     throw new Error('adminApiLogin: missing credentials');
   }
@@ -314,7 +318,7 @@ Cypress.Commands.add('adminApiLogin', (emailArg, passwordArg) => {
       cy.get('body').should('not.contain', 'Invalid Email or password');
     });
   });
-});
+}));
 
 /**
  * Cache and restore an authenticated session using cy.session().
@@ -324,8 +328,7 @@ Cypress.Commands.add('adminApiLogin', (emailArg, passwordArg) => {
  * @param {string} password
  * @param {{ cacheAcrossSpecs?: boolean, validate?: Function }} options
  */
-Cypress.Commands.add('loginSession', (emailArg, passwordArg, options = {}) => {
-  const { email, password } = getOAuthCredentials(emailArg, passwordArg);
+Cypress.Commands.add('loginSession', withOAuthCredentials(({ email, password }, options = {}) => {
   if (!email || !password) {
     throw new Error('loginSession: missing credentials');
   }
@@ -346,7 +349,7 @@ Cypress.Commands.add('loginSession', (emailArg, passwordArg, options = {}) => {
     },
     { validate: validateFn, cacheAcrossSpecs }
   )
-})
+}))
 
 
 /**
@@ -450,8 +453,8 @@ Cypress.Commands.add('waitForPageLoad', () => {
  * @returns {object} JSON configuration object for RestGenerator targets
  */
 Cypress.Commands.add('getRestGeneratorConfig', (name = 'test service') => {
-  const port = Cypress.env('MOCK_LLM_PORT') || 9292;
-  const host = Cypress.env('MOCK_LLM_HOST') || 'mock-llm';
+  const port = Cypress.expose('MOCK_LLM_PORT') || 9292;
+  const host = Cypress.expose('MOCK_LLM_HOST') || 'mock-llm';
   return {
     rest: {
       RestGenerator: {
@@ -470,6 +473,20 @@ Cypress.Commands.add('getRestGeneratorConfig', (name = 'test service') => {
  * Creates a test target for use in other tests
  * @returns {Cypress.Chainable<string>} The name of the created target
  */
+Cypress.Commands.add('waitForStimulusController', (identifier) => {
+  return cy.window().should((win) => {
+    const element = win.document.querySelector(`[data-controller~="${identifier}"]`)
+    const controller = element && win.Stimulus?.getControllerForElementAndIdentifier(element, identifier)
+    expect(controller, `${identifier} controller is connected`).to.exist
+  })
+})
+
+Cypress.Commands.add('selectCustomTargetProvider', () => {
+  cy.waitForStimulusController('target-wizard')
+  cy.get('[data-provider="custom"]').click()
+  cy.get('#target_name').should('be.visible')
+})
+
 Cypress.Commands.add('createTestTarget', () => {
   const timestamp = Date.now()
   const targetName = `Test Target ${timestamp}`
@@ -478,7 +495,7 @@ Cypress.Commands.add('createTestTarget', () => {
   cy.visit('/targets/new')
 
   // Step 1: Select Custom Configuration provider
-  cy.get('[data-provider="custom"]').click()
+  cy.selectCustomTargetProvider()
 
   // Step 2: Fill in target details (now visible after provider selection)
   cy.get('#target_name').should('be.visible').type(targetName)
@@ -648,10 +665,11 @@ Cypress.Commands.add('waitForReportCompletion', (scanName, timeout = 30000) => {
 
 /**
  * Selects a probe by name in the scan form
- * @param {string} probeName - The name of the probe to select (e.g., 'dan.Dan_11_0')
- * @param {string} categoryId - Optional category ID to expand (e.g., 'dan')
+ * @param {string} probeName - The name of the probe to select (e.g., 'test.Blank')
+ * @param {string} categoryId - Optional category ID to expand (e.g., 'anyoutput')
  */
 Cypress.Commands.add('selectProbeByName', (probeName, categoryId = null) => {
+  cy.waitForStimulusController('probe-category')
   // For community probes, expand the community section first
   if (categoryId) {
     // Expand community probes parent if it exists and is collapsed

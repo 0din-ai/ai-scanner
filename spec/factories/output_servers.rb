@@ -1,6 +1,6 @@
 FactoryBot.define do
   factory :output_server do
-    association :company
+    company { ActsAsTenant.current_tenant || association(:default_company, strategy: :create) }
     sequence(:name) { |n| "#{Faker::App.name}_#{n}" }
     server_type { 'splunk' }
     # Deterministic non-blocked (TEST-NET-3) address so the host-SSRF validation passes —

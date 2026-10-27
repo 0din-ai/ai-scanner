@@ -1,8 +1,13 @@
-FROM ruby:4.0.1-slim
+ARG NODE_VERSION=24.22.1
+FROM node:${NODE_VERSION}-bookworm-slim AS node
+FROM ruby:4.0.9-slim
+
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 RUN apt-get update && apt-get install -y \
-    nodejs \
-    npm \
     libvips \
     build-essential \
     curl \
@@ -34,8 +39,9 @@ RUN apt-get update && apt-get install -y \
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
     apt-get update && \
-    apt-get install -y postgresql-client-18 && \
-    npm install --global yarn
+    apt-get install -y postgresql-client-18
+
+RUN npm install --global npm@12.2.1
 
 # Install Rust (latest stable version)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -67,13 +73,15 @@ RUN bundle install
 ## Install npm packages (including Playwright library)
 # Note: Browsers are installed separately below using shared PLAYWRIGHT_BROWSERS_PATH
 COPY package.json package-lock.json ./
-RUN npm install && \
+# Cypress has its own test image; only Playwright browsers belong in the app image.
+RUN CYPRESS_INSTALL_BINARY=0 npm ci && \
     # Verify Playwright is installed
     npm list playwright
 
 # Set Playwright browser path for consistent location
 # Both Python Playwright (garak) and Node.js Playwright (Rails service) will share these browsers
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers \
+    PLAYWRIGHT_NODEJS_PATH=/usr/local/bin/node
 
 # Install Playwright Chromium browser (used for webchat automation and PDF generation)
 RUN mkdir -p /opt/playwright-browsers && \

@@ -17,7 +17,7 @@ describe('Scan Creation', () => {
     })
   })
   
-  it('creates a new scan with DAN 11.0 probe', () => {
+  it('creates a new scan with benign test probe', () => {
     const timestamp = Date.now()
     const scanName = `Test Scan ${timestamp}`
     createdScanName = scanName // Store for later tests
@@ -34,8 +34,8 @@ describe('Scan Creation', () => {
     // Use custom Cypress command to select the target by name
     cy.selectTargetByName(testTargetName)
     
-    // Select DAN 11.0 probe by name (handles category expansion automatically)
-    cy.selectProbeByName('dan.Dan_11_0', 'dan')
+    // Select benign test probe by name (handles category expansion automatically)
+    cy.selectProbeByName('test.Blank', 'anyoutput')
     
     // Check priority box
     cy.get('#scan_priority').check({ force: true })
@@ -113,8 +113,8 @@ describe('Scan Creation', () => {
     cy.selectTargetByName(testTargetName)
     
     // Select multiple probes by name
-    cy.selectProbeByName('dan.Dan_11_0', 'dan')
-    cy.selectProbeByName('dan.Dan_6_0', 'dan') // Select another probe from the same category
+    cy.selectProbeByName('test.Blank', 'anyoutput')
+    cy.selectProbeByName('test.Test', 'pass') // Select another probe from the same category
     
     // Submit the form
     cy.contains('button[type="submit"]', 'Create Scan').click()
@@ -165,7 +165,7 @@ describe('Scan Creation', () => {
     cy.selectTargetByName(testTargetName)
     
     // Select probe by name
-    cy.selectProbeByName('dan.Dan_11_0', 'dan')
+    cy.selectProbeByName('test.Blank', 'anyoutput')
     
     // Set up daily schedule using visual frequency button
     cy.get('button[data-frequency="daily"]').first().click()
@@ -187,90 +187,21 @@ describe('Scan Creation', () => {
     cy.contains('Daily').should('be.visible')
   })
   
-  it('allows selecting all probes using Select All checkbox', () => {
-    const timestamp = Date.now()
-    const scanName = `All Probes Scan ${timestamp}`
-
+  it('selects and clears every probe in a category', () => {
     cy.visit('/scans/new')
-
-    // Fill in scan name
-    cy.get('#scan_name').type(scanName)
-
-    // Use custom Cypress command to select the target by name
-    cy.selectTargetByName(testTargetName)
-
-    // Expand all probe categories first
+    cy.waitForStimulusController('probe-category')
     cy.get('button[data-action="click->probe-category#expandAll"]').click()
 
-    // Wait for categories to expand
-    cy.wait(1000)
-
-    // Select the DAN category checkbox (community probes)
-    cy.get('input#category_dan', { timeout: 10000 }).check({ force: true })
-
-    // Verify some probe checkboxes are checked (name has [] brackets for array)
-    cy.get('input[type="checkbox"][name="scan[probe_ids][]"]')
+    cy.get('input#category_pass').check({ force: true })
+    cy.get('#category_content_pass input[name="scan[probe_ids][]"]')
       .should('have.length.greaterThan', 0)
+      .each(($checkbox) => cy.wrap($checkbox).should('be.checked'))
 
-    // Log how many probes are selected for debugging
-    cy.get('input[type="checkbox"][name="scan[probe_ids][]"]:checked').then($checkedBoxes => {
-      cy.log(`Selected ${$checkedBoxes.length} probes total`)
-    })
-
-    // Submit the form (scroll into view and force click for long page)
-    cy.contains('button[type="submit"]', 'Create Scan').scrollIntoView().click({ force: true })
-
-    // Track created scan tentatively (will still be safe if errors)
-    cy.trackResource({ type: 'scan', name: scanName })
-
-    // Wait a moment for form submission to complete
-    cy.wait(1000)
-
-    // Check URL first to determine if submission succeeded or failed
-    cy.url().then(url => {
-      if (url.includes('/scans/new')) {
-        // Still on form page - submission failed (validation error/422)
-        cy.log('Form submission failed - likely too many probes selected (422 error)')
-        // This is expected when selecting all probes - test passes
-        return
-      }
-
-      if (!url.match(/\/scans\/\d+$/)) {
-        // Neither on new page nor detail page - check for errors
-        cy.get('body').then($body => {
-          const bodyText = $body.text()
-          if (bodyText.includes('Internal Server Error') || bodyText.includes('error')) {
-            cy.log('Server error detected')
-            return
-          }
-        })
-        return
-      }
-
-      // Successfully created - verify scan details
-      cy.location('pathname').should('match', /^\/scans\/\d+$/)
-
-      // Then check for scan name or scan details - be more flexible about what we look for
-      cy.get('body').then($scanPage => {
-        const pageText = $scanPage.text()
-        const hasScanName = pageText.includes(scanName)
-        const hasProbeCount = pageText.includes('probe') || pageText.includes('Probe')
-        const hasTargetName = pageText.includes(testTargetName)
-
-        if (hasScanName) {
-          cy.contains(scanName).should('be.visible')
-        } else if (hasProbeCount && hasTargetName) {
-          cy.log('Scan created successfully but name format may be different')
-          cy.contains(/probe/i).should('be.visible')
-        } else {
-          cy.log('Scan page loaded but content verification failed')
-          // Still pass if we're on a scan detail page
-          cy.location('pathname').should('match', /^\/scans\/\d+$/)
-        }
-      })
-    })
+    cy.get('input#category_pass').uncheck({ force: true })
+    cy.get('#category_content_pass input[name="scan[probe_ids][]"]')
+      .each(($checkbox) => cy.wrap($checkbox).should('not.be.checked'))
   })
-  
+
   it('can rerun an existing scan', () => {
     // Navigate to one-time scans (scheduled scans don't have rerun button)
     cy.visit('/scans?scope=unscheduled')
@@ -305,7 +236,7 @@ describe('Scan Creation', () => {
   })
 
   // Optional deliberate failure test to verify skip-cleanup behavior
-  const failFlag = Cypress.env('FAIL_SCAN_CREATION_TEST')
+  const failFlag = Cypress.expose('FAIL_SCAN_CREATION_TEST')
   const shouldFail = failFlag === true || /^(true|1|yes|on)$/i.test(String(failFlag || ''))
   if (shouldFail) {
     it('deliberately fails to verify cleanup is skipped when SKIP_CLEANUP is set', () => {
