@@ -30,25 +30,28 @@ module Admin
       @user = User.new
       authorize @user
       # Pre-assign company for non-super admins
-      @user.company = current_user.company unless policy(User).manage_company?
+      @user.current_company = current_user.company
+      load_company_fields
     end
 
     def create
-      @user = User.new(user_params)
+      @user = User.new
       authorize @user
 
       # Non-super admins can only create users in their own company
       @user.company = current_user.company unless policy(User).manage_company?
 
-      if @user.save
+      if save_user(user_params)
         redirect_to user_path(@user), notice: "User was successfully created."
       else
+        load_company_fields
         render :new, status: :unprocessable_entity
       end
     end
 
     def edit
       authorize @user
+      load_company_fields
     end
 
     def update
@@ -61,9 +64,14 @@ module Admin
         update_params = update_params.except(:password, :password_confirmation)
       end
 
-      if @user.update(update_params)
-        redirect_to user_path(@user), notice: "User was successfully updated."
+      if save_user(update_params)
+        # Refresh the changed password salt without replacing an impersonating admin's identity.
+        if update_params[:password].present? && !impersonating? && @user == true_current_user
+          bypass_sign_in(@user)
+        end
+        redirect_to user_path(@user), notice: "User was successfully updated.", status: :see_other
       else
+        load_company_fields
         render :edit, status: :unprocessable_entity
       end
     end
@@ -87,10 +95,31 @@ module Admin
       @page_title = "Users"
     end
 
+    def save_user(attributes)
+      if policy(User).manage_company?
+        @company_access = ::Users::SaveWithCompanyAccess.new(@user, attributes, default_company: current_user.company)
+        @company_access.call
+      else
+        @user.assign_attributes(attributes)
+        @user.save
+      end
+    end
+
+    def load_company_fields
+      return unless policy(User).manage_company?
+      @companies = Company.order(:name)
+      @selected_company_ids = @company_access&.selected_company_ids || @user.company_ids
+      @selected_company_ids = [ @user.current_company_id ].compact if @user.new_record? && !@company_access
+      @selected_current_company_id = @company_access ? @company_access.current_company_id : @user.current_company_id
+    end
+
     def user_params
       permitted = [ :email, :password, :password_confirmation, :time_zone ]
       permitted << :super_admin if policy(User).manage_super_admin_flag?
-      permitted << :current_company_id if policy(User).manage_company?
+      if policy(User).manage_company?
+        permitted << :current_company_id
+        permitted << { company_ids: [] }
+      end
       params.require(:user).permit(permitted)
     end
   end

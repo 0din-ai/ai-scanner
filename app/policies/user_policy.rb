@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 class UserPolicy < ApplicationPolicy
-  # Override to check current_company_id for User records
+  # Match the membership-based scope even when a colleague is active elsewhere.
   def same_company?
-    record.current_company_id == user.current_company_id
+    user.current_company_id.present? && record.memberships.exists?(company_id: user.current_company_id)
   end
 
   def index?
@@ -11,7 +11,7 @@ class UserPolicy < ApplicationPolicy
   end
 
   def show?
-    super_admin? || same_company?
+    super_admin? || record == user || same_company?
   end
 
   def create?
@@ -67,8 +67,14 @@ class UserPolicy < ApplicationPolicy
       if super_admin?
         ActsAsTenant.without_tenant { scope.includes(:current_company) }
       else
-        # Filter users who are members of the current company
-        scope.joins(:memberships).where(memberships: { company_id: user.current_company_id })
+        # Keep self-service available to legacy accounts awaiting assignment, but
+        # do not expose other membership-free users when no company is active.
+        peers = if user.current_company_id.present?
+          scope.where(id: Membership.where(company_id: user.current_company_id).select(:user_id))
+        else
+          scope.none
+        end
+        scope.where(id: user.id).or(peers)
       end
     end
   end

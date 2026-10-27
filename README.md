@@ -57,7 +57,11 @@ docker compose up -d
 
 Open `http://localhost` and log in with `admin@example.com` and the `ADMIN_INITIAL_PASSWORD` value from your `.env` file. **Change the initial password immediately.**
 
+Company management is included in the open-source edition. The seeded account is a Super Admin: use **Companies** to create organizations, then **Users** to choose each user's **Member companies** and **Active company**. The active company must be one of their member companies. Regular users can switch between their assigned companies when they belong to more than one, but cannot create companies or manage memberships.
+
 See the [Quick Start guide](https://0din.ai/docs/getting-started/quick-start?utm_source=github&utm_medium=readme&utm_campaign=opensourcescanner) for full instructions including port configuration, first scan walkthrough, and troubleshooting.
+
+The footer shows the release version embedded in official Docker images. Local source builds show `development` unless built with `--build-arg APP_VERSION=<version>` (supported by both Dockerfiles). A runtime `APP_VERSION` environment variable overrides the embedded value; an unset, empty, or whitespace-only value displays `development`.
 
 ## Documentation
 

@@ -108,6 +108,8 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
+          build-args: |
+            APP_VERSION=${{ needs.release.outputs.version }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,scope=amd64,mode=min
@@ -160,6 +162,8 @@ jobs:
         with:
           context: .
           platforms: linux/arm64
+          build-args: |
+            APP_VERSION=${{ needs.release.outputs.version }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,scope=arm64,mode=min

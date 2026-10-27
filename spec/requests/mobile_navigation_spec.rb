@@ -32,4 +32,16 @@ RSpec.describe "Mobile navigation", type: :request do
 
     expect(backdrop["class"].split).to include("xl:hidden")
   end
+
+  it "wires the collapsed hamburger state to its controlled mobile drawer" do
+    get scans_path
+
+    document = Nokogiri::HTML(response.body)
+    button = document.at_css('button[data-mobile-nav-target="toggleButton"]')
+    expect(button).to be_present
+    expect(button["aria-expanded"]).to eq("false")
+    expect(button["data-action"]).to eq("click->mobile-nav#toggle")
+    expect(document.at_css("##{button['aria-controls']}")["data-mobile-nav-target"]).to eq("drawer")
+    expect(document.at_css('[data-mobile-nav-target="backdrop"]')["data-action"]).to eq("click->mobile-nav#close")
+  end
 end

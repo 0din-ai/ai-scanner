@@ -122,6 +122,10 @@ USER 1000:1000
 # Commented out to avoid disk space issues during build - will cache at runtime instead
 # RUN garak --list_probes
 
+# Keep version metadata after dependency installation to preserve build caches.
+ARG APP_VERSION=development
+ENV APP_VERSION=${APP_VERSION}
+
 # Entrypoint prepares the database.
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 

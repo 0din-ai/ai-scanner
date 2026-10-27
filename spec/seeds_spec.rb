@@ -26,6 +26,8 @@ RSpec.describe "Seeds", type: :feature do
         expect(admin.super_admin?).to be true
         expect(admin.valid_password?('password')).to be true
         expect(admin.company.slug).to eq("default-organization")
+        expect(admin.companies).to contain_exactly(admin.company)
+        expect(admin.time_zone).to eq("UTC")
       end
     end
 
@@ -67,6 +69,78 @@ RSpec.describe "Seeds", type: :feature do
 
       it "does not create duplicate users" do
         expect { load Rails.root.join('db', 'seeds.rb') }.not_to change(User, :count)
+      end
+
+      it "preserves changed active company, intentional memberships, and time zone on restart" do
+        admin = User.find_by!(email: 'admin@example.com')
+        companies = create_list(:company, 2)
+        admin.companies = companies
+        admin.update!(current_company: companies.last, time_zone: "Madrid")
+
+        expect { load Rails.root.join('db', 'seeds.rb') }.not_to change(Membership, :count)
+
+        expect(admin.reload.current_company).to eq(companies.last)
+        expect(admin.companies).to contain_exactly(*companies)
+        expect(admin.time_zone).to eq("Madrid")
+        expect(admin.super_admin?).to be true
+      end
+
+      it "preserves the existing password even when a different initial password is configured" do
+        admin = User.find_by!(email: 'admin@example.com')
+        admin.update!(password: "changed-password123", password_confirmation: "changed-password123")
+        encrypted_password = admin.encrypted_password
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch).with("ADMIN_INITIAL_PASSWORD").and_return("different-initial-password")
+
+        load Rails.root.join('db', 'seeds.rb')
+
+        expect(admin.reload.encrypted_password).to eq(encrypted_password)
+        expect(admin.valid_password?("changed-password123")).to be true
+      end
+
+      it "repairs a missing active-company membership without dropping other memberships" do
+        admin = User.find_by!(email: 'admin@example.com')
+        active_company = create(:company)
+        original_company = admin.current_company
+        admin.update!(current_company: active_company)
+        expect(admin.companies).not_to include(active_company)
+
+        expect { load Rails.root.join('db', 'seeds.rb') }.to change(Membership, :count).by(1)
+
+        expect(admin.reload.current_company).to eq(active_company)
+        expect(admin.companies).to contain_exactly(original_company, active_company)
+      end
+    end
+
+    context "when a configured legacy admin has no active company" do
+      let(:admin) { build(:user, email: "configured-admin@example.com", time_zone: nil) }
+
+      before do
+        admin.save!
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch).with("ADMIN_EMAIL", "admin@example.com").and_return(admin.email)
+      end
+
+      it "uses an existing membership before the default organization" do
+        existing_company = create(:company)
+        create(:membership, user: admin, company: existing_company)
+
+        load Rails.root.join('db', 'seeds.rb')
+
+        expect(admin.reload.current_company).to eq(existing_company)
+        expect(admin.companies).to contain_exactly(existing_company)
+        expect(admin.time_zone).to eq("UTC")
+        expect(admin.super_admin?).to be true
+      end
+
+      it "assigns the default organization when no current company or memberships exist" do
+        expect(admin.memberships).to be_empty
+
+        load Rails.root.join('db', 'seeds.rb')
+
+        expect(admin.reload.current_company.slug).to eq("default-organization")
+        expect(admin.companies).to contain_exactly(admin.current_company)
+        expect(admin.time_zone).to eq("UTC")
       end
     end
 

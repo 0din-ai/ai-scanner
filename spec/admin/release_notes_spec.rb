@@ -73,11 +73,15 @@ RSpec.describe "Release Notes", type: :request do
       end
     end
 
-    it "displays the configured version number in the footer" do
-      get root_path
+    [ "1.19.2", "development" ].each do |version|
+      it "displays #{version} in the footer release-notes link" do
+        allow(Rails.application.config).to receive(:version).and_return(version)
+        get root_path
 
-      expect(response.body).to include(Rails.application.config.version)
-      expect(response.body).to include(release_notes_path)
+        expect(response).to have_http_status(:success)
+        footer_link = Nokogiri::HTML(response.body).at_css("a[href='#{release_notes_path}']")
+        expect(footer_link&.text).to eq(version)
+      end
     end
   end
 end

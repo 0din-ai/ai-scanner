@@ -27,8 +27,9 @@ if admin.new_record?
     end
 end
 admin.super_admin = true
-admin.company = company
-admin.time_zone = "UTC"
+# Preserve deliberate access changes across restarts, repairing only a missing membership.
+admin.company = admin.current_company || admin.companies.first || company
+admin.time_zone = "UTC" if admin.time_zone.blank?
 admin.save!
 
 puts " Company: #{company.name}"
