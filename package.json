@@ -1,17 +1,31 @@
 {
   "name": "app",
-  "private": "true",
+  "private": true,
   "type": "module",
+  "packageManager": "npm@12.2.1",
+  "engines": {
+    "node": "^24.22.1",
+    "npm": "^12.2.1"
+  },
+  "allowScripts": {
+    "@parcel/watcher@2.5.1": true,
+    "cypress@16.2.0": true
+  },
   "dependencies": {
-    "@tailwindcss/cli": "^4.3.1",
+    "@tailwindcss/cli": "^4.3.3",
     "@tailwindcss/typography": "^0.5.20",
-    "playwright": "1.57.0",
-    "playwright-core": "1.57.0",
-    "tailwindcss": "^4.3.1"
+    "playwright": "1.64.1",
+    "playwright-core": "1.64.1",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "@playwright/test": "1.57.0",
-    "cypress": "^15.17.0"
+    "@playwright/test": "1.64.1",
+    "cypress": "^16.2.0"
+  },
+  "overrides": {
+    "@tailwindcss/typography": {
+      "postcss-selector-parser": "^6.1.5"
+    }
   },
   "scripts": {
     "build:css": "npx @tailwindcss/cli -i ./app/assets/stylesheets/application.css -o ./app/assets/builds/application.css --minify",

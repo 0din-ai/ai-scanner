@@ -66,4 +66,18 @@ FactoryBot.define do
       downgrade_date { 30.days.ago.to_date }
     end
   end
+
+  # Related fixtures must share a tenant unless a test explicitly supplies one.
+  # The regular company factory still creates distinct tenants for isolation tests.
+  factory :default_company, parent: :company do
+    name { "Default fixture company" }
+    slug { "default-fixture-company" }
+
+    initialize_with do
+      company_attributes = attributes
+      Company.find_or_initialize_by(slug: company_attributes[:slug]) do |company|
+        company.assign_attributes(company_attributes)
+      end
+    end
+  end
 end

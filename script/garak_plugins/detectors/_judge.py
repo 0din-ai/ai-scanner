@@ -124,7 +124,7 @@ TODO(garak-upstream): remove these patches once upstream ships its own fixes.
   * ``patch_refusal_judge_input`` may be removed ONLY once upstream has fixed
     BOTH defect 1 (https://github.com/NVIDIA/garak/pull/2013 --
     "fix(detectors): pass response text to the Refusal judge", open and
-    unmerged as of garak 0.16.0) AND defect 2
+    unmerged as of garak 0.17.1) AND defect 2
     (https://github.com/NVIDIA/garak/issues/2136). Fixing defect 1 alone is
     not sufficient; if that is all upstream ships, this patch stays and only its
     text-passing half becomes redundant.
@@ -147,7 +147,8 @@ import logging
 from typing import List
 
 # Keep in step with the garak pin in garak-requirements.txt. See the TODO above.
-MIRRORED_GARAK_VERSION = "0.16.0"
+# Reviewed 0.17.1: Refusal, Jailbreak, EvaluationJudge and its parser are unchanged.
+MIRRORED_GARAK_VERSION = "0.17.1"
 
 _REFUSAL_PATCHED_MARKER = "_0din_refusal_input_corrected"
 _REFUSAL_ORIGINAL_ATTR = "_0din_original_refusal_detect"

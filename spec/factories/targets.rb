@@ -1,6 +1,6 @@
 FactoryBot.define do
   factory :target do
-    association :company
+    company { ActsAsTenant.current_tenant || association(:default_company, strategy: :create) }
     sequence(:name) { |n| "Target #{Faker::Internet.domain_name}-#{n}" }
     model_type { 'OpenAIGenerator' }
     model { 'gpt-3.5-turbo' }

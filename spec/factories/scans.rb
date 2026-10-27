@@ -1,6 +1,6 @@
 FactoryBot.define do
   factory :scan do
-    association :company
+    company { ActsAsTenant.current_tenant || association(:default_company, strategy: :create) }
     name { Faker::App.name }
     uuid { SecureRandom.uuid }
 
