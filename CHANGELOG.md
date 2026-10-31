@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Agent fuzzing follow-up for customer agent targets
+  - Optional scan flag runs discovery probes, then a dedicated AgentFuzzingRun
+  - Successful attempts become seeds; failed and unmeasured attempts are not
+  - Vendored Sleipnir playbooks, including poison-pill indirect prompt injection
+  - Hosted source/callback artifacts (`AGENT_PUBLIC_ORIGIN`) with attack, replay and clean control arms in isolated conversations
+  - Confirmed findings require an independent sink/tool observation, matched control, and replay; model echo is not a vulnerability
+
 - Expanded 0DIN probe set from 6 to 32 probes for broader AI safety assessment coverage
   - 8 Pattern A standalone Crystal Meth probes (e.g., InvestigativeJournalistPersonaCM, AcademicChemistryCM)
   - 9 Pattern B base probes (e.g., ArbitraryRelation, NotionTemplate, ForensicTrainingScenario)

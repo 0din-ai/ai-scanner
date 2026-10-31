@@ -1,4 +1,7 @@
 Rails.application.routes.draw do
+  get "agent-artifacts/source", to: "agent_fuzzing_artifacts#source"
+  # A receipt is a side effect: link previews and prefetchers issue GET, so only POST counts.
+  post "agent-artifacts/receipt", to: "agent_fuzzing_artifacts#receipt"
   # Devise routes - OAuth callbacks added when engine configures auth_providers
   # Check both config and that User actually has :omniauthable (added by engine's to_prepare)
   devise_controllers = { sessions: "users/sessions" }

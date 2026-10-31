@@ -150,6 +150,22 @@ class Target < ApplicationRecord
   end
 
   private
+  def rest_generator_uri
+    return nil if json_config.blank?
+
+    parsed = JSON.parse(json_config)
+    return nil unless parsed.is_a?(Hash)
+
+    rest = parsed["rest"]
+    return nil unless rest.is_a?(Hash)
+
+    generator = rest["RestGenerator"]
+    return nil unless generator.is_a?(Hash)
+
+    generator["uri"]
+  rescue JSON::ParserError
+    nil
+  end
 
   def json_config_should_be_validated?
     json_config.present? && api? &&
@@ -246,22 +262,6 @@ class Target < ApplicationRecord
     false
   end
 
-  def rest_generator_uri
-    return nil if json_config.blank?
-
-    parsed = JSON.parse(json_config)
-    return nil unless parsed.is_a?(Hash)
-
-    rest = parsed["rest"]
-    return nil unless rest.is_a?(Hash)
-
-    generator = rest["RestGenerator"]
-    return nil unless generator.is_a?(Hash)
-
-    generator["uri"]
-  rescue JSON::ParserError
-    nil
-  end
 
   def web_config_is_valid
     return if web_config.blank?

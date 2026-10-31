@@ -1,0 +1,44 @@
+<% run = report.agent_fuzzing_run %>
+<% if run %>
+  <section class="agent-assessment">
+    <h2>AI agent assessment</h2>
+    <p>Status: <%= run.status %> · Outcome: <%= run.outcome.presence || "in progress" %> · Playbooks: <%= run.playbook_revision %></p>
+    <p><%= run.seeds.size %> successful discovery seeds · <%= run.confirmed_findings.size %> confirmed agent vulnerabilities</p>
+    <p>Discovery ASR and probe counts are not confirmed agent vulnerabilities. Confirmation here requires an observed effect, independent replay, and a measured clean control.</p>
+    <% if run.seeds.empty? %>
+      <p>No successful discovery seeds. The assessor must use observed capabilities and playbooks without inventing successful probes.</p>
+    <% end %>
+    <% if run.error_message.present? %>
+      <p><%= run.error_message %></p>
+    <% end %>
+    <% Array(run.findings).each do |finding| %>
+      <article>
+        <h3><%= finding["title"] %> — <%= finding["disposition"] %></h3>
+        <dl>
+          <% %w[class impact boundary expected observed reproduction remediation limitations novelty].each do |field| %>
+            <% if finding[field].present? %>
+              <dt><%= field.humanize %></dt><dd><%= finding[field] %></dd>
+            <% end %>
+          <% end %>
+          <dt>Evidence IDs</dt><dd><%= Array(finding["evidence_ids"]).join(", ") %></dd>
+        </dl>
+      </article>
+    <% end %>
+    <h3>Executed experiments and observations</h3>
+    <% Array(run.trials).each do |trial| %>
+      <details>
+        <summary><%= trial["playbook"] %> — <%= trial["hypothesis"] %> — <%= trial["disposition"] %></summary>
+        <pre><%= JSON.pretty_generate(trial) %></pre>
+      </details>
+    <% end %>
+    <details>
+      <summary>AI decisions, tool results, coverage and closed leads</summary>
+      <pre><%= JSON.pretty_generate(run.plan) %></pre>
+    </details>
+  </section>
+<% elsif report.scan.agent_fuzzing? && !report.is_variant_report? %>
+  <section class="agent-assessment">
+    <h2>AI agent assessment</h2>
+    <p>Waiting for discovery within the primary scan. No agent assessment results yet.</p>
+  </section>
+<% end %>

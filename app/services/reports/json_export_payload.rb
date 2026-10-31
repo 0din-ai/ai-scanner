@@ -76,7 +76,10 @@ module Reports
         report: report_metadata(run),
         target: target_metadata(run),
         scores: scores(run),
-        detectors: detector_breakdown(run)
+        detectors: detector_breakdown(run),
+        agent_assessment: run.agent_fuzzing_run&.as_json(
+          only: %i[status outcome budget seeds plan trials findings playbook_revision error_message]
+        )
       }
 
       yield %(#{head.to_json.chop},"probe_results":[)

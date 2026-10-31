@@ -37,6 +37,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-scanner}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_dev_password_12345}
       JUDGE_API_KEY: ${JUDGE_API_KEY:-}
+      AGENT_PROVIDER: ${AGENT_PROVIDER:-openai}
+      AGENT_MODEL: ${AGENT_MODEL:-}
+      AGENT_API_KEY: ${AGENT_API_KEY:-}
+      AGENT_PUBLIC_ORIGIN: ${AGENT_PUBLIC_ORIGIN:-}
     working_dir: /rails
     restart: always
     stdin_open: true

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_02_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -40,6 +40,54 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_090000) do
     t.bigint "blob_id", null: false
     t.string "variation_digest", null: false
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
+
+  create_table "agent_fuzzing_artifacts", force: :cascade do |t|
+    t.bigint "agent_fuzzing_run_id", null: false
+    t.string "arm", null: false
+    t.text "body", null: false
+    t.string "body_sha256", null: false
+    t.datetime "closed_at"
+    t.bigint "company_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "receipt_at"
+    t.integer "receipt_count", default: 0, null: false
+    t.string "receipt_digest", null: false
+    t.string "receipt_request_id"
+    t.string "source_digest", null: false
+    t.datetime "source_read_at"
+    t.integer "source_reads", default: 0, null: false
+    t.string "source_request_id"
+    t.string "trial_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_fuzzing_run_id"], name: "index_agent_fuzzing_artifacts_on_agent_fuzzing_run_id"
+    t.index ["company_id"], name: "index_agent_fuzzing_artifacts_on_company_id"
+    t.index ["receipt_digest"], name: "index_agent_fuzzing_artifacts_on_receipt_digest", unique: true
+    t.index ["source_digest"], name: "index_agent_fuzzing_artifacts_on_source_digest", unique: true
+  end
+
+  create_table "agent_fuzzing_runs", force: :cascade do |t|
+    t.jsonb "budget", default: {}, null: false
+    t.bigint "company_id", null: false
+    t.datetime "created_at", null: false
+    t.text "error_message"
+    t.string "execution_token"
+    t.jsonb "findings", default: [], null: false
+    t.string "outcome"
+    t.jsonb "plan", default: [], null: false
+    t.string "playbook_revision"
+    t.bigint "scan_id", null: false
+    t.jsonb "seeds", default: [], null: false
+    t.bigint "source_report_id", null: false
+    t.integer "status", default: 0, null: false
+    t.bigint "target_id", null: false
+    t.jsonb "trials", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["company_id"], name: "index_agent_fuzzing_runs_on_company_id"
+    t.index ["scan_id"], name: "index_agent_fuzzing_runs_on_scan_id"
+    t.index ["source_report_id"], name: "index_agent_fuzzing_runs_on_source_report_id", unique: true
+    t.index ["target_id"], name: "index_agent_fuzzing_runs_on_target_id"
   end
 
   create_table "companies", force: :cascade do |t|
@@ -325,6 +373,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_090000) do
   end
 
   create_table "scans", force: :cascade do |t|
+    t.boolean "agent_fuzzing", default: false, null: false
     t.boolean "auto_update_cm", default: false, null: false
     t.boolean "auto_update_generic", default: false, null: false
     t.boolean "auto_update_hp", default: false, null: false
@@ -339,6 +388,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_090000) do
     t.integer "reports_count", default: 0, null: false
     t.datetime "updated_at", null: false
     t.string "uuid", null: false
+    t.index ["agent_fuzzing"], name: "index_scans_on_agent_fuzzing"
     t.index ["auto_update_cm"], name: "index_scans_on_auto_update_cm"
     t.index ["auto_update_generic"], name: "index_scans_on_auto_update_generic"
     t.index ["auto_update_hp"], name: "index_scans_on_auto_update_hp"
@@ -470,6 +520,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_090000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "agent_fuzzing_artifacts", "agent_fuzzing_runs"
+  add_foreign_key "agent_fuzzing_artifacts", "companies"
+  add_foreign_key "agent_fuzzing_runs", "companies"
+  add_foreign_key "agent_fuzzing_runs", "reports", column: "source_report_id"
+  add_foreign_key "agent_fuzzing_runs", "scans"
+  add_foreign_key "agent_fuzzing_runs", "targets"
   add_foreign_key "detector_results", "detectors"
   add_foreign_key "detector_results", "reports"
   add_foreign_key "environment_variables", "companies"
