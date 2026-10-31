@@ -1,0 +1,88 @@
+Technique notes maintained in this repository.
+
+They originated in the 0DIN Loki agent-team bundle. The source, branch,
+commit, and built lines are that history. Edits are made here.
+
+Source: 0DIN Loki agent-team bundle
+Branch: pedram-harness-proposal
+Commit: 9de8860a
+Built: 2026-09-21T21:38:06Z
+
+The bundle's own README says it contains no secrets, no credentials,
+no target intelligence, and no captured sessions. This tree holds the
+playbooks directory (thirty-one SKILL.md files: nineteen vendored, twelve
+authored first-party in this repository).
+
+Seventeen came over as the bundle's own playbooks. Two more —
+choose-the-right-playbook and jailbreak-to-unlock — were red-teamer skills
+in the bundle, adapted here into playbooks: the single-lead scanner has no
+separate Scope agent, plan-approval lifecycle, or loki-cli, so their
+references to those were rewritten to send through the browser and record
+with scanner_record_finding. The other surviving playbooks referenced both
+by name, so leaving them out stranded those references.
+
+Twelve more were authored first-party in this repository, not from the bundle.
+They follow the same shape (objective, when to choose, ordered method,
+evidence that proves it) and the same single-lead vocabulary as the vendored
+notes, method only and no target intelligence:
+
+- egress-and-exfiltration-channels: turn the agent's own permitted
+  destinations into the exfil path (the inherited trust and egress gaps family).
+- agent-command-execution: host command execution through a coding, CLI,
+  or IDE agent (the execute and RCE half of indirect injection).
+- authorization-claim-acceptance: the agent treating an asserted authorization
+  as real for a caller it cannot verify (a trust flag it fills from a claim, a
+  role it grants on assertion, its own standing credential).
+- approval-gate-bypass: getting a human approval for one effect and executing
+  another (argument injection into a pre-approved action, a misleading
+  confirmation, consent fatigue, a change between approval and execution).
+- concealed-instruction-injection: delivering the injected instruction where a
+  human reviewing the same artifact will not see it but the model will (hidden
+  text, metadata, formulas, alt-text, text inside an image, a QR code).
+- user-targeted-deception: the assistant delivering an attacker lure to its own
+  user through the trusted channel (a fake alert, a malicious link or button, a
+  QR code, a planted false instruction).
+- scheduled-action-abuse: persistence and delayed firing through the agent's
+  own scheduling and automation rather than memory (a recurring job, a
+  reminder, a webhook, a trigger).
+- cross-session-data-leakage: one user's data surfacing in another's session
+  through shared AI-layer state (memory, cache, retained context, a shared
+  index), with no backend identifier manipulation.
+- template-and-expression-injection: the agent framework evaluating attacker
+  input as a template or expression rather than as data (prompt templates,
+  expression and formula languages, format and query strings).
+- persistent-directive-injection: a behavior-altering directive planted in a
+  store the agent reads as standing instruction (memory, preferences, a rules or
+  config file) that fires in a later clean session.
+- tool-output-injection: an instruction seeded in a field one of the chatbot's
+  own tools returns, which it reads as trusted task context and acts on.
+- mcp-server-trust-abuse: abusing the trust a host extends to a connected MCP
+  server (definitions loaded before approval, changed after approval, name
+  collisions, and the host tokens the server can reach).
+
+Deliberately left out of this tree, and not mounted into the worker:
+
+- personas/ — Enumerator, Red Teamer, Scope, Assessor. A team of four.
+  This process runs one lead.
+- skills/using-loki-cli and the other skills that assume the full team.
+- tools/loki-cli — an executable that assumes a Scope agent and a plan
+  approval flow this deployment does not have.
+- prompt-stack/ and reference/ — another harness's brief and permission
+  matrix.
+
+The odin-intel client from the same bundle IS now vendored, separately,
+at third_party/odin-intel; see that directory's NOTICE. The playbook
+notes reference it, and when it is mounted the seed points the model at
+it rather than telling the model it does not exist.
+
+The worker mounts playbooks/ read-only at /playbooks only when
+PLAYBOOK_HOST_PATH names this directory on the host. The seed names
+that path only in the same case.
+
+On 2026-09-29 the notes were edited for this scanner: references to the
+Enumerator persona, the needs_human stop, and research/ files outside this
+tree were rewritten or dropped, and choose-the-right-playbook was cut to its
+selector table, with its mechanism families moved into the playbooks that
+own them. playbooks.go embeds this tree so the seed can list every playbook
+by name and description; playbooks_test.go keeps each note's frontmatter,
+cross-references and vocabulary consistent with this scanner.

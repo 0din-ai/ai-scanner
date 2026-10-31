@@ -89,7 +89,7 @@ class WebChatbotGenerator(Generator):
     supports_multiple_generations = False
     parallel_capable = False
 
-    def __init__(self, name="", config_root=_config):
+    def __init__(self, name="", config_root=_config, *, lazy_browser=False):
         self.name = name
         self._browser = None
         self._context = None
@@ -115,6 +115,8 @@ class WebChatbotGenerator(Generator):
         if not self.selectors.get("input_field"):
             raise ValueError("WebChatbotGenerator requires 'input_field' selector (send_button is optional, will use Enter key if not provided)")
 
+        if lazy_browser:
+            return
         # Initialize browser asynchronously
         # We need to run this in an event loop
         try:
@@ -184,6 +186,14 @@ class WebChatbotGenerator(Generator):
             # checked. The guard re-screens every request for the life of the context.
             self._network_guard = NetworkGuard(getattr(self, "network_guard", None))
             await self._context.route("**/*", self._network_guard.handle)
+            # Assessment receipts must come from remote defender tools, never a link,
+            # preview, image, or script rendered by the scanner's own browser.
+            assessment_origin = getattr(self, "assessment_origin", None)
+            if assessment_origin:
+                await self._context.route(
+                    assessment_origin.rstrip("/") + "/agent-artifacts/**",
+                    lambda route: route.abort(),
+                )
 
             cookies = self._normalize_cookies((getattr(self, "auth", None) or {}).get("cookies") or [])
             if cookies:
@@ -250,7 +260,7 @@ class WebChatbotGenerator(Generator):
             # No event loop, create one
             return asyncio.run(self._call_model_async(prompt_text, generations_this_call))
 
-    async def _call_model_async(self, prompt: str, generations_this_call: int = 1) -> List[Optional[Message]]:
+    async def _call_model_async(self, prompt: str, generations_this_call: int = 1, *, reset=True) -> List[Optional[Message]]:
         """Send prompt to web chatbot and extract response (async implementation)
 
         Args:
@@ -263,8 +273,9 @@ class WebChatbotGenerator(Generator):
         if generations_this_call > 1:
             logging.warning("WebChatbotGenerator only supports single generation, using 1")
 
-        # Clear chat history before each probe to ensure isolated testing
-        await self.clear_history_async()
+        # Discovery isolates probes; assessment keeps turns within one conversation.
+        if reset:
+            await self.clear_history_async()
 
         try:
             # Find and clear the input field

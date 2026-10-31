@@ -29,6 +29,7 @@ See the full [Featured Vulnerabilities guide](https://0din-ai.github.io/docs/get
 - **Multi-target scanning** — test API-based LLMs and browser-based chat UIs
 - **Scheduled and on-demand scans** with configurable recurrence
 - **Attack Success Rate (ASR)** scoring with trend tracking across scan runs
+- **Agent fuzzing** — after discovery, reuse successful attempts and Sleipnir playbooks, including hosted poison-pill indirect prompt injection with attack/replay/control arms, to look for novel agent vulnerabilities. Confirmed findings require an independently observed effect.
 - **Live Activity Stream** — monitor queued and running scans with database-backed execution-log tails and final report logs
 - **PDF report export** with per-probe, per-attempt drill-down
 - **SIEM integration** — forward results to Splunk or Rsyslog
