@@ -35,6 +35,7 @@ import shlex
 import signal
 import logging
 import traceback
+import json
 
 from pathlib import Path
 
@@ -272,6 +273,10 @@ def main():
     report_uuid = sys.argv[1]
     garak_params = sys.argv[2:]
     execution_token = os.environ.get('SCAN_EXECUTION_TOKEN', '').strip() or None
+    # Deployment assessment credentials are never visible to tenant-controlled garak
+    # generators, nor written to their option files.
+    assessment_config = os.environ.pop("AGENT_ASSESSMENT_CONFIG", "{}")
+    assessment_key = os.environ.pop("AGENT_API_KEY", "")
     scan_id = os.environ.get('SCAN_ID', 'unknown')
     scan_name = os.environ.get('SCAN_NAME', 'unknown')
     target_id = os.environ.get('TARGET_ID', 'unknown')
@@ -365,6 +370,16 @@ def main():
         logger.info(f"Garak scan completed - Report: {report_uuid}, "
                    f"Exit code: {exit_code}")
         print(f"Garak scan completed with exit code: {exit_code}")
+        if not is_validation and assessment_config not in ("", "{}"):
+            from agent_assessment import run_assessment
+            assessment_settings = json.loads(assessment_config or "{}")
+            assessment_settings["discovery_exit_code"] = exit_code
+            journal = prefix + (jsonl_path.read_text() if jsonl_path.exists() else "")
+            assessment_exit = run_assessment(
+                report_uuid, execution_token, json.dumps(assessment_settings),
+                assessment_key, garak_params, journal,
+            )
+            exit_code = exit_code or assessment_exit
 
         if not is_validation:
             # Stop journal sync BEFORE notify_report_ready_from_synced, because

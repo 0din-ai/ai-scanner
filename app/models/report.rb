@@ -12,6 +12,7 @@ class Report < ApplicationRecord
   has_one :raw_report_data, dependent: :destroy
   has_one :report_debug_log, dependent: :destroy, autosave: true
   has_one :report_pdf, dependent: :destroy
+  has_one :agent_fuzzing_run, foreign_key: :source_report_id, dependent: :destroy
 
   validates :uuid, presence: true, uniqueness: true
   validates :target, presence: true

@@ -7,6 +7,7 @@ RSpec.describe Scan, type: :model do
     it { is_expected.to have_and_belong_to_many(:targets) }
     it { is_expected.to have_and_belong_to_many(:probes) }
     it { is_expected.to have_many(:reports).dependent(:destroy) }
+    it { is_expected.to have_many(:agent_fuzzing_runs).dependent(:destroy) }
     it { is_expected.to belong_to(:output_server).optional }
   end
 

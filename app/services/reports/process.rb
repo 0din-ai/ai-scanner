@@ -49,6 +49,13 @@ module Reports
 
         persist_final_logs
         apply_failure_metadata
+        assessment = report.agent_fuzzing_run
+        if report.scan.agent_fuzzing? && !report.is_variant_report? && !assessment&.completed?
+          report.status = :failed
+          report.failure_code = "agent_assessment_failed"
+          report.failure_message = assessment&.error_message.presence || "Agent assessment did not finish."
+          assessment&.update!(status: :failed, outcome: "interrupted") if assessment&.running?
+        end
         save_detector_results
         persist_judge_stats
         update_target_token_rate

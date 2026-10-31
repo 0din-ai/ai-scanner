@@ -28,7 +28,7 @@ class RunGarakScan
 
     # If all probes already completed (from a previous interrupted run),
     # skip garak and go straight to processing
-    if all_probes_completed?
+    if all_probes_completed? && (!report.scan.agent_fuzzing? || report.is_variant_report?)
       # Pin BEFORE returning. This path skips garak entirely and never builds argv, so
       # without it a report with no snapshot goes straight to processing unpinned:
       # processing would resolve the live value without persisting it, and a variant
@@ -325,6 +325,9 @@ class RunGarakScan
       # YAML, which is written to disk.
       env["JUDGE_CONFIG"] = report.judge_enabled? ? report.judge_config.to_json : ""
       env[JudgeSettings::KEY_ENV] = report.judge_enabled? ? ENV[JudgeSettings::KEY_ENV].to_s : ""
+      assessment = AgentFuzzing::Settings.snapshot(report)
+      env["AGENT_ASSESSMENT_CONFIG"] = assessment.to_json
+      env["AGENT_API_KEY"] = assessment.present? ? ENV["AGENT_API_KEY"].to_s : ""
 
       env["SCAN_ID"] = report.scan.id.to_s
       env["SCAN_NAME"] = report.scan.name
@@ -521,7 +524,7 @@ class RunGarakScan
   def probes_config
     probes_list = scan_probes
 
-    probes_csv = probes_list.join(",")
+    probes_csv = probes_list.empty? ? "none" : probes_list.join(",")
     [ "--config", write_probes_yaml(probes_csv) ]
   end
 

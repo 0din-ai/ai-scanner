@@ -19,6 +19,23 @@
 /* Load custom JS config for theme extensions */
 @config '../../../tailwind.config.js';
 
+@layer components {
+  .agent-assessment { @apply my-6 rounded-lg border p-4 space-y-3; }
+  .agent-assessment h2 { @apply text-xl font-semibold; }
+  .agent-assessment h3 { @apply text-lg font-medium; }
+  .agent-assessment p, .agent-assessment dl { @apply text-sm; }
+  .agent-assessment article { @apply border-t pt-3; }
+  .agent-assessment dt { @apply font-semibold mt-2; }
+  .agent-assessment dd { @apply whitespace-pre-wrap break-words; }
+  .agent-assessment summary { @apply cursor-pointer text-sm font-medium; }
+  .agent-assessment pre { @apply text-xs whitespace-pre-wrap break-words max-h-96 overflow-auto; }
+}
+
+@media print {
+  .agent-assessment pre { max-height: none; overflow: visible; }
+  .agent-assessment details::details-content { display: block; content-visibility: visible; }
+}
+
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still

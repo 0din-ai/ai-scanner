@@ -28,6 +28,7 @@ class Scan < ApplicationRecord
     has_and_belongs_to_many :targets
     has_and_belongs_to_many :probes
     has_many :reports, dependent: :destroy
+    has_many :agent_fuzzing_runs, dependent: :destroy
     belongs_to :output_server, optional: true
 
     validates :uuid, presence: true, uniqueness: true

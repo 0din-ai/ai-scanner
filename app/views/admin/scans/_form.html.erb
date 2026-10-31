@@ -136,6 +136,14 @@
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Check this box to bypass the parallel scan limit and run immediately</p>
       </div>
     <% end %>
+
+    <div class="mt-4">
+      <div class="flex items-center">
+        <%= f.check_box :agent_fuzzing %>
+        <%= f.label :agent_fuzzing, "AI agent assessment (within this scan)", class: "ml-2 block text-sm text-gray-700 dark:text-gray-300" %>
+      </div>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Authorize a bounded AI assessment of these agent targets using successful discovery attempts and Sleipnir playbooks. Includes synthetic hosted poison-pill documents and harmless callbacks when this deployment has a public origin. The primary scan stays running through assessment and evidence reporting.</p>
+    </div>
   </div>
 
   <!-- Probe Selection Section -->

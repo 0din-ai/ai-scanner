@@ -201,6 +201,7 @@ module Admin
       permitted = [
         :name, :recurrence, :output_server_id,
         :auto_update_generic, :auto_update_cm, :auto_update_hp,
+        :agent_fuzzing,
         { target_ids: [], probe_ids: [] }
       ]
       permitted << { threat_variant_subindustry_ids: [] } if current_company.can_use?(:industry_variants) && Scan.reflect_on_association(:threat_variant_subindustries)

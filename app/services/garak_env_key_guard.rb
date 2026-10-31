@@ -26,7 +26,7 @@ class GarakEnvKeyGuard
     HOME DATABASE_URL LOG_FILE_PATH REPORT_UUID VARIANT_SCAN
     SCAN_EXECUTION_TOKEN SCAN_ID SCAN_NAME TARGET_ID TARGET_NAME
   ].freeze
-  RESERVED_PREFIXES = %w[JUDGE_].freeze
+  RESERVED_PREFIXES = %w[JUDGE_ AGENT_].freeze
 
   def self.reserved?(name)
     RESERVED_NAMES.include?(name) || GarakSubprocessEnv::INHERITED_NAMES.include?(name) ||

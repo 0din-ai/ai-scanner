@@ -27,6 +27,11 @@ RSpec.describe "deployment environment passthrough" do
     MAX_INTERRUPT_RETRIES
     DEBUG_LOG_TAIL_BYTES
     JUDGE_API_KEY
+    AGENT_PROVIDER
+    AGENT_MODEL
+    AGENT_API_KEY
+    AGENT_PUBLIC_ORIGIN
+    AGENT_PLAYBOOKS_PATH
   ].freeze
 
   # Advertised and read, but deliberately NOT forwarded. Each entry is a decision, not an
