@@ -21,6 +21,32 @@ class EnvironmentVariable < ApplicationRecord
   EVALUATION_THRESHOLD_ENV_NAME = "EVALUATION_THRESHOLD"
   # garak's ThresholdEvaluator default when --eval_threshold is not passed.
   GARAK_DEFAULT_EVAL_THRESHOLD = 0.5
+  # Resolve a local development reference at the point where credentials enter a
+  # subprocess or client. Keep env_value encrypted and stored as the reference.
+  def resolved_value
+    self.class.resolve_runtime_value(env_name, env_value)
+  end
+
+  def self.resolve_runtime_value(env_name, value)
+    if env_name == "OPENROUTER_API_KEY" && Rails.env.development? && ENV["OPENROUTER_API_KEY"].present?
+      return ENV["OPENROUTER_API_KEY"]
+    end
+
+    return value unless value.to_s.start_with?("env:")
+    unless Rails.env.development? && value == "env:OPENROUTER_API_KEY"
+      raise ArgumentError, "Environment variable reference is not allowed"
+    end
+
+    ENV["OPENROUTER_API_KEY"].presence ||
+      raise(ArgumentError, "Environment variable reference is not set")
+  end
+
+  def self.resolve_runtime_values(values)
+    values.each_with_object({}) do |(env_name, value), resolved|
+      resolved[env_name] = resolve_runtime_value(env_name, value)
+    end
+  end
+
 
   # Effective garak eval threshold for a target: the same value
   # RunGarakScan#evaluation_threshold passes via --eval_threshold (target

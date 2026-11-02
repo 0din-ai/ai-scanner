@@ -21,7 +21,7 @@ RSpec.describe OpenaiClient do
     context "with API key from environment" do
       it "initializes successfully" do
         allow(EnvironmentVariable).to receive_message_chain(:global, :find_by).and_return(
-          double(env_value: "db-api-key")
+          double(resolved_value: "db-api-key")
         )
 
         expect { described_class.new }.not_to raise_error
@@ -32,7 +32,7 @@ RSpec.describe OpenaiClient do
   describe "#fetch_api_key_from_db with tenant context" do
     context "without tenant context" do
       it "still retrieves the API key" do
-        env_var = double(env_value: "db-api-key")
+        env_var = double(resolved_value: "db-api-key")
         allow(EnvironmentVariable).to receive_message_chain(:global, :find_by).and_return(env_var)
 
         ActsAsTenant.without_tenant do
@@ -54,6 +54,25 @@ RSpec.describe OpenaiClient do
           client = described_class.new
           expect(client).to be_a(described_class)
         end
+      end
+
+      it "resolves a development reference when constructing the provider client" do
+        previous = ENV["OPENROUTER_API_KEY"]
+        ENV["OPENROUTER_API_KEY"] = "process-canary"
+        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("development"))
+        env_var = ActsAsTenant.with_tenant(company) do
+          create(:environment_variable, target: nil, env_name: "OPENAI_API_KEY",
+                 env_value: "env:OPENROUTER_API_KEY", company: company)
+        end
+        expect(OpenAI::Client).to receive(:new)
+          .with(hash_including(access_token: "process-canary"))
+          .and_return(mock_openai_client)
+
+        ActsAsTenant.with_tenant(company) { described_class.new }
+
+        expect(ActsAsTenant.with_tenant(company) { env_var.reload.env_value }).to eq("env:OPENROUTER_API_KEY")
+      ensure
+        previous.nil? ? ENV.delete("OPENROUTER_API_KEY") : ENV["OPENROUTER_API_KEY"] = previous
       end
     end
   end

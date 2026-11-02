@@ -4,6 +4,22 @@
 
 Environment variables allow you to securely configure API keys and system settings for AI security scans. The Scanner platform uses these variables to authenticate with different AI providers and control scan behavior.
 
+## App-specific development credentials
+
+Use one team-shared Scanner app Environment for local development of either public or private distribution. It contains only Scanner's required secrets and its distinct `OPENROUTER_API_KEY` when used. Portal has a separate Environment and different key; never load a common all-app provider base or duplicate keys into overlays. Request provisioning/access before launch. Do not copy credentials into `.env` or the database:
+
+```bash
+op run --environment "$OP_DEV_ENV_ID" -- docker compose -f docker-compose.dev.yml up
+```
+
+`OP_DEV_ENV_ID` is this project's developer-local, nonsecret selector for the Scanner app Environment, used by either distribution but not Portal. Do not commit IDs or credentials. Development Compose forwards Scanner's `OPENROUTER_API_KEY` only when supplied by the launch environment. Include only Scanner's required secrets; offline/non-OpenRouter workflows need no OpenRouter key.
+
+In **Configuration → Environment Variables**, set the global `OPENROUTER_API_KEY` value to `env:OPENROUTER_API_KEY`. The encrypted database field retains this reference, not the key; scans and validations resolve it from the development app's process environment at launch. A target-specific setting continues to override the global setting. The development process value takes precedence over a stale database value named `OPENROUTER_API_KEY`.
+
+Only `env:OPENROUTER_API_KEY` is supported, and only in development. Other environment references and all references outside development are rejected. Existing explicit credential values remain supported. For another provider variable (for example, `OPENAI_API_KEY`), enter `env:OPENROUTER_API_KEY` explicitly only when that target is configured to authenticate with the injected OpenRouter key; provider names are not automatically rewritten.
+
+Build images and install dependencies without injected credentials before launch. After rotating this app's key, recreate the scanner container and its web/workers with `op run --environment "$OP_DEV_ENV_ID" -- docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate scanner`. `docker compose restart` preserves the old environment. The production/customer installer continues to load its separate `storage/.env`; this development workflow does not change that behavior.
+
 ## How to Configure Environment Variables
 
 ### Step 1: Access the Admin Panel

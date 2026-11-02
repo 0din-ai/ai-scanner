@@ -78,6 +78,8 @@ The footer shows the release version embedded in official Docker images. Local s
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, branch conventions, and the PR process.
 
+For opt-in per-app development credentials and local references, see [Environment Variables](docs/ENVIRONMENT_VARIABLES.md#app-specific-development-credentials). Both Scanner distributions select the Scanner app Environment and its distinct OpenRouter key; Portal uses a separate Environment/key.
+
 To report a security vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License

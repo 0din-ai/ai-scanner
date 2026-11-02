@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 
-if gem list --no-installed --exact --silent foreman; then
-  echo "Installing foreman..."
-  gem install foreman
+if ! command -v foreman >/dev/null 2>&1; then
+  echo 'Foreman is missing. Run `gem install foreman` in a shell without injected credentials, then retry bin/dev.' >&2
+  exit 1
 fi
 
 # Default to port 80 if not specified

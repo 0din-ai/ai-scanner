@@ -574,6 +574,23 @@ RSpec.describe RunGarakScan, type: :service do
           expect(env["DATABASE_URL"]).to be_present
         end
       end
+
+      it 'uses the development process key instead of a stale target credential' do
+        previous = ENV['OPENROUTER_API_KEY']
+        ENV['OPENROUTER_API_KEY'] = 'process-canary'
+        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('development'))
+        target_env_var = ActsAsTenant.with_tenant(target.company) do
+          create(:environment_variable, target: target, env_name: 'OPENROUTER_API_KEY', env_value: 'stale-canary')
+        end
+        service = described_class.new(report)
+
+        env = ActsAsTenant.with_tenant(report.company) { service.send(:build_env) }
+
+        expect(env['OPENROUTER_API_KEY']).to eq('process-canary')
+        expect(ActsAsTenant.with_tenant(target.company) { target_env_var.reload.env_value }).to eq('stale-canary')
+      ensure
+        previous.nil? ? ENV.delete('OPENROUTER_API_KEY') : ENV['OPENROUTER_API_KEY'] = previous
+      end
     end
 
     it 'decrypts json_config within tenant context for generator options' do

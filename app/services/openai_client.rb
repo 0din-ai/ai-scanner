@@ -187,6 +187,6 @@ class OpenaiClient
   end
 
   def fetch_api_key_from_db
-    EnvironmentVariable.global.find_by(env_name: "OPENAI_API_KEY")&.env_value
+    EnvironmentVariable.global.find_by(env_name: "OPENAI_API_KEY")&.resolved_value
   end
 end

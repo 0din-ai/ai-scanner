@@ -214,6 +214,22 @@ RSpec.describe ValidateTarget, type: :service do
         env = service.send(:build_env)
         expect(env["SPECIAL_CHARS"]).to eq("val'ue $(whoami)")
       end
+
+      it 'uses the development process key instead of a stale target credential' do
+        previous = ENV['OPENROUTER_API_KEY']
+        ENV['OPENROUTER_API_KEY'] = 'process-canary'
+        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('development'))
+        target_env_var = ActsAsTenant.with_tenant(target.company) do
+          create(:environment_variable, target: target, env_name: 'OPENROUTER_API_KEY', env_value: 'stale-canary')
+        end
+
+        env = ActsAsTenant.with_tenant(target.company) { service.send(:build_env) }
+
+        expect(env['OPENROUTER_API_KEY']).to eq('process-canary')
+        expect(ActsAsTenant.with_tenant(target.company) { target_env_var.reload.env_value }).to eq('stale-canary')
+      ensure
+        previous.nil? ? ENV.delete('OPENROUTER_API_KEY') : ENV['OPENROUTER_API_KEY'] = previous
+      end
     end
 
     describe '#params' do

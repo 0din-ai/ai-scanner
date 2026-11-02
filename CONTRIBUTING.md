@@ -16,6 +16,7 @@ Thanks for helping improve Scanner! These guidelines describe the preferred work
    docker compose -f docker-compose.dev.yml up
    ```
    The database is set up automatically on first boot.
+
 4. Create a feature branch from `main`:
    ```bash
    git checkout -b feature/my-feature main
@@ -34,6 +35,30 @@ npm run test:js
 rubocop -A                          # Linter with auto-fix
 brakeman                            # Security scanner
 ```
+
+### App-specific development credentials (optional)
+
+Use one team-shared Scanner app Environment for both public and private distributions, containing only Scanner's required local secrets and its distinct `OPENROUTER_API_KEY` when OpenRouter is used. Portal has its own Environment and different key. Never use a common all-app base or duplicate keys in overlays. Ask the owner to provision values and access before use; metadata alone is insufficient.
+
+Install [1Password CLI](https://developer.1password.com/docs/cli/get-started/) first (`brew install --cask 1password-cli` on macOS). Enable desktop **Developer → Integrate with 1Password CLI**, unlock the app, and run `op signin`. Request team access, then copy the nonsecret Environment ID from **Developer → View Environments → View environment → Manage environment → Copy environment ID** into your local `OP_DEV_ENV_ID`; never copy or print the key.
+
+```bash
+op run --environment "$OP_DEV_ENV_ID" -- docker compose -f docker-compose.dev.yml up
+```
+
+`OP_DEV_ENV_ID` is this project's developer-local, nonsecret Scanner app Environment selector, used by either Scanner distribution but not Portal. Do not commit selectors or credentials. Compose forwards `OPENROUTER_API_KEY` only to the development app. Set the global canonical value in the UI to `env:OPENROUTER_API_KEY`; the encrypted database stores the reference, not the key. Normal target/global precedence remains except that the injected canonical development key wins over stale stored `OPENROUTER_API_KEY` values. Offline/non-OpenRouter/customer workflows remain unchanged.
+
+This reference is development-only. Other references and references in production are rejected; explicit per-tenant credential values continue to work unchanged. `OPENAI_API_KEY` can use the reference explicitly when the target provider expects that variable; the scanner does not rewrite other provider names automatically. Build images without injected credentials before launch. For direct `bin/dev` use, preinstall Foreman with `gem install foreman` in a credential-free shell.
+
+`bin/setup` can run `bundle install` when dependencies are missing. Run it without injected app credentials; do not wrap it in `op run`. Setup/devcontainer installers inherit their process environment: injection is not a dependency-execution sandbox.
+
+After rotation, recreate the scanner container and its web/workers under fresh injection:
+
+```bash
+op run --environment "$OP_DEV_ENV_ID" -- docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate scanner
+```
+
+`docker compose restart` retains the old container environment; it does not refresh the key.
 
 ## Branch Naming
 

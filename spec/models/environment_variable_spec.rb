@@ -45,7 +45,82 @@ RSpec.describe EnvironmentVariable, type: :model do
         end
       end
     end
+
   end
+
+  describe '.resolve_runtime_value' do
+    def use_rails_env(name)
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new(name))
+    end
+
+    def with_env(values)
+      previous = values.keys.to_h { |key| [ key, ENV[key] ] }
+      values.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+      yield
+    ensure
+      previous.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+    end
+
+    it 'prefers the development process key over a stored canonical key' do
+      use_rails_env('development')
+      with_env('OPENROUTER_API_KEY' => 'process-canary') do
+        expect(described_class.resolve_runtime_value('OPENROUTER_API_KEY', 'stale-canary')).to eq('process-canary')
+      end
+    end
+
+    it 'resolves the supported reference only from the development process' do
+      use_rails_env('development')
+      with_env('OPENROUTER_API_KEY' => 'process-canary') do
+        expect(described_class.resolve_runtime_value('OPENAI_API_KEY', 'env:OPENROUTER_API_KEY')).to eq('process-canary')
+      end
+    end
+
+    it 'fails without exposing a missing process value' do
+      use_rails_env('development')
+      with_env('OPENROUTER_API_KEY' => nil) do
+        expect { described_class.resolve_runtime_value('OPENROUTER_API_KEY', 'env:OPENROUTER_API_KEY') }
+          .to raise_error(ArgumentError, 'Environment variable reference is not set')
+      end
+    end
+
+    it 'rejects other environment references' do
+      use_rails_env('development')
+      with_env('OPENROUTER_API_KEY' => 'process-canary', 'SECRET_KEY_BASE' => 'secret-canary') do
+        expect { described_class.resolve_runtime_value('OPENAI_API_KEY', 'env:SECRET_KEY_BASE') }
+          .to raise_error(ArgumentError, 'Environment variable reference is not allowed')
+      end
+    end
+
+    it 'rejects references outside development' do
+      use_rails_env('production')
+      with_env('OPENROUTER_API_KEY' => 'process-canary') do
+        expect { described_class.resolve_runtime_value('OPENROUTER_API_KEY', 'env:OPENROUTER_API_KEY') }
+          .to raise_error(ArgumentError, 'Environment variable reference is not allowed')
+      end
+    end
+
+    it 'preserves explicit credentials and does not rewrite alias names' do
+      use_rails_env('development')
+      with_env('OPENROUTER_API_KEY' => 'process-canary') do
+        expect(described_class.resolve_runtime_value('OPENAI_API_KEY', 'explicit-canary')).to eq('explicit-canary')
+      end
+
+    end
+    it 'keeps the encrypted database value as a reference after resolving it' do
+      use_rails_env('development')
+      with_env('OPENROUTER_API_KEY' => 'process-canary') do
+        company = create(:company)
+        ActsAsTenant.with_tenant(company) do
+          env_var = create(:global_environment_variable, company: company,
+                           env_name: 'OPENROUTER_API_KEY', env_value: 'env:OPENROUTER_API_KEY')
+
+          expect(env_var.resolved_value).to eq('process-canary')
+          expect(env_var.reload.env_value).to eq('env:OPENROUTER_API_KEY')
+        end
+      end
+    end
+  end
+
 
   describe 'associations' do
     it { is_expected.to belong_to(:target).optional }

@@ -617,13 +617,13 @@ class RunGarakScan
       global_vars = EnvironmentVariable
         .global.where.not(env_name: EVALUATION_THRESHOLD_ENV_NAME)
         .select(:env_name, :env_value)
-        .map { |ev| [ ev.env_name, ev.env_value ] }
+        .map { |ev| [ ev.env_name, ev.resolved_value ] }
         .to_h
 
       target_vars = target.environment_variables
         .where.not(env_name: EVALUATION_THRESHOLD_ENV_NAME)
         .select(:env_name, :env_value)
-        .map { |ev| [ ev.env_name, ev.env_value ] }
+        .map { |ev| [ ev.env_name, ev.resolved_value ] }
         .to_h
 
       global_vars.merge(target_vars)
