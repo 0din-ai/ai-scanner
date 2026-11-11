@@ -8,7 +8,7 @@ class OpenaiClient
   class InvalidResponseError < Error; end
 
   DEFAULT_TIMEOUT = 120 # seconds
-  DEFAULT_MODEL = "gpt-5"
+  DEFAULT_MODEL = "gpt-5.6-sol"
 
   def initialize(api_key = nil, base_url = nil)
     @api_key = api_key || fetch_api_key_from_db
@@ -76,6 +76,7 @@ class OpenaiClient
     parameters = {
       model: model,
       messages: messages,
+      **(model == DEFAULT_MODEL ? { reasoning_effort: "none" } : {}),
       functions: [ function ],
       function_call: { name: "extract_data" }
     }
