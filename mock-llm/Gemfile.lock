@@ -8,7 +8,7 @@ GEM
       prism (~> 1.5)
     nio4r (2.7.5)
     prism (1.9.0)
-    puma (8.0.2)
+    puma (8.0.4)
       nio4r (~> 2.0)
     rack (3.2.8)
     rack-test (2.3.0)
