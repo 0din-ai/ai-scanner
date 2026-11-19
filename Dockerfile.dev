@@ -1,6 +1,6 @@
 ARG NODE_VERSION=24.22.1
 FROM node:${NODE_VERSION}-bookworm-slim AS node
-FROM ruby:4.0.9-slim
+FROM ruby:4.0.10-slim
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
