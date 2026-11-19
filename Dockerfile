@@ -8,7 +8,7 @@
 # For a containerized dev environment, see Dev Containers: https://guides.rubyonrails.org/getting_started_with_devcontainer.html
 
 # Make sure RUBY_VERSION matches the Ruby version in .ruby-version
-ARG RUBY_VERSION=4.0.9
+ARG RUBY_VERSION=4.0.10
 ARG NODE_VERSION=24.22.1
 FROM docker.io/library/node:${NODE_VERSION}-bookworm-slim AS node
 FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
