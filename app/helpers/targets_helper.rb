@@ -129,7 +129,7 @@ module TargetsHelper
       label: "Anthropic Claude",
       name: "Anthropic Claude",
       model_type: "RestGenerator",
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-5-5",
       description: "Claude via the Anthropic API — pick the model in the next step",
       json_config: {
         rest: {
@@ -143,12 +143,12 @@ module TargetsHelper
               "content-type" => "application/json"
             },
             req_template_json_object: {
-              model: "claude-sonnet-4-5",
+              model: "claude-sonnet-5-5",
               max_tokens: 1024,
               messages: [ { role: "user", content: "$INPUT" } ]
             },
             response_json: true,
-            response_json_field: "$.content[0].text"
+            response_json_field: "$.content[*].text"
           }
         }
       }.to_json,

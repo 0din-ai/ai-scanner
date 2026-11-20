@@ -349,7 +349,15 @@ RSpec.describe TargetsHelper, type: :helper do
       expect(t[:env_var]).to eq('ANTHROPIC_API_KEY')
       config = JSON.parse(t[:json_config])
       expect(config.dig('rest', 'RestGenerator', 'uri')).to include('api.anthropic.com')
-      expect(config.dig('rest', 'RestGenerator', 'response_json_field')).to eq('$.content[0].text')
+      expect(config.dig('rest', 'RestGenerator', 'response_json_field')).to eq('$.content[*].text')
+    end
+
+    it 'defaults the Anthropic tile to a current model without sampling parameters' do
+      t = TargetsHelper::PROVIDER_TEMPLATES[:anthropic]
+      body = JSON.parse(t[:json_config]).dig('rest', 'RestGenerator', 'req_template_json_object')
+      expect(t[:model]).to eq('claude-sonnet-5-5')
+      expect(body['model']).to eq(t[:model])
+      expect(body.keys).not_to include('temperature', 'top_p', 'top_k')
     end
 
     it 'exposes :label to the JS templates' do
@@ -361,7 +369,7 @@ RSpec.describe TargetsHelper, type: :helper do
 
   describe '#infer_provider_from_target with three RestGenerator templates' do
     it 'infers anthropic for a Claude RestGenerator target' do
-      target = build(:target, model_type: 'RestGenerator', model: 'claude-sonnet-4-5',
+      target = build(:target, model_type: 'RestGenerator', model: 'claude-sonnet-5-5',
                               json_config: TargetsHelper::PROVIDER_TEMPLATES[:anthropic][:json_config])
       expect(helper.infer_provider_from_target(target)).to eq('anthropic')
     end
